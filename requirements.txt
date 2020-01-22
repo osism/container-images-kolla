@@ -1,0 +1,6 @@
+ansible
+Mako
+PyYAML
+docker-squash
+jinja2
+requests

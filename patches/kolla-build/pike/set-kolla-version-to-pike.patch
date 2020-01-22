@@ -1,0 +1,13 @@
+diff --git a/kolla/image/build.py b/kolla/image/build.py
+index 1a2be084..43b98d07 100755
+--- a/kolla/image/build.py
++++ b/kolla/image/build.py
+@@ -743,7 +743,7 @@ class KollaWorker(object):
+                       'namespace': self.namespace,
+                       'tag': self.tag,
+                       'maintainer': self.maintainer,
+-                      'kolla_version': kolla_version,
++                      'kolla_version': 'pike',
+                       'image_name': image_name,
+                       'users': self.get_users(),
+                       'rpm_setup': self.rpm_setup,

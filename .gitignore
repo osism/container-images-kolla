@@ -1,0 +1,7 @@
+apt_preferences.ubuntu
+etc/kolla-build.conf
+kolla
+release
+tarballs
+template-overrides.j2
+venv

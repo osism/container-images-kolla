@@ -1,0 +1,27 @@
+Package: elasticsearch
+Pin: version {{ infrastructure_projects.elasticsearch }}
+Pin-Priority: 1001
+
+Package: kibana
+Pin: version {{ infrastructure_projects.kibana }}
+Pin-Priority: 1001
+
+Package: td-agent
+Pin: version {{ infrastructure_projects.fluentd }}*
+Pin-Priority: 1001
+
+Package: haproxy
+Pin: version {{ infrastructure_projects.haproxy }}*
+Pin-Priority: 1001
+
+Package: mariadb-galera-server
+Pin: version {{ infrastructure_projects.mariadb }}*
+Pin-Priority: 1001
+
+Package: rabbitmq-server
+Pin: version {{ infrastructure_projects.rabbitmq }}*
+Pin-Priority: 1001
+
+Package: erlang*
+Pin: release o=Bintray
+Pin-Priority: 1000

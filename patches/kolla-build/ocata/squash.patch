@@ -1,0 +1,25 @@
+diff --git a/kolla/common/config.py b/kolla/common/config.py
+index a51c137e..ae00b601 100755
+--- a/kolla/common/config.py
++++ b/kolla/common/config.py
+@@ -169,6 +169,8 @@ _CLI_OPTS = [
+     cfg.BoolOpt('cache', default=True,
+                 help='Use the Docker cache when building',
+                 ),
++    cfg.BoolOpt('squash', default=False,
++                help='Squash images'),
+     cfg.MultiOpt('profile', types.String(), short='p',
+                  help=('Build a pre-defined set of images, see [profiles]'
+                        ' section in config. The default profiles are:'
+diff --git a/kolla/image/build.py b/kolla/image/build.py
+index 7fd6fd71..29d47185 100755
+--- a/kolla/image/build.py
++++ b/kolla/image/build.py
+@@ -418,6 +418,7 @@ class BuildTask(DockerTask):
+                                           rm=True,
+                                           pull=pull,
+                                           forcerm=self.forcerm,
++                                          squash=self.conf.squash,
+                                           buildargs=buildargs):
+                 stream = json.loads(response.decode('utf-8'))
+                 if 'stream' in stream:

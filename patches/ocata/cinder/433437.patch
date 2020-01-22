@@ -1,0 +1,154 @@
+From 7c1e92278cce54a3a0cb3dc9a059988ddc2ec3bc Mon Sep 17 00:00:00 2001
+From: Sean McGinnis <sean_mcginnis@dell.com>
+Date: Mon, 13 Feb 2017 22:13:30 -0600
+Subject: [PATCH] Add per-backend availability zones
+
+When volume backends were defined in the [DEFAULT] cinder.conf config
+section, it did not make sense to have more than one AZ config setting.
+Now that we have multibackend and we have deprecated the ability to
+configure backends in DEFAULT, we can set AZs per backend section.
+
+This previously required setting up a separate service using a different
+cinder.conf to have more than one AZ. But since the vast majority of
+backends are separate physical devices, there is no reason to restrict
+the control plane service to be on separate nodes to support separate AZ
+configurations.
+
+Change-Id: I0d7669718a1d1e03e3dd42d1a19b70ff03342bd7
+Implements: bp multibackend-az-support
+---
+
+diff --git a/cinder/common/config.py b/cinder/common/config.py
+index 9a987d1..604028f 100644
+--- a/cinder/common/config.py
++++ b/cinder/common/config.py
+@@ -117,7 +117,9 @@
+     # NOTE(vish): default to nova for compatibility with nova installs
+     cfg.StrOpt('storage_availability_zone',
+                default='nova',
+-               help='Availability zone of this node'),
++               help='Availability zone of this node. Can be overridden per '
++                    'volume backend with the option '
++                    '"backend_availability_zone".'),
+     cfg.StrOpt('default_availability_zone',
+                help='Default availability zone for new volumes. If not set, '
+                     'the storage_availability_zone option value is used as '
+diff --git a/cinder/manager.py b/cinder/manager.py
+index 3091c7a..d5bc6ef 100644
+--- a/cinder/manager.py
++++ b/cinder/manager.py
+@@ -91,6 +91,7 @@
+         self.host = host
+         self.cluster = cluster
+         self.additional_endpoints = []
++        self.availability_zone = CONF.storage_availability_zone
+         super(Manager, self).__init__(db_driver)
+ 
+     @property
+diff --git a/cinder/service.py b/cinder/service.py
+index 39f061a..1a5295d 100644
+--- a/cinder/service.py
++++ b/cinder/service.py
+@@ -145,6 +145,11 @@
+             manager_class = profiler.trace_cls("rpc")(manager_class)
+ 
+         self.service = None
++        self.manager = manager_class(host=self.host,
++                                     cluster=self.cluster,
++                                     service_name=service_name,
++                                     *args, **kwargs)
++        self.availability_zone = self.manager.availability_zone
+ 
+         # NOTE(geguileo): We need to create the Service DB entry before we
+         # create the manager, otherwise capped versions for serializer and rpc
+@@ -201,10 +206,6 @@
+             # start while we are still doing the rolling upgrade.
+             self.added_to_cluster = not self.is_upgrading_to_n
+ 
+-        self.manager = manager_class(host=self.host,
+-                                     cluster=self.cluster,
+-                                     service_name=service_name,
+-                                     *args, **kwargs)
+         self.report_interval = report_interval
+         self.periodic_interval = periodic_interval
+         self.periodic_fuzzy_delay = periodic_fuzzy_delay
+@@ -356,13 +357,12 @@
+                     pass
+ 
+     def _create_service_ref(self, context, rpc_version=None):
+-        zone = CONF.storage_availability_zone
+         kwargs = {
+             'host': self.host,
+             'binary': self.binary,
+             'topic': self.topic,
+             'report_count': 0,
+-            'availability_zone': zone,
++            'availability_zone': self.availability_zone,
+             'rpc_current_version': rpc_version or self.manager.RPC_API_VERSION,
+             'object_current_version': objects_base.OBJ_VERSIONS.get_current(),
+         }
+@@ -486,7 +486,6 @@
+             return
+ 
+         ctxt = context.get_admin_context()
+-        zone = CONF.storage_availability_zone
+         try:
+             try:
+                 service_ref = objects.Service.get_by_id(ctxt,
+@@ -499,8 +498,8 @@
+                                                         Service.service_id)
+ 
+             service_ref.report_count += 1
+-            if zone != service_ref.availability_zone:
+-                service_ref.availability_zone = zone
++            if self.availability_zone != service_ref.availability_zone:
++                service_ref.availability_zone = self.availability_zone
+ 
+             service_ref.save()
+ 
+diff --git a/cinder/volume/driver.py b/cinder/volume/driver.py
+index ba13a2f..1477d11 100644
+--- a/cinder/volume/driver.py
++++ b/cinder/volume/driver.py
+@@ -266,6 +266,11 @@
+                      "working CI system and testing are marked as unsupported "
+                      "until CI is working again.  This also marks a driver as "
+                      "deprecated and may be removed in the next release."),
++    cfg.StrOpt('backend_availability_zone',
++               default=None,
++               help='Availability zone for this volume backend. If not set, '
++                    'the storage_availability_zone option value is used as '
++                    'the default for all backends.'),
+ ]
+ 
+ # for backward compatibility
+diff --git a/cinder/volume/manager.py b/cinder/volume/manager.py
+index 7971192..f687f6b 100644
+--- a/cinder/volume/manager.py
++++ b/cinder/volume/manager.py
+@@ -268,6 +268,12 @@
+                 LOG.error(_LE("Invalid JSON: %s"),
+                           self.driver.configuration.extra_capabilities)
+ 
++        # Check if a per-backend AZ has been specified
++        backend_zone = self.driver.configuration.safe_get(
++            'backend_availability_zone')
++        if backend_zone:
++            self.availability_zone = backend_zone
++
+         if self.driver.configuration.safe_get(
+                 'image_volume_cache_enabled'):
+ 
+diff --git a/releasenotes/notes/per-backend-az-28727aca360a1cc8.yaml b/releasenotes/notes/per-backend-az-28727aca360a1cc8.yaml
+new file mode 100644
+index 0000000..db5148e
+--- /dev/null
++++ b/releasenotes/notes/per-backend-az-28727aca360a1cc8.yaml
+@@ -0,0 +1,7 @@
++---
++features:
++  - |
++    Availability zones may now be configured per backend in a multi-backend
++    configuration. Individual backend sections can now set the configuration
++    option ``backend_availability_zone``. If set, this value will override
++    the [DEFAULT] ``storage_availability_zone`` setting.
