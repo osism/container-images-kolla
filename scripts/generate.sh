@@ -22,10 +22,6 @@ KOLLA_BASE_TAG=$UBUNTU_VERSION
 KOLLA_CONF_FILE=kolla-build.conf
 KOLLA_INSTALL_TYPE=source
 
-# Prepare environment
-
-source venv/bin/activate
-
 # Generate configuration
 
 python3 src/generate-kolla-build-config.py > $KOLLA_CONF_FILE
@@ -46,3 +42,9 @@ setini openstack-base location http://tarballs.openstack.org/requirements/requir
 if [[ -n $DOCKER_REGISTRY ]]; then
     setini DEFAULT registry $DOCKER_REGISTRY
 fi
+
+echo
+echo DEBUG kolla-build.conf
+echo
+cat kolla-build.conf
+echo

@@ -21,7 +21,7 @@ KOLLA_TYPE=ubuntu-source
 LSTFILE=images.txt
 SOURCE_DOCKER_TAG=build-$BUILD_ID
 
-if [[ $(git rev-parse --abbrev-ref HEAD) == "master" ]]; then
+if [[ $(git name-rev --name-only HEAD) == "master" ]]; then
     OSISM_VERSION=latest
 else
     tag=$(git describe --exact-match HEAD)
@@ -46,3 +46,9 @@ docker images | grep $DOCKER_NAMESPACE | grep $KOLLA_TYPE | grep $SOURCE_DOCKER_
     docker tag $image:$SOURCE_DOCKER_TAG $new_imagename:$OPENSTACK_VERSION-$OSISM_VERSION
     echo "$new_imagename:$OPENSTACK_VERSION-$OSISM_VERSION" >> $LSTFILE
 done
+
+echo
+echo DEBUG $LSTFILE
+echo
+cat $LSTFILE
+echo

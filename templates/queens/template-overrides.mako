@@ -87,16 +87,6 @@ RUN apt-get update ${"\\"}
 
 # NOTE(berendt): This is a workaround for the missing footer block in the base images
 
-{% block searchlight_base_footer %}
-RUN pip --no-cache-dir install --upgrade 'elasticsearch>=6.0.0,<7.0.0'
-
-LABEL "io.osism.version"="${osism_version}" ${"\\"}
-      "io.osism.openstack"="${openstack_version}" ${"\\"}
-      "io.osism.docker_kolla_docker"="${hash_docker_kolla_docker}" ${"\\"}
-      "io.osism.kolla"="${hash_kolla}" ${"\\"}
-      "io.osism.release"="${hash_release}"
-{% endblock %}
-
 {% block footer %}
 RUN rm -rf /usr/share/doc/* ${"\\"}
     && rm -rf /usr/share/man/*

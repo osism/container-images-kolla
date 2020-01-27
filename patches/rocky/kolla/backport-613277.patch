@@ -1,0 +1,29 @@
+From 72945b092648859094c9cb15a1528cb6a1a0e25f Mon Sep 17 00:00:00 2001
+From: Paul Bourke <paul.bourke@oracle.com>
+Date: Thu, 25 Oct 2018 12:14:30 +0100
+Subject: [PATCH] Remove path work around for kibana
+
+Kibana 5 shares a common path across distros now, so this workaround is
+no longer required.
+
+Change-Id: Ib922bb4b44a31ae41dcc405d5bdcc37b4011cfa5
+---
+
+diff --git a/docker/kibana/extend_start.sh b/docker/kibana/extend_start.sh
+index 58991fd..4f61431 100644
+--- a/docker/kibana/extend_start.sh
++++ b/docker/kibana/extend_start.sh
+@@ -1,13 +1,6 @@
+ #!/bin/bash
+ 
+ KIBANA_LOG_DIR="/var/log/kolla/kibana"
+-KIBANA_DEFAULT_EXECUTABLE="/opt/kibana/bin/kibana"
+-
+-# (niedbalski): debian installs under /usr/share, so lets create
+-# a symlink to the common executable location see LP #1772750.
+-if [[ ! -e ${KIBANA_DEFAULT_EXECUTABLE} ]] && [[ -f /usr/share/kibana/bin/kibana ]]; then
+-    mkdir -p $(dirname ${KIBANA_DEFAULT_EXECUTABLE}) && ln -s /usr/share/kibana/bin/kibana ${KIBANA_DEFAULT_EXECUTABLE}
+-fi
+ 
+ if [[ ! -d "${KIBANA_LOG_DIR}" ]]; then
+     mkdir -p "${KIBANA_LOG_DIR}"

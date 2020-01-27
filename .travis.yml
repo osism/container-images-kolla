@@ -1,8 +1,59 @@
 ---
+dist: bionic
 language: python
 
-install:
-  - pip install -r test-requirements.txt
+before_install:
+  - sudo apt-get update
+  - sudo apt-get install -y parallel
+  - scripts/travis.sh
+  - pip3 install -r requirements.txt
+  - pip3 install -r test-requirements.txt
 
-script:
-  - flake8
+jobs:
+  include:
+    - stage: build base images
+      env:
+        - BUILD_TYPE=base OPENSTACK_VERSION=rocky UBUNTU_VERSION=18.04
+      script:
+        - scripts/prepare.sh
+        - scripts/generate.sh
+        - scripts/patch.sh
+        - scripts/build.sh
+        - scripts/tag.sh
+        - 'if [ "$TRAVIS_PULL_REQUEST" = "false" -a "$TRAVIS_BRANCH" = "master" ]; then bash scripts/push.sh; fi'
+
+    - stage: build infrastructure images
+      env:
+        - BUILD_TYPE=infrastructure OPENSTACK_VERSION=rocky UBUNTU_VERSION=18.04
+      script:
+        - scripts/prepare.sh
+        - scripts/generate.sh
+        - scripts/patch.sh
+        - scripts/pull.sh
+        - scripts/build.sh
+        - scripts/tag.sh
+        - 'if [ "$TRAVIS_PULL_REQUEST" = "false" -a "$TRAVIS_BRANCH" = "master" ]; then bash scripts/push.sh; fi'
+
+    - stage: build openstack core images
+      env:
+        - BUILD_TYPE=openstack-core OPENSTACK_VERSION=rocky UBUNTU_VERSION=18.04
+      script:
+        - scripts/prepare.sh
+        - scripts/generate.sh
+        - scripts/patch.sh
+        - scripts/pull.sh
+        - scripts/build.sh
+        - scripts/tag.sh
+        - 'if [ "$TRAVIS_PULL_REQUEST" = "false" -a "$TRAVIS_BRANCH" = "master" ]; then bash scripts/push.sh; fi'
+
+    - stage: build openstack additional images
+      env:
+        - BUILD_TYPE=openstack-additional OPENSTACK_VERSION=rocky UBUNTU_VERSION=18.04
+      script:
+        - scripts/prepare.sh
+        - scripts/generate.sh
+        - scripts/patch.sh
+        - scripts/pull.sh
+        - scripts/build.sh
+        - scripts/tag.sh
+        - 'if [ "$TRAVIS_PULL_REQUEST" = "false" -a "$TRAVIS_BRANCH" = "master" ]; then bash scripts/push.sh; fi'

@@ -21,7 +21,7 @@ SOURCE_DOCKER_TAG=build-$BUILD_ID
 HASH_DOCKER_KOLLA_DOCKER=$(git rev-parse --short HEAD)
 HASH_RELEASE=$(cd release; git rev-parse --short HEAD)
 
-if [[ $(git rev-parse --abbrev-ref HEAD) == "master" ]]; then
+if [[ $(git name-rev --name-only HEAD) == "master" ]]; then
     OSISM_VERSION=latest
 else
     tag=$(git describe --exact-match HEAD)

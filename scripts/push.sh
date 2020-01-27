@@ -3,19 +3,19 @@ set -x
 
 # Available environment variables
 #
-# BASEPUSH
+# BUILD_TYPE
 # DOCKER_PUSH_JOBS
 # PUSH
 
 # Set default values
 
-BASEPUSH=${BASEPUSH:-true}
+BUILD_TYPE=${BUILD_TYPE:-all}
 DOCKER_PUSH_JOBS=${DOCKER_PUSH_JOBS:-8}
 PUSH=${PUSH:-true}
 
 LSTFILE=images.txt
 
-if [[ $BASEPUSH == "true" ]]; then
+if [[ $BUILD_TYPE == "base" ]]; then
     # push the base image
     while read image; do
         if [[ $(echo $image | grep '\/base:') ]]; then

@@ -1,0 +1,40 @@
+diff --git a/docker/horizon/extend_start.sh b/docker/horizon/extend_start.sh
+index 58a1a765..66a9b601 100644
+--- a/docker/horizon/extend_start.sh
++++ b/docker/horizon/extend_start.sh
+@@ -146,6 +146,12 @@ function config_neutron_lbaas {
+         "${SITE_PACKAGES}/openstack_dashboard/local/enabled/_1481_project_ng_loadbalancersv2_panel.py"
+ }
+ 
++function config_neutron_vpnaas_dashboard {
++    config_dashboard "${ENABLE_NEUTRON_VPNAAS}" \
++        "${SITE_PACKAGES}/neutron_vpnaas_dashboard/enabled/_7100_project_vpn_panel.py" \
++        "${SITE_PACKAGES}/openstack_dashboard/local/enabled/_7100_project_vpn_panel.py"
++}
++
+ function config_octavia_dashboard {
+     config_dashboard "${ENABLE_OCTAVIA}" \
+         "${SITE_PACKAGES}/octavia_dashboard/enabled/_1482_project_load_balancer_panel.py" \
+@@ -275,6 +281,7 @@ config_manila_ui
+ config_mistral_dashboard
+ config_murano_dashboard
+ config_neutron_lbaas
++config_neutron_vpnaas_dashboard
+ config_octavia_dashboard
+ config_sahara_dashboard
+ config_searchlight_ui
+diff --git a/kolla/common/config.py b/kolla/common/config.py
+index 5411f3a9..a8bc6b51 100755
+--- a/kolla/common/config.py
++++ b/kolla/common/config.py
+@@ -414,6 +414,10 @@ SOURCES = {
+         'type': 'url',
+         'location': ('$tarballs_base/neutron-lbaas-dashboard/'
+                      'neutron-lbaas-dashboard-4.0.0.tar.gz')},
++    'horizon-plugin-neutron-vpnaas-dashboard': {
++        'type': 'url',
++        'location': ('$tarballs_base/neutron-vpnaas-dashboard/'
++                     'neutron-vpnaas-dashboard-master.tar.gz')},
+     'horizon-plugin-octavia-dashboard': {
+         'type': 'url',
+         'location': ('$tarballs_base/octavia-dashboard/'

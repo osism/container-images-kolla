@@ -17,4 +17,4 @@ rm -f templates/$OPENSTACK_VERSION/template-overrides.j2
 rm -f template-overrides.j2
 rm -f versions.txt*
 
-rm -rf release tarballs venv kolla
+rm -rf release tarballs kolla
