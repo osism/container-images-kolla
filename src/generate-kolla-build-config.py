@@ -3,7 +3,7 @@ import os
 import jinja2
 import yaml
 
-OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "rocky")
+OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "stein")
 OSISM_VERSION = os.environ.get("OSISM_VERSION", "latest")
 
 KOLLA_BASE = "ubuntu"

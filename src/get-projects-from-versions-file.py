@@ -4,7 +4,7 @@ import sys
 import yaml
 
 OSISM_VERSION = os.environ.get("OSISM_VERSION", "latest")
-OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "rocky")
+OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "stein")
 BUILD_TYPE = os.environ.get("BUILD_TYPE", "all")
 
 OPENSTACK_CORE_PROJECTS = [
@@ -17,6 +17,7 @@ OPENSTACK_CORE_PROJECTS = [
     "neutron",
     "nova",
     "octavia",
+    "placement",
 ]
 
 filename = "release/%s/openstack-%s.yml" % (OSISM_VERSION, OPENSTACK_VERSION)

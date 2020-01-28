@@ -5,55 +5,120 @@ language: python
 before_install:
   - sudo apt-get update
   - sudo apt-get install -y parallel
-  - scripts/travis.sh
+  - bash scripts/travis.sh
   - pip3 install -r requirements.txt
   - pip3 install -r test-requirements.txt
 
+env:
+  global:
+    - UBUNTU_VERSION=18.04
+    - BUILD_ID=0
+
+# job templates
+
+base: &base
+  stage: base
+  script: bash scripts/travis-stage.sh
+
+infrastructure: &infrastructure
+  stage: infrastructure
+  script: bash scripts/travis-stage.sh
+
+openstack-core: &openstack-core
+  stage: openstack-core
+  script: bash scripts/travis-stage.sh
+
+openstack-additional: &openstack-additional
+  stage: openstack-additional
+  script: bash scripts/travis-stage.sh
+
 jobs:
   include:
-    - stage: build base images
-      env:
-        - BUILD_TYPE=base OPENSTACK_VERSION=rocky UBUNTU_VERSION=18.04
-      script:
-        - scripts/prepare.sh
-        - scripts/generate.sh
-        - scripts/patch.sh
-        - scripts/build.sh
-        - scripts/tag.sh
-        - 'if [ "$TRAVIS_PULL_REQUEST" = "false" -a "$TRAVIS_BRANCH" = "master" ]; then bash scripts/push.sh; fi'
 
-    - stage: build infrastructure images
-      env:
-        - BUILD_TYPE=infrastructure OPENSTACK_VERSION=rocky UBUNTU_VERSION=18.04
-      script:
-        - scripts/prepare.sh
-        - scripts/generate.sh
-        - scripts/patch.sh
-        - scripts/pull.sh
-        - scripts/build.sh
-        - scripts/tag.sh
-        - 'if [ "$TRAVIS_PULL_REQUEST" = "false" -a "$TRAVIS_BRANCH" = "master" ]; then bash scripts/push.sh; fi'
+# base
 
-    - stage: build openstack core images
+    - <<: *base
+      if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = master
       env:
-        - BUILD_TYPE=openstack-core OPENSTACK_VERSION=rocky UBUNTU_VERSION=18.04
-      script:
-        - scripts/prepare.sh
-        - scripts/generate.sh
-        - scripts/patch.sh
-        - scripts/pull.sh
-        - scripts/build.sh
-        - scripts/tag.sh
-        - 'if [ "$TRAVIS_PULL_REQUEST" = "false" -a "$TRAVIS_BRANCH" = "master" ]; then bash scripts/push.sh; fi'
+        - OPENSTACK_VERSION: master
 
-    - stage: build openstack additional images
+    - <<: *base
+      if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = rocky
       env:
-        - BUILD_TYPE=openstack-additional OPENSTACK_VERSION=rocky UBUNTU_VERSION=18.04
-      script:
-        - scripts/prepare.sh
-        - scripts/generate.sh
-        - scripts/patch.sh
-        - scripts/pull.sh
-        - scripts/build.sh
-        - scripts/tag.sh
-        - 'if [ "$TRAVIS_PULL_REQUEST" = "false" -a "$TRAVIS_BRANCH" = "master" ]; then bash scripts/push.sh; fi'
+        - OPENSTACK_VERSION: rocky
+
+    - <<: *base
+      if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = stein
+      env:
+        - OPENSTACK_VERSION: stein
+
+    - <<: *base
+      if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = train
+      env:
+        - OPENSTACK_VERSION: train
+
+# infrastructure
+
+    - <<: *infrastructure
+      if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = master
+      env:
+        - OPENSTACK_VERSION: master
+
+    - <<: *infrastructure
+      if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = rocky
+      env:
+        - OPENSTACK_VERSION: rocky
+
+    - <<: *infrastructure
+      if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = stein
+      env:
+        - OPENSTACK_VERSION: stein
+
+    - <<: *infrastructure
+      if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = train
+      env:
+        - OPENSTACK_VERSION: train
+
+# openstack-core
+
+    - <<: *openstack-core
+      if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = master
+      env:
+        - OPENSTACK_VERSION: master
+
+    - <<: *openstack-core
+      if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = rocky
+      env:
+        - OPENSTACK_VERSION: rocky
+
+    - <<: *openstack-core
+      if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = stein
+      env:
+        - OPENSTACK_VERSION: stein
+
+    - <<: *openstack-core
+      if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = train
+      env:
+        - OPENSTACK_VERSION: train
+
+# openstack-additional
+
+    - <<: *openstack-additional
+      if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = master
+      env:
+        - OPENSTACK_VERSION: master
+
+    - <<: *openstack-additional
+      if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = rocky
+      env:
+        - OPENSTACK_VERSION: rocky
+
+    - <<: *openstack-additional
+      if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = stein
+      env:
+        - OPENSTACK_VERSION: stein
+
+    - <<: *openstack-additional
+      if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = train
+      env:
+        - OPENSTACK_VERSION: train

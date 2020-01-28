@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -x
 
 # Available environment variables
 #
@@ -12,7 +11,7 @@ set -x
 
 BUILD_ID=${BUILD_ID:-$(date +%Y%m%d)}
 DOCKER_NAMESPACE=${DOCKER_NAMESPACE:-osism}
-OPENSTACK_VERSION=${OPENSTACK_VERSION:-rocky}
+OPENSTACK_VERSION=${OPENSTACK_VERSION:-master}
 OSISM_VERSION=${OSISM_VERSION:-latest}
 
 KOLLA_TYPE=ubuntu-source

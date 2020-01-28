@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -x
 
 # Available environment variables
 #
@@ -12,7 +11,7 @@ set -x
 
 BUILD_ID=${BUILD_ID:-$(date +%Y%m%d)}
 DOCKER_NAMESPACE=${DOCKER_NAMESPACE:-osism}
-OPENSTACK_VERSION=${OPENSTACK_VERSION:-rocky}
+OPENSTACK_VERSION=${OPENSTACK_VERSION:-master}
 OSISM_VERSION=${OSISM_VERSION:-latest}
 
 PROJECT_REPOSITORY=https://github.com/openstack/kolla
@@ -43,7 +42,9 @@ git clone $PROJECT_REPOSITORY $PROJECT_REPOSITORY_PATH
 # Use required kolla release for dockerfiles
 
 pushd $PROJECT_REPOSITORY_PATH
-git checkout origin/stable/$OPENSTACK_VERSION
+if [[ "$OPENSTACK_VERSION" != "master" ]]; then
+    git checkout origin/stable/$OPENSTACK_VERSION
+fi
 export HASH_KOLLA=$(git rev-parse --short HEAD)
 popd
 
@@ -64,22 +65,16 @@ export HASH_RELEASE=$(cd release; git rev-parse --short HEAD)
 python3 src/generate-template-overrides-file.py > templates/$OPENSTACK_VERSION/template-overrides.j2
 cp templates/$OPENSTACK_VERSION/template-overrides.j2 template-overrides.j2
 
-echo
 echo DEBUG template-overrides.j2
-echo
 cat template-overrides.j2
-echo
 
 # Prepare apt_preferences.ubuntu
 
 python3 src/generate-apt-preferences-files.py > overlays/$OPENSTACK_VERSION/base/apt_preferences.ubuntu
 cp overlays/$OPENSTACK_VERSION/base/apt_preferences.ubuntu apt_preferences.ubuntu
 
-echo
 echo DEBUG apt_preferences.ubuntu
-echo
 cat apt_preferences.ubuntu
-echo
 
 # Copy overlay files
 

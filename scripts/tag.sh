@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -x
 
 # Available environment variables
 #
@@ -14,7 +13,7 @@ set -x
 BUILD_ID=${BUILD_ID:-$(date +%Y%m%d)}
 DOCKER_NAMESPACE=${DOCKER_NAMESPACE:-osism}
 DOCKER_REGISTRY=${DOCKER_REGISTRY:-quay.io}
-OPENSTACK_VERSION=${OPENSTACK_VERSION:-rocky}
+OPENSTACK_VERSION=${OPENSTACK_VERSION:-master}
 OSISM_VERSION=${OSISM_VERSION:-latest}
 
 KOLLA_TYPE=ubuntu-source
@@ -43,12 +42,14 @@ docker images | grep $DOCKER_NAMESPACE | grep $KOLLA_TYPE | grep $SOURCE_DOCKER_
         new_imagename="$DOCKER_REGISTRY/$new_imagename"
     fi
 
-    docker tag $image:$SOURCE_DOCKER_TAG $new_imagename:$OPENSTACK_VERSION-$OSISM_VERSION
-    echo "$new_imagename:$OPENSTACK_VERSION-$OSISM_VERSION" >> $LSTFILE
+    if [[ "$OPENSTACK_VERSION" == "master" ]]; then
+        tag=latest
+    else
+        tag=$OPENSTACK_VERSION-$OSISM_VERSION
+    fi
+
+    docker tag $image:$SOURCE_DOCKER_TAG $new_imagename:$tag
+    echo "$new_imagename:$tag" >> $LSTFILE
 done
 
-echo
-echo DEBUG $LSTFILE
-echo
-cat $LSTFILE
-echo
+docker images

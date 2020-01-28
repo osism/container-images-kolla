@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -x
 
 # Available environment variables
 #
@@ -13,7 +12,7 @@ set -x
 
 BUILD_ID=${BUILD_ID:-$(date +%Y%m%d)}
 BUILD_TYPE=${BUILD_TYPE:-all}
-OPENSTACK_VERSION=${OPENSTACK_VERSION:-rocky}
+OPENSTACK_VERSION=${OPENSTACK_VERSION:-master}
 SQUASH=${SQUASH:-true}
 
 KOLLA_CONF=kolla-build.conf
@@ -43,7 +42,6 @@ if [[ $BUILD_TYPE == "base" ]]; then
     kolla-build \
       --template-override templates/$OPENSTACK_VERSION/template-overrides.j2 \
       --config-file $KOLLA_CONF \
-      --nopush \
       --pull \
       $extraopts \
       $KOLLA_IMAGES_BASE 2>&1 | tee kolla-build-$BUILD_ID.log
@@ -51,12 +49,9 @@ else
     kolla-build \
       --template-override templates/$OPENSTACK_VERSION/template-overrides.j2 \
       --config-file $KOLLA_CONF \
-      --nopush \
       --skip-existing \
       $extraopts \
       $KOLLA_IMAGES 2>&1 | tee kolla-build-$BUILD_ID.log
 fi
 
-echo
 docker images
-echo

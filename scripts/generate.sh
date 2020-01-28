@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -x
 
 # Available environment variables
 #
@@ -13,7 +12,7 @@ set -x
 BUILD_ID=${BUILD_ID:-$(date +%Y%m%d)}
 DOCKER_NAMESPACE=${DOCKER_NAMESPACE:-osism}
 DOCKER_REGISTRY=${DOCKER_REGISTRY:-quay.io}
-OPENSTACK_VERSION=${OPENSTACK_VERSION:-rocky}
+OPENSTACK_VERSION=${OPENSTACK_VERSION:-master}
 UBUNTU_VERSION=${UBUNTU_VERSION:-18.04}
 
 DOCKER_TAG=build-$BUILD_ID
@@ -37,14 +36,16 @@ setini DEFAULT tag $DOCKER_TAG
 setini DEFAULT base $KOLLA_BASE
 setini DEFAULT base_tag $KOLLA_BASE_TAG
 setini DEFAULT install_type $KOLLA_INSTALL_TYPE
-setini openstack-base location http://tarballs.openstack.org/requirements/requirements-stable-$OPENSTACK_VERSION.tar.gz
+
+if [[ "$OPENSTACK_VERSION" == "master" ]]; then
+    setini openstack-base location http://tarballs.openstack.org/requirements/requirements-$OPENSTACK_VERSION.tar.gz
+else
+    setini openstack-base location http://tarballs.openstack.org/requirements/requirements-stable-$OPENSTACK_VERSION.tar.gz
+fi
 
 if [[ -n $DOCKER_REGISTRY ]]; then
     setini DEFAULT registry $DOCKER_REGISTRY
 fi
 
-echo
 echo DEBUG kolla-build.conf
-echo
 cat kolla-build.conf
-echo

@@ -6,7 +6,7 @@
 
 # Set default values
 
-OPENSTACK_VERSION=${OPENSTACK_VERSION:-rocky}
+OPENSTACK_VERSION=${OPENSTACK_VERSION:-master}
 
 rm -f images.txt*
 rm -f kolla-build-*.log

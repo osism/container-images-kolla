@@ -2,11 +2,13 @@
 
 [![Build Status](https://travis-ci.org/osism/docker-kolla-docker.svg?branch=master)](https://travis-ci.org/osism/docker-kolla-docker)
 [![Docker Hub](https://img.shields.io/badge/Docker%20Hub-osism-blue.svg)](https://hub.docker.com/r/osism)
+[![Quay](https://img.shields.io/badge/Quay-osism-blue.svg)](https://quay.io/organization/osism)
 
 ## Requirements
 
 * Docker must be usable on the system.
-* It makes sense to run this build wrapper on a dedicated system. All existing Docker images and containers should be removed before execution.
+* It makes sense to run this build wrapper on a dedicated system. All existing Docker images
+  and containers should be removed before execution.
 
   ```
   $ docker stop $(docker ps -a -q)
@@ -17,14 +19,14 @@
 ## Usage
 
 ```
-$ export OPENSTACK_VERSION=rocky
+$ export OPENSTACK_VERSION=stein
 $ export UBUNTU_VERSION=18.04
 ```
 
 It is possible to build only certain images.
 
 ```
-$ export KOLLA_IMAGES="keystone"
+$ export KOLLA_IMAGES="^keystone"
 ```
 
 To build a particular tag, check it out in advance.
@@ -42,7 +44,6 @@ $ bash scripts/patch.sh
 $ bash scripts/build.sh
 $ bash scripts/tag.sh
 $ bash scripts/push.sh
-$ bash scripts/cleanup-docker.sh
 ```
 
 ## License

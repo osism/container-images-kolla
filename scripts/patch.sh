@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -x
 
 # Available environment variables
 #
@@ -7,7 +6,7 @@ set -x
 
 # Set default values
 
-OPENSTACK_VERSION=${OPENSTACK_VERSION:-rocky}
+OPENSTACK_VERSION=${OPENSTACK_VERSION:-master}
 
 KOLLA_CONF_FILE=kolla-build.conf
 LSTFILE=versions.txt
