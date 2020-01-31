@@ -60,12 +60,12 @@ LABEL "io.osism.version"="${osism_version}" ${"\\"}
       "io.osism.kolla"="${hash_kolla}" ${"\\"}
       "io.osism.release"="${hash_release}" ${"\\"}
       "org.opencontainers.image.created"="${created}" ${"\\"}
-      "org.opencontainers.image.licenses"="ASL 2.0" ${"\\"}
-      "org.opencontainers.image.vendor"="Betacloud Solutions GmbH" ${"\\"}
-      "org.opencontainers.image.version"="${osism_version}" ${"\\"}
       "org.opencontainers.image.documentation"="https://docs.osism.io" ${"\\"}
+      "org.opencontainers.image.licenses"="ASL 2.0" ${"\\"}
+      "org.opencontainers.image.source"="https://github.com/osism/docker-kolla-docker" ${"\\"}
       "org.opencontainers.image.url"="https://www.osism.de" ${"\\"}
-      "org.opencontainers.image.source"="https://github.com/osism/docker-kolla-docker"
+      "org.opencontainers.image.vendor"="Betacloud Solutions GmbH" ${"\\"}
+      "org.opencontainers.image.version"="${osism_version}"
 {% endblock %}
 
 {% block base_footer %}
@@ -75,12 +75,12 @@ LABEL "io.osism.version"="${osism_version}" ${"\\"}
       "io.osism.kolla"="${hash_kolla}" ${"\\"}
       "io.osism.release"="${hash_release}" ${"\\"}
       "org.opencontainers.image.created"="${created}" ${"\\"}
-      "org.opencontainers.image.licenses"="ASL 2.0" ${"\\"}
-      "org.opencontainers.image.vendor"="Betacloud Solutions GmbH" ${"\\"}
-      "org.opencontainers.image.version"="${osism_version}" ${"\\"}
       "org.opencontainers.image.documentation"="https://docs.osism.io" ${"\\"}
+      "org.opencontainers.image.licenses"="ASL 2.0" ${"\\"}
+      "org.opencontainers.image.source"="https://github.com/osism/docker-kolla-docker" ${"\\"}
       "org.opencontainers.image.url"="https://www.osism.de" ${"\\"}
-      "org.opencontainers.image.source"="https://github.com/osism/docker-kolla-docker"
+      "org.opencontainers.image.vendor"="Betacloud Solutions GmbH" ${"\\"}
+      "org.opencontainers.image.version"="${osism_version}"
 {% endblock %}
 
 % for project in ("openstack", "openvswitch", "redis", "skydive", "aodh", "ceilometer", "cinder", "cloudkitty", "designate", "glance", "gnocchi", "heat", "keystone", "magnum", "manila", "mistral", "neutron", "nova", "novajoin", "octavia", "panko", "watcher", "barbican", "swift", "trove", "senlin", "placement"):
@@ -92,11 +92,11 @@ LABEL "io.osism.version"="${osism_version}" ${"\\"}
       "io.osism.kolla"="${hash_kolla}" ${"\\"}
       "io.osism.release"="${hash_release}" ${"\\"}
       "org.opencontainers.image.created"="${created}" ${"\\"}
-      "org.opencontainers.image.licenses"="ASL 2.0" ${"\\"}
-      "org.opencontainers.image.vendor"="Betacloud Solutions GmbH" ${"\\"}
-      "org.opencontainers.image.version"="${osism_version}" ${"\\"}
       "org.opencontainers.image.documentation"="https://docs.osism.io" ${"\\"}
+      "org.opencontainers.image.licenses"="ASL 2.0" ${"\\"}
+      "org.opencontainers.image.source"="https://github.com/osism/docker-kolla-docker" ${"\\"}
       "org.opencontainers.image.url"="https://www.osism.de" ${"\\"}
-      "org.opencontainers.image.source"="https://github.com/osism/docker-kolla-docker"
+      "org.opencontainers.image.vendor"="Betacloud Solutions GmbH" ${"\\"}
+      "org.opencontainers.image.version"="${osism_version}"
 {% endblock %}
 % endfor
