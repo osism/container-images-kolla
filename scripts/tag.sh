@@ -44,12 +44,18 @@ docker images | grep $DOCKER_NAMESPACE | grep $KOLLA_TYPE | grep $SOURCE_DOCKER_
 
     if [[ "$OPENSTACK_VERSION" == "master" ]]; then
         tag=latest
+        docker tag $image:$SOURCE_DOCKER_TAG $new_imagename:$tag
+        echo "$new_imagename:$tag" >> $LSTFILE
     else
         tag=$OPENSTACK_VERSION-$OSISM_VERSION
+        docker tag $image:$SOURCE_DOCKER_TAG $new_imagename:$tag
+        echo "$new_imagename:$tag" >> $LSTFILE
+
+        tag=$OPENSTACK_VERSION
+        docker tag $image:$SOURCE_DOCKER_TAG $new_imagename:$tag
+        echo "$new_imagename:$tag" >> $LSTFILE
     fi
 
-    docker tag $image:$SOURCE_DOCKER_TAG $new_imagename:$tag
-    echo "$new_imagename:$tag" >> $LSTFILE
 done
 
 docker images
