@@ -83,7 +83,7 @@ LABEL "io.osism.version"="${osism_version}" ${"\\"}
       "org.opencontainers.image.version"="${osism_version}"
 {% endblock %}
 
-% for project in ("openstack", "openvswitch", "redis", "skydive", "aodh", "ceilometer", "cinder", "cloudkitty", "designate", "glance", "gnocchi", "heat", "keystone", "magnum", "manila", "mistral", "neutron", "nova", "novajoin", "octavia", "panko", "watcher", "barbican", "swift", "trove", "senlin", "placement", "prometheus", "ovn"):
+% for project in ("openstack", "openvswitch", "redis", "skydive", "aodh", "ceilometer", "cinder", "cloudkitty", "designate", "glance", "gnocchi", "heat", "keystone", "magnum", "manila", "mistral", "neutron", "nova", "novajoin", "octavia", "panko", "watcher", "barbican", "swift", "trove", "senlin", "placement", "prometheus", "ovn", "zun", "kuryr"):
 
 {% block ${project}_base_footer %}
 LABEL "io.osism.version"="${osism_version}" ${"\\"}
