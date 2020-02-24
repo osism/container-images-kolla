@@ -14,7 +14,7 @@ threads = 16
 # openstack projects
 
 {% for project in projects %}
-{% if project.name not in ['horizon', 'neutron-lbaas-agent', 'neutron-vpnaas-agent'] %}
+{% if project.name not in ['horizon', 'neutron-vpnaas-agent'] %}
 [{{ project.name }}-base]
 {% else %}
 [{{ project.name }}]
