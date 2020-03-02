@@ -48,17 +48,19 @@ RUN curl -o /usr/bin/skydive -L "https://github.com/skydive-project/skydive/rele
     && chmod +x /usr/bin/skydive
 {% endblock %}
 
-# NOTE(berendt): This is a workaround for the missing footer block in the base images
-
 {% block footer %}
 RUN rm -rf /usr/share/doc/* ${"\\"}
     && rm -rf /usr/share/man/*
+{% endblock %}
 
-LABEL "io.osism.version"="${osism_version}" ${"\\"}
-      "io.osism.openstack"="${openstack_version}" ${"\\"}
+{% block labels %}
+LABEL "build-date"="{{ build_date }}" ${"\\"}
+      "name"="{{ image_name }}" ${"\\"}
       "io.osism.docker_kolla_docker"="${hash_docker_kolla_docker}" ${"\\"}
       "io.osism.kolla"="${hash_kolla}" ${"\\"}
+      "io.osism.openstack"="${openstack_version}" ${"\\"}
       "io.osism.release"="${hash_release}" ${"\\"}
+      "io.osism.version"="${osism_version}" ${"\\"}
       "org.opencontainers.image.created"="${created}" ${"\\"}
       "org.opencontainers.image.documentation"="https://docs.osism.io" ${"\\"}
       "org.opencontainers.image.licenses"="ASL 2.0" ${"\\"}
@@ -67,36 +69,3 @@ LABEL "io.osism.version"="${osism_version}" ${"\\"}
       "org.opencontainers.image.vendor"="Betacloud Solutions GmbH" ${"\\"}
       "org.opencontainers.image.version"="${osism_version}"
 {% endblock %}
-
-{% block base_footer %}
-LABEL "io.osism.version"="${osism_version}" ${"\\"}
-      "io.osism.openstack"="${openstack_version}" ${"\\"}
-      "io.osism.docker_kolla_docker"="${hash_docker_kolla_docker}" ${"\\"}
-      "io.osism.kolla"="${hash_kolla}" ${"\\"}
-      "io.osism.release"="${hash_release}" ${"\\"}
-      "org.opencontainers.image.created"="${created}" ${"\\"}
-      "org.opencontainers.image.documentation"="https://docs.osism.io" ${"\\"}
-      "org.opencontainers.image.licenses"="ASL 2.0" ${"\\"}
-      "org.opencontainers.image.source"="https://github.com/osism/docker-kolla-docker"  ${"\\"}
-      "org.opencontainers.image.url"="https://www.osism.de" ${"\\"}
-      "org.opencontainers.image.vendor"="Betacloud Solutions GmbH" ${"\\"}
-      "org.opencontainers.image.version"="${osism_version}"
-{% endblock %}
-
-% for project in ("openstack", "openvswitch", "redis", "skydive", "aodh", "ceilometer", "cinder", "cloudkitty", "designate", "glance", "gnocchi", "heat", "keystone", "magnum", "manila", "mistral", "neutron", "nova", "novajoin", "octavia", "panko", "watcher", "barbican", "swift", "trove", "senlin", "placement", "prometheus", "ovn", "zun", "kuryr"):
-
-{% block ${project}_base_footer %}
-LABEL "io.osism.version"="${osism_version}" ${"\\"}
-      "io.osism.openstack"="${openstack_version}" ${"\\"}
-      "io.osism.docker_kolla_docker"="${hash_docker_kolla_docker}" ${"\\"}
-      "io.osism.kolla"="${hash_kolla}" ${"\\"}
-      "io.osism.release"="${hash_release}" ${"\\"}
-      "org.opencontainers.image.created"="${created}" ${"\\"}
-      "org.opencontainers.image.documentation"="https://docs.osism.io" ${"\\"}
-      "org.opencontainers.image.licenses"="ASL 2.0" ${"\\"}
-      "org.opencontainers.image.source"="https://github.com/osism/docker-kolla-docker" ${"\\"}
-      "org.opencontainers.image.url"="https://www.osism.de" ${"\\"}
-      "org.opencontainers.image.vendor"="Betacloud Solutions GmbH" ${"\\"}
-      "org.opencontainers.image.version"="${osism_version}"
-{% endblock %}
-% endfor
