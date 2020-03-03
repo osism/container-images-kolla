@@ -10,6 +10,11 @@ COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
 
 {% set cinder_volume_packages_append = ['multipath-tools'] %}
 
+{% set cinder_volume_pip_packages = ['purestorage' ] %}
+{% block cinder_volume_footer %}
+RUN {{ macros.install_pip(cinder_volume_pip_packages | customizable("pip_packages")) }}
+{% endblock %}
+
 {% block elasticsearch_header %}
 # On systemd-based distributions, the installation scripts will attempt to set
 # kernel parameters (e.g., vm.max_map_count); you can skip this by setting the
