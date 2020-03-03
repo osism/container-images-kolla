@@ -10,8 +10,6 @@ COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
 
 {% set cinder_volume_packages_append = ['multipath-tools'] %}
 
-{% set horizon_packages_append = ['locales', 'tzdata'] %}
-
 {% block elasticsearch_header %}
 # On systemd-based distributions, the installation scripts will attempt to set
 # kernel parameters (e.g., vm.max_map_count); you can skip this by setting the

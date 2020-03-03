@@ -10,8 +10,6 @@ COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
 
 {% set cinder_volume_packages_append = ['multipath-tools'] %}
 
-{% set horizon_packages_append = ['locales', 'tzdata'] %}
-
 {% set rabbitmq_packages_remove = ['https://www.rabbitmq.com/releases/rabbitmq-server/v3.6.5/rabbitmq-server_3.6.5-1_all.deb'] %}
 {% set rabbitmq_packages_append = ['erlang-base-hipe', 'rabbitmq-server', 'wget'] %}
 
