@@ -57,15 +57,16 @@ RUN rm -rf /usr/share/doc/* ${"\\"}
 {% block labels %}
 LABEL "build-date"="{{ build_date }}" ${"\\"}
       "name"="{{ image_name }}" ${"\\"}
-      "io.osism.docker_kolla_docker"="${hash_docker_kolla_docker}" ${"\\"}
-      "io.osism.kolla"="${hash_kolla}" ${"\\"}
-      "io.osism.openstack"="${openstack_version}" ${"\\"}
-      "io.osism.release"="${hash_release}" ${"\\"}
-      "io.osism.version"="${osism_version}" ${"\\"}
+      "de.osism.commit.docker_kolla_docker"="${hash_docker_kolla_docker}" ${"\\"}
+      "de.osism.commit.kolla"="${hash_kolla}" ${"\\"}
+      "de.osism.commit.release"="${hash_release}" ${"\\"}
+      "de.osism.release.openstack"="${openstack_version}" ${"\\"}
+      "de.osism.version"="${osism_version}" ${"\\"}
       "org.opencontainers.image.created"="${created}" ${"\\"}
       "org.opencontainers.image.documentation"="https://docs.osism.de" ${"\\"}
       "org.opencontainers.image.licenses"="ASL 2.0" ${"\\"}
       "org.opencontainers.image.source"="https://github.com/osism/docker-kolla-docker" ${"\\"}
+      "org.opencontainers.image.title"="{{ image_name }}" ${"\\"}
       "org.opencontainers.image.url"="https://www.osism.de" ${"\\"}
       "org.opencontainers.image.vendor"="Betacloud Solutions GmbH" ${"\\"}
       "org.opencontainers.image.version"="${osism_version}"
