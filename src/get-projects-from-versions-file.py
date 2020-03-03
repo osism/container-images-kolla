@@ -12,7 +12,7 @@ OPENSTACK_CORE_PROJECTS = [
     "designate",
     "glance",
     "heat",
-    "horizon"
+    "horizon",
     "keystone",
     "neutron",
     "nova",
@@ -45,4 +45,4 @@ for project in all_projects:
     if "vpnaas" not in project and "lbaas" not in project:
         projects.append(project)
 
-print(" ^".join(sorted(projects)))
+print("ˆ" + " ^".join(sorted(projects)))
