@@ -58,6 +58,14 @@ for patch in $(find patches/kolla-build/$OPENSTACK_VERSION -type f -name '*.patc
     popd
 done
 
+# Prepare repos.yaml
+
+# NOTE: was introduced with Ussuri, therefore currently only for master
+
+if [[ "$OPENSTACK_VERSION" == "master" ]]; then
+    cp templates/$OPENSTACK_VERSION/repos.yaml $PROJECT_REPOSITORY_PATH/kolla/template/repos.yaml
+fi
+
 # Prepare template-overrides.j2
 
 export HASH_DOCKER_KOLLA_DOCKER=$(git rev-parse --short HEAD)
