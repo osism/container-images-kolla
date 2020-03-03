@@ -10,8 +10,6 @@ COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
 
 {% set cinder_volume_packages_append = ['multipath-tools'] %}
 
-{% set nova_compute_packages_append = ['xfsprogs'] %}
-
 {% set horizon_packages_append = ['locales', 'tzdata'] %}
 
 {% block elasticsearch_header %}
