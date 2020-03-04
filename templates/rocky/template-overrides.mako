@@ -10,6 +10,11 @@ COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
 
 {% set cinder_volume_packages_append = ['multipath-tools'] %}
 
+{% set cinder_volume_pip_packages = ['purestorage' ] %}
+{% block cinder_volume_footer %}
+RUN {{ macros.install_pip(cinder_volume_pip_packages | customizable("pip_packages")) }}
+{% endblock %}
+
 {% set rabbitmq_packages_remove = ['https://www.rabbitmq.com/releases/rabbitmq-server/v3.6.5/rabbitmq-server_3.6.5-1_all.deb'] %}
 {% set rabbitmq_packages_append = ['erlang-base-hipe', 'rabbitmq-server', 'wget'] %}
 
