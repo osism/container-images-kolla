@@ -21,7 +21,7 @@ if [[ $(git name-rev --name-only HEAD) == "master" ]]; then
     SQUASH=false
 fi
 
-if [[ $SQUASH == "true" ]]; then
+if [[ $SQUASH == "true" && $BUILD_TYPE != "base" ]]; then
     extraopts+=" --squash"
 fi
 
@@ -43,6 +43,7 @@ if [[ $BUILD_TYPE == "base" ]]; then
       --template-override templates/$OPENSTACK_VERSION/template-overrides.j2 \
       --config-file $KOLLA_CONF \
       --pull \
+      --squash \
       $extraopts \
       $KOLLA_IMAGES_BASE 2>&1 | tee kolla-build-$BUILD_ID.log
 else
