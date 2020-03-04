@@ -26,9 +26,7 @@ else
     OSISM_VERSION=${tag:1}
 fi
 
-if [[ ! -e release ]]; then
-    git clone https://github.com/osism/release
-fi
+git submodule update --remote
 
 if [[ ! -e release/$OSISM_VERSION/base.yml ]]; then
     echo "release $OSISM_VERSION does not exist"
