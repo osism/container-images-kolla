@@ -10,7 +10,7 @@ COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
 
 {% set cinder_volume_packages_append = ['multipath-tools'] %}
 
-{% set cinder_volume_pip_packages = ['purestorage' ] %}
+{% set cinder_volume_pip_packages = [ 'cinderlib', 'purestorage' ] %}
 {% block cinder_volume_footer %}
 RUN {{ macros.install_pip(cinder_volume_pip_packages | customizable("pip_packages")) }}
 {% endblock %}
