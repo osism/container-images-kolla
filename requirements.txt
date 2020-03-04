@@ -1,6 +1,6 @@
-ansible
 Mako
 PyYAML
+ansible
 docker-squash
 jinja2
 requests
