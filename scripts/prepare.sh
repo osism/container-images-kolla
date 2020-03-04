@@ -35,7 +35,9 @@ fi
 
 # Clone repository
 
-git clone $PROJECT_REPOSITORY $PROJECT_REPOSITORY_PATH
+if [[ ! -e $PROJECT_REPOSITORY_PATH ]]; then
+    git clone $PROJECT_REPOSITORY $PROJECT_REPOSITORY_PATH
+fi
 
 # Use required kolla release for dockerfiles
 
