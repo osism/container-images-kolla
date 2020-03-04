@@ -69,18 +69,16 @@ fi
 export HASH_DOCKER_KOLLA_DOCKER=$(git rev-parse --short HEAD)
 export HASH_RELEASE=$(cd release; git rev-parse --short HEAD)
 python3 src/generate-template-overrides-file.py > templates/$OPENSTACK_VERSION/template-overrides.j2
-cp templates/$OPENSTACK_VERSION/template-overrides.j2 template-overrides.j2
 
 echo DEBUG template-overrides.j2
-cat template-overrides.j2
+cat templates/$OPENSTACK_VERSION/template-overrides.j2
 
 # Prepare apt_preferences.ubuntu
 
 python3 src/generate-apt-preferences-files.py > overlays/$OPENSTACK_VERSION/base/apt_preferences.ubuntu
-cp overlays/$OPENSTACK_VERSION/base/apt_preferences.ubuntu apt_preferences.ubuntu
 
 echo DEBUG apt_preferences.ubuntu
-cat apt_preferences.ubuntu
+cat overlays/$OPENSTACK_VERSION/base/apt_preferences.ubuntu
 
 # Copy overlay files
 
