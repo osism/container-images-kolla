@@ -41,21 +41,21 @@ fi
 
 # Use required kolla release for dockerfiles
 
-pushd $PROJECT_REPOSITORY_PATH
+pushd $PROJECT_REPOSITORY_PATH > /dev/null
 if [[ "$OPENSTACK_VERSION" != "master" ]]; then
     git checkout origin/stable/$OPENSTACK_VERSION
 fi
 export HASH_KOLLA=$(git rev-parse --short HEAD)
-popd
+popd > /dev/null
 
 # Apply patches
 
 for patch in $(find patches/kolla-build/$OPENSTACK_VERSION -type f -name '*.patch'); do
-    pushd $PROJECT_REPOSITORY_PATH
+    pushd $PROJECT_REPOSITORY_PATH > /dev/null
     echo "APPLY PATCH $patch"
     patch --forward --batch -p1 --dry-run < ../$patch || exit 1
     patch --forward --batch -p1 < ../$patch
-    popd
+    popd > /dev/null
 done
 
 # Prepare repos.yaml
@@ -95,11 +95,11 @@ find patches/$OPENSTACK_VERSION -mindepth 1 -type d
 for project in $(find patches/$OPENSTACK_VERSION -mindepth 1 -type d | grep kolla | grep -v kolla-build); do
     project=$(basename $project)
     for patch in $(find patches/$OPENSTACK_VERSION/$project -type f -name '*.patch'); do
-        pushd $project
+        pushd $project > /dev/null
         echo "APPLY PATCH $patch"
         patch --forward --batch -p1 --dry-run < ../$patch || exit 1
         patch --forward --batch -p1 < ../$patch
-        popd
+        popd > /dev/null
     done
 done
 
