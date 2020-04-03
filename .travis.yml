@@ -2,14 +2,8 @@
 dist: bionic
 language: python
 
-before_install:
-  - sudo apt-get update
-  - sudo apt-get install -y parallel
-  - bash scripts/travis.sh
-
 install:
-  - pip3 install -r requirements.txt
-  - pip3 install -r test-requirements.txt
+  - bash scripts/install.sh
 
 env:
   global:
@@ -24,19 +18,19 @@ pep8: &pep8
 
 base: &base
   stage: base
-  script: bash scripts/travis-stage.sh
+  script: bash scripts/stage.sh
 
 infrastructure: &infrastructure
   stage: infrastructure
-  script: bash scripts/travis-stage.sh
+  script: bash scripts/stage.sh
 
 openstack-core: &openstack-core
   stage: openstack-core
-  script: bash scripts/travis-stage.sh
+  script: bash scripts/stage.sh
 
 openstack-additional: &openstack-additional
   stage: openstack-additional
-  script: bash scripts/travis-stage.sh
+  script: bash scripts/stage.sh
 
 jobs:
   include:
