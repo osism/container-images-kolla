@@ -45,4 +45,4 @@ for project in all_projects:
     if "vpnaas" not in project and "lbaas" not in project:
         projects.append(project)
 
-print("ˆ" + " ^".join(sorted(projects)))
+print("^" + " ^".join(sorted(projects)))
