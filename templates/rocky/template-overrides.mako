@@ -52,7 +52,7 @@ RUN apt-get update ${"\\"}
 {% endblock %}
 
 {% block elasticsearch_footer %}
-RUN elasticsearch-plugin install -b https://distfiles.compuscene.net/elasticsearch/elasticsearch-prometheus-exporter-${infrastructure_projects['elasticsearch']}.0.zip
+RUN elasticsearch-plugin install -b https://github.com/vvanholl/elasticsearch-prometheus-exporter/releases/download/${infrastructure_projects['elasticsearch']}.0/prometheus-exporter-${infrastructure_projects['elasticsearch']}.0.zip
 {% endblock %}
 
 {% block kibana_footer %}
