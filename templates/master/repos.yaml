@@ -1,6 +1,7 @@
 ---
 ubuntu:
   elasticsearch: "deb https://artifacts.elastic.co/packages/6.x/apt stable main"
+  erlang: "deb https://dl.bintray.com/rabbitmq-erlang/debian/ bionic erlang"
   grafana: "deb https://packages.grafana.com/oss/deb stable main"
   kibana: "deb https://artifacts.elastic.co/packages/6.x/apt stable main"
   mariadb: "deb http://downloads.mariadb.com/MariaDB/mariadb-10.3/repo/ubuntu bionic main"
