@@ -1,6 +1,6 @@
 {% extends parent_template %}
 
-{% set base_apt_keys_append = ['CFFB779AADC995E4F350A060505D97A41C61B9CD', '0A9AF2115F4687BD29803A206B73A36E6026DFCA'] %}
+{% set base_apt_keys_append = ['0A9AF2115F4687BD29803A206B73A36E6026DFCA'] %}
 
 {% block base_header %}
 COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
