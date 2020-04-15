@@ -19,8 +19,8 @@ deb http://packages.grafana.com/oss/deb stable main
 # Fluentd repo
 deb http://packages.treasuredata.com/3/ubuntu/xenial/ xenial contrib
 
-# Rabbitmq repo
-deb https://packagecloud.io/rabbitmq/rabbitmq-server/ubuntu/ bionic main
+# RabbitMQ & Erlang repo
+deb http://dl.bintray.com/rabbitmq-erlang/debian bionic erlang-21.x
 
 # MariaDB repo
 deb http://downloads.mariadb.com/MariaDB/mariadb-10.3/repo/ubuntu bionic main
