@@ -15,6 +15,7 @@
   $ docker rm $(docker ps -a -q)
   $ docker system prune -a -f
   ```
+* After checking out the repository, update the submodules: ``git submodule update --init --recursive``
 
 ## Usage
 
