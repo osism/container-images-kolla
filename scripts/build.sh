@@ -3,6 +3,7 @@
 # Available environment variables
 #
 # BUILD_ID
+# BUILD_OPTS
 # BUILD_TYPE
 # KOLLA_IMAGES
 # OPENSTACK_VERSION
@@ -22,7 +23,7 @@ if [[ $TRAVIS == "true" && $(git name-rev --name-only HEAD) == "master" ]]; then
 fi
 
 if [[ $SQUASH == "true" ]]; then
-    extraopts+=" --squash"
+    BUILD_OPTS+=" --squash"
 fi
 
 if [[ -z "$KOLLA_IMAGES" ]]; then
@@ -43,14 +44,14 @@ if [[ $BUILD_TYPE == "base" ]]; then
       --template-override templates/$OPENSTACK_VERSION/template-overrides.j2 \
       --config-file $KOLLA_CONF \
       --pull \
-      $extraopts \
+      $BUILD_OPTS \
       $KOLLA_IMAGES_BASE 2>&1 | tee kolla-build-$BUILD_ID.log
 else
     kolla-build \
       --template-override templates/$OPENSTACK_VERSION/template-overrides.j2 \
       --config-file $KOLLA_CONF \
       --skip-existing \
-      $extraopts \
+      $BUILD_OPTS \
       $KOLLA_IMAGES 2>&1 | tee kolla-build-$BUILD_ID.log
 fi
 
