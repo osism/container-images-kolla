@@ -38,6 +38,7 @@ Otherwise ``OSISM_VERSION`` is set to ``latest``.
 ### Step by step
 
 ```
+$ source scripts/defaults.sh
 $ bash scripts/prepare.sh
 $ bash scripts/generate.sh
 $ bash scripts/patch.sh
