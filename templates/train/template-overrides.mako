@@ -15,6 +15,12 @@ COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
 RUN {{ macros.install_pip(cinder_volume_pip_packages | customizable("pip_packages")) }}
 {% endblock %}
 
+{% set rabbitmq_packages_remove = ['rabbitmq-server=3.7.10-1'] %}
+{% set rabbitmq_packages_append = ['rabbitmq-server'] %}
+
+{% set kolla_toolbox_packages_remove = ['rabbitmq-server=3.7.10-1'] %}
+{% set kolla_toolbox_packages_append = ['rabbitmq-server'] %}
+
 {% block elasticsearch_header %}
 # On systemd-based distributions, the installation scripts will attempt to set
 # kernel parameters (e.g., vm.max_map_count); you can skip this by setting the
