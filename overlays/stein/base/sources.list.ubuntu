@@ -21,6 +21,7 @@ deb http://packages.treasuredata.com/3/ubuntu/xenial/ xenial contrib
 
 # RabbitMQ & Erlang repo
 deb http://dl.bintray.com/rabbitmq-erlang/debian bionic erlang-21.x
+deb https://dl.bintray.com/rabbitmq/debian bionic main
 
 # Percona XtraBackup repo
 # NOTE(yoctozepto): enabled only in the xtrabackup image (to spare MariaDB deps and allow Zuul override)
