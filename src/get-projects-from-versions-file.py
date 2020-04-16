@@ -4,7 +4,7 @@ import sys
 import yaml
 
 OSISM_VERSION = os.environ.get("OSISM_VERSION", "latest")
-OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "stein")
+OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "train")
 BUILD_TYPE = os.environ.get("BUILD_TYPE", "all")
 
 OPENSTACK_CORE_PROJECTS = [
