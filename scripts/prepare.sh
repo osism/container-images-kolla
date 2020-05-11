@@ -25,6 +25,7 @@ else
     tag=$(git describe --exact-match HEAD)
     OSISM_VERSION=${tag:1}
 fi
+export OSISM_VERSION
 
 git submodule update --remote
 
