@@ -38,7 +38,13 @@ Otherwise ``OSISM_VERSION`` is set to ``latest``.
 ### Step by step
 
 ```
+$ virtualenv -p python3 .venv
+$ source .venv/bin/activate
+$ pip3 install -r requirements.txt
 $ source scripts/defaults.sh
+```
+
+```
 $ bash scripts/prepare.sh
 $ bash scripts/generate.sh
 $ bash scripts/patch.sh
