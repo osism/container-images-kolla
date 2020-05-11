@@ -35,10 +35,10 @@ To build a particular tag, check it out in advance.
 ``OSISM_VERSION`` will then be set to ``2019.4.0`` on tag ``v2019.4.0``.
 Otherwise ``OSISM_VERSION`` is set to ``latest``.
 
-To squash images set ``SQUASH`` to ``True``.
+To squash images set ``SQUASH`` to ``true``.
 
 ```
-$ export SQUASH=True
+$ export SQUASH=true
 ```
 
 ### Step by step
