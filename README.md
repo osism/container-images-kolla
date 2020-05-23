@@ -20,7 +20,7 @@
 ## Usage
 
 ```
-$ export OPENSTACK_VERSION=train
+$ export OPENSTACK_VERSION=ussuri
 $ export UBUNTU_VERSION=18.04
 ```
 

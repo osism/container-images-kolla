@@ -59,6 +59,11 @@ jobs:
       env:
         - OPENSTACK_VERSION: train
 
+    - <<: *base
+      if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = ussuri
+      env:
+        - OPENSTACK_VERSION: ussuri
+
 # infrastructure
 
     - <<: *infrastructure
@@ -80,6 +85,11 @@ jobs:
       if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = train
       env:
         - OPENSTACK_VERSION: train
+
+    - <<: *infrastructure
+      if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = ussuri
+      env:
+        - OPENSTACK_VERSION: ussuri
 
 # openstack-core
 
@@ -103,6 +113,11 @@ jobs:
       env:
         - OPENSTACK_VERSION: train
 
+    - <<: *openstack-core
+      if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = ussuri
+      env:
+        - OPENSTACK_VERSION: ussuri
+
 # openstack-additional
 
     - <<: *openstack-additional
@@ -124,3 +139,8 @@ jobs:
       if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = train
       env:
         - OPENSTACK_VERSION: train
+
+    - <<: *openstack-additional
+      if: env(TRAVIS_OPENSTACK_VERSION) IS NOT present OR env(TRAVIS_OPENSTACK_VERSION) = ussuri
+      env:
+        - OPENSTACK_VERSION: ussuri
