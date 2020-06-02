@@ -20,7 +20,7 @@ threads = 16
 [{{ project.name }}]
 {% endif %}
 type = local
-# tarball = https://tarballs.openstack.org/{{ project.repository }}/{{ project.repository }}-{{ project.version }}.tar.gz
+# tarball = https://tarballs.opendev.org/openstack/{{ project.repository }}/{{ project.repository }}-{{ project.version }}.tar.gz
 location = tarballs/{{ project.repository }}-{{ project.version }}.tar.gz
 {% endfor %}
 
@@ -28,7 +28,7 @@ location = tarballs/{{ project.repository }}-{{ project.version }}.tar.gz
 
 [openstack-base]
 type = url
-location = https://tarballs.openstack.org/requirements/requirements-stable-{{ openstack_release }}.tar.gz
+location = https://tarballs.opendev.org/openstack/requirements/requirements-stable-{{ openstack_release }}.tar.gz
 
 [gnocchi-base]
 type = git
@@ -37,5 +37,5 @@ location = https://github.com/gnocchixyz/gnocchi.git
 
 [novajoin-base]
 type = local
-# tarball = https://tarballs.openstack.org/novajoin/novajoin-{{ novajoin_version }}.tar.gz
+# tarball = https://tarballs.opendev.org/openstack/novajoin/novajoin-{{ novajoin_version }}.tar.gz
 location = tarballs/novajoin-{{ novajoin_version }}.tar.gz
