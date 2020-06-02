@@ -48,52 +48,56 @@ for project in versions['openstack_projects'].keys():
         "repository": repository
     })
 
-for project in versions['horizon_plugins'].keys():
-    repository = project
+if 'horizon_plugins' in versions:
+    for project in versions['horizon_plugins'].keys():
+        repository = project
 
-    if project == "fwaas-dashboard":
-        repository = "neutron-fwaas-dashboard"
+        if project == "fwaas-dashboard":
+            repository = "neutron-fwaas-dashboard"
 
-    horizon_plugins.append({
-        "name": project,
-        "version": versions['horizon_plugins'][project],
-        "repository": repository
-    })
+        horizon_plugins.append({
+            "name": project,
+            "version": versions['horizon_plugins'][project],
+            "repository": repository
+        })
 
-for project in versions['ceilometer_base_plugins'].keys():
-    repository = project
+if 'ceilometer_base_plugins' in versions:
+    for project in versions['ceilometer_base_plugins'].keys():
+        repository = project
 
-    ceilometer_base_plugins.append({
-        "name": project,
-        "version": versions['ceilometer_base_plugins'][project],
-        "repository": repository
-    })
+        ceilometer_base_plugins.append({
+            "name": project,
+            "version": versions['ceilometer_base_plugins'][project],
+            "repository": repository
+        })
 
-for project in versions['neutron_base_plugins'].keys():
-    repository = project
+if 'neutron_base_plugins' in versions:
+    for project in versions['neutron_base_plugins'].keys():
+        repository = project
 
-    if project == "vpnaas-agent":
-        repository = "neutron-vpnaas"
+        if project == "vpnaas-agent":
+            repository = "neutron-vpnaas"
 
-    neutron_base_plugins.append({
-        "name": project,
-        "version": versions['neutron_base_plugins'][project],
-        "repository": repository
-    })
+        neutron_base_plugins.append({
+            "name": project,
+            "version": versions['neutron_base_plugins'][project],
+            "repository": repository
+        })
 
-for project in versions['neutron_server_plugins'].keys():
-    repository = project
+if 'neutron_server_plugins' in versions:
+    for project in versions['neutron_server_plugins'].keys():
+        repository = project
 
-    if project == "vpnaas-agent":
-        repository = "neutron-vpnaas"
-    elif project == "ovn-plugin-networking-ovn":
-        repository = "networking-ovn"
+        if project == "vpnaas-agent":
+            repository = "neutron-vpnaas"
+        elif project == "ovn-plugin-networking-ovn":
+            repository = "networking-ovn"
 
-    neutron_server_plugins.append({
-        "name": project,
-        "version": versions['neutron_server_plugins'][project],
-        "repository": repository
-    })
+        neutron_server_plugins.append({
+            "name": project,
+            "version": versions['neutron_server_plugins'][project],
+            "repository": repository
+        })
 
 loader = jinja2.FileSystemLoader(searchpath="templates/%s" % OPENSTACK_VERSION)
 environment = jinja2.Environment(loader=loader)

@@ -24,38 +24,6 @@ type = local
 location = tarballs/{{ project.repository }}-{{ project.version }}.tar.gz
 {% endfor %}
 
-# plugins for horizon
-{% for project in horizon_plugins %}
-[horizon-plugin-{{ project.name }}]
-type = local
-# tarball = https://tarballs.openstack.org/{{ project.repository }}/{{ project.repository }}-{{ project.version }}.tar.gz
-location = tarballs/{{ project.repository }}-{{ project.version }}.tar.gz
-{% endfor %}
-
-# plugins (base) for neutron
-{% for project in neutron_base_plugins %}
-[neutron-base-plugin-{{ project.name }}]
-type = local
-# tarball = https://tarballs.openstack.org/{{ project.repository }}/{{ project.repository }}-{{ project.version }}.tar.gz
-location = tarballs/{{ project.repository }}-{{ project.version }}.tar.gz
-{% endfor %}
-
-# plugins (server) for neutron
-{% for project in neutron_server_plugins %}
-[neutron-server-plugin-{{ project.name }}]
-type = local
-# tarball = https://tarballs.openstack.org/{{ project.repository }}/{{ project.repository }}-{{ project.version }}.tar.gz
-location = tarballs/{{ project.repository }}-{{ project.version }}.tar.gz
-{% endfor %}
-
-# plugins for ceilometer
-{% for project in ceilometer_base_plugins %}
-[ceilometer-base-plugin-{{ project.name }}]
-type = local
-# tarball = https://tarballs.openstack.org/{{ project.repository }}/{{ project.repository }}-{{ project.version }}.tar.gz
-location = tarballs/{{ project.repository }}-{{ project.version }}.tar.gz
-{% endfor %}
-
 # unpatched projects
 
 [openstack-base]
