@@ -1,5 +1,7 @@
 {% extends parent_template %}
 
+{% set openstack_base_pip_packages_append = ['git+https://github.com/sapcc/openstack-audit-middleware.git'] %}
+
 {% set base_apt_keys_append = ['0A9AF2115F4687BD29803A206B73A36E6026DFCA'] %}
 
 {% block base_header %}

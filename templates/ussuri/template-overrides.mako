@@ -1,5 +1,7 @@
 {% extends parent_template %}
 
+{% set openstack_base_pip_packages_append = ['git+https://github.com/sapcc/openstack-audit-middleware.git'] %}
+
 {% block base_header %}
 COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
 {% endblock %}
