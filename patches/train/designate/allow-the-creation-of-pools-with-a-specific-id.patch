@@ -1,0 +1,19 @@
+--- a/designate/manage/pool.py
++++ b/designate/manage/pool.py
+@@ -108,14 +108,8 @@ class PoolCommands(base.Commands):
+         for xpool in xpools:
+             try:
+                 if 'id' in xpool:
+-                    try:
+-                        pool = self.central_api.get_pool(
+-                            self.context, xpool['id'])
+-                    except Exception as e:
+-                        msg = ("Bad ID Supplied for pool. pool_id: "
+-                            "%(pool)s message: %(res)s")
+-                        LOG.critical(msg, {'pool': xpool['id'], 'res': e})
+-                        continue
++                    pool = self.central_api.get_pool(
++                        self.context, xpool['id'])
+                 else:
+                     pool = self.central_api.find_pool(
+                         self.context, {"name": xpool['name']})
