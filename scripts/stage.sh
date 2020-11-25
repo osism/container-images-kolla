@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
 
-if [[ $TRAVIS == "true" ]]; then
-    export BUILD_TYPE=${TRAVIS_BUILD_STAGE_NAME,,}
-else
-    export BUILD_TYPE=${BUILD_TYPE:-base}
-    source scripts/defaults.sh
-fi
+export BUILD_TYPE=${BUILD_TYPE:-base}
+source scripts/defaults.sh
 
 echo BUILD_TYPE = $BUILD_TYPE
 echo OPENSTACK_VERSION = $OPENSTACK_VERSION
@@ -19,11 +15,6 @@ bash scripts/generate.sh || exit 1
 
 echo run patch.sh
 bash scripts/patch.sh || exit 1
-
-if [[ "$TRAVIS" == "true" && "$BUILD_TYPE" != "base" ]]; then
-    echo run pull.sh
-    bash scripts/pull.sh || exit 1
-fi
 
 echo run build.sh
 bash scripts/build.sh || exit 1

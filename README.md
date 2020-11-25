@@ -1,6 +1,5 @@
 # docker-kolla-docker
 
-[![Build Status](https://travis-ci.org/osism/docker-kolla-docker.svg?branch=master)](https://travis-ci.org/osism/docker-kolla-docker)
 [![Docker Hub](https://img.shields.io/badge/Docker%20Hub-osism-blue.svg)](https://hub.docker.com/r/osism)
 [![Quay](https://img.shields.io/badge/Quay-osism-blue.svg)](https://quay.io/organization/osism)
 

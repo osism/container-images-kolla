@@ -18,10 +18,6 @@ SQUASH=${SQUASH:-true}
 
 KOLLA_CONF=kolla-build.conf
 
-if [[ $TRAVIS == "true" && $(git name-rev --name-only HEAD) == "master" ]]; then
-    SQUASH=false
-fi
-
 if [[ $SQUASH == "true" ]]; then
     BUILD_OPTS+=" --squash"
 fi
