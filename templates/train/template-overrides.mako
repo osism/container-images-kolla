@@ -1,11 +1,23 @@
 {% extends parent_template %}
 
-{% set openstack_base_pip_packages_append = ['git+https://github.com/sapcc/openstack-audit-middleware.git'] %}
+{% set openstack_base_pip_packages_append = ['pip', 'git+https://github.com/sapcc/openstack-audit-middleware.git'] %}
 
 {% set base_apt_keys_append = ['0A9AF2115F4687BD29803A206B73A36E6026DFCA'] %}
 
 {% block base_header %}
 COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
+RUN apt-get update ${"\\"}
+    && apt-get -y install --no-install-recommends locales ${"\\"}
+    && apt-get clean ${"\\"}
+    && rm -rf /var/lib/apt/lists/* ${"\\"}
+    && locale-gen en_US.UTF-8
+{% endblock %}
+
+{% block openstack_base_header %}
+RUN apt-get update ${"\\"}
+    && apt-get -y install --no-install-recommends python3-setuptools ${"\\"}
+    && apt-get clean ${"\\"}
+    && rm -rf /var/lib/apt/lists/*
 {% endblock %}
 
 {% set kolla_toolbox_packages_append = ['iputils-ping', 'tcpdump', 'netcat-openbsd', 'traceroute'] %}

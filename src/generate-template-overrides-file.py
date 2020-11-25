@@ -7,7 +7,7 @@ import yaml
 HASH_DOCKER_KOLLA_DOCKER = os.environ.get("HASH_DOCKER_KOLLA_DOCKER", "none")
 HASH_KOLLA = os.environ.get("HASH_KOLLA", "none")
 HASH_RELEASE = os.environ.get("HASH_RELEASE", "none")
-OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "ussuri")
+OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "master")
 OSISM_VERSION = os.environ.get("OSISM_VERSION", "latest")
 
 filename = "release/%s/openstack-%s.yml" % (OSISM_VERSION, OPENSTACK_VERSION)

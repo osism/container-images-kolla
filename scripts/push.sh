@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -x
+
 # Available environment variables
 #
 # BUILD_TYPE
@@ -9,10 +11,12 @@
 # Set default values
 
 BUILD_TYPE=${BUILD_TYPE:-all}
-DOCKER_PUSH_JOBS=${DOCKER_PUSH_JOBS:-4}
+DOCKER_PUSH_JOBS=${DOCKER_PUSH_JOBS:-2}
 PUSH=${PUSH:-true}
 
 LSTFILE=images.txt
+
+. defaults/$OPENSTACK_VERSION.sh
 
 if [[ $BUILD_TYPE == "base" ]]; then
     # push the base image

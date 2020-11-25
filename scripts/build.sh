@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -x
+
 # Available environment variables
 #
 # BUILD_ID
@@ -14,9 +16,11 @@
 BUILD_ID=${BUILD_ID:-$(date +%Y%m%d)}
 BUILD_TYPE=${BUILD_TYPE:-all}
 OPENSTACK_VERSION=${OPENSTACK_VERSION:-master}
-SQUASH=${SQUASH:-true}
+SQUASH=${SQUASH:-false}
 
 KOLLA_CONF=kolla-build.conf
+
+. defaults/$OPENSTACK_VERSION.sh
 
 if [[ $SQUASH == "true" ]]; then
     BUILD_OPTS+=" --squash"

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -x
+
 # Available environment variables
 #
 # DOCKER_NAMESPACE
@@ -20,6 +22,8 @@ KOLLA_BASE=ubuntu
 KOLLA_BASE_TAG=$UBUNTU_VERSION
 KOLLA_CONF_FILE=kolla-build.conf
 KOLLA_INSTALL_TYPE=source
+
+. defaults/$OPENSTACK_VERSION.sh
 
 # Generate configuration
 

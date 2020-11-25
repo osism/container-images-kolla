@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -x
+
 # Available environment variables
 #
 # BUILD_ID
@@ -20,12 +22,7 @@ KOLLA_TYPE=ubuntu-source
 LSTFILE=images.txt
 SOURCE_DOCKER_TAG=build-$BUILD_ID
 
-if [[ $(git name-rev --name-only HEAD) == "master" ]]; then
-    OSISM_VERSION=latest
-else
-    tag=$(git describe --exact-match HEAD)
-    OSISM_VERSION=${tag:1}
-fi
+. defaults/$OPENSTACK_VERSION.sh
 
 rm -f $LSTFILE
 touch $LSTFILE
@@ -55,7 +52,6 @@ docker images | grep $DOCKER_NAMESPACE | grep $KOLLA_TYPE | grep $SOURCE_DOCKER_
         docker tag $image:$SOURCE_DOCKER_TAG $new_imagename:$tag
         echo "$new_imagename:$tag" >> $LSTFILE
     fi
-
 done
 
 docker images

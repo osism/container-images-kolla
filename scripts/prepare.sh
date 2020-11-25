@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -x
+
 # Available environment variables
 #
 # BUILD_ID
@@ -18,6 +20,8 @@ PROJECT_REPOSITORY=https://github.com/openstack/kolla
 PROJECT_REPOSITORY_PATH=kolla
 KOLLA_TYPE=ubuntu-source
 SOURCE_DOCKER_TAG=build-$BUILD_ID
+
+. defaults/$OPENSTACK_VERSION.sh
 
 if [[ $(git name-rev --name-only HEAD) == "master" ]]; then
     OSISM_VERSION=latest

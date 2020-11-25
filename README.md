@@ -1,6 +1,5 @@
 # docker-kolla-docker
 
-[![Docker Hub](https://img.shields.io/badge/Docker%20Hub-osism-blue.svg)](https://hub.docker.com/r/osism)
 [![Quay](https://img.shields.io/badge/Quay-osism-blue.svg)](https://quay.io/organization/osism)
 
 ## Requirements
@@ -20,7 +19,6 @@
 
 ```
 $ export OPENSTACK_VERSION=ussuri
-$ export UBUNTU_VERSION=18.04
 ```
 
 It is possible to build only certain images.
@@ -46,7 +44,7 @@ $ export SQUASH=true
 $ virtualenv -p python3 .venv
 $ source .venv/bin/activate
 $ pip3 install -r requirements.txt
-$ source scripts/defaults.sh
+$ source scripts/defaults/$OPENSTACK_VERSION.sh
 ```
 
 ```
@@ -57,7 +55,3 @@ $ bash scripts/build.sh
 $ bash scripts/tag.sh
 $ bash scripts/push.sh
 ```
-
-## Author information
-
-This build wrapper for the Kolla images was created by [Betacloud Solutions GmbH](https://www.betacloud-solutions.de).

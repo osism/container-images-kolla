@@ -1,0 +1,23 @@
+---
+name: Check shell syntax
+
+on:
+  push:
+    paths:
+      - '**.sh'
+      - .github/workflows/check-shell-syntax.yml
+  pull_request:
+    paths:
+      - '**.sh'
+      - .github/workflows/check-shell-syntax.yml
+
+jobs:
+  check-shell-syntax:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: ludeeus/action-shellcheck@master
+        env:
+          SHELLCHECK_OPTS:
