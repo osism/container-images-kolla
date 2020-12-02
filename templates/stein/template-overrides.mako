@@ -18,7 +18,7 @@ RUN apt-get update ${"\\"}
     && rm -rf /var/lib/apt/lists/*
 {% endblock %}
 
-{% set kolla_toolbox_packages_append = ['iputils-ping', 'tcpdump', 'netcat-openbsd', 'traceroute'] %}
+{% set kolla_toolbox_packages_append = ['iputils-ping', 'traceroute'] %}
 
 {% set cinder_volume_packages_append = ['multipath-tools'] %}
 
