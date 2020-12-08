@@ -6,7 +6,9 @@
 COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
 {% endblock %}
 
-{% set kolla_toolbox_packages_append = ['iputils-ping', 'tcpdump', 'netcat-openbsd', 'traceroute'] %}
+{% set bifrost_deploy_packages_append = ['debootstrap'] %}
+
+{% set kolla_toolbox_packages_append = ['iputils-ping', 'traceroute'] %}
 
 {% set cinder_volume_packages_append = ['multipath-tools'] %}
 
