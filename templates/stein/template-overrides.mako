@@ -88,13 +88,13 @@ RUN rm -rf /usr/share/doc/* ${"\\"}
 
 LABEL "de.osism.version"="${osism_version}" ${"\\"}
       "de.osism.release.openstack"="${openstack_version}" ${"\\"}
-      "de.osism.commit.docker_kolla_docker"="${hash_docker_kolla_docker}" ${"\\"}
+      "de.osism.commit.docker_images_kolla"="${hash_docker_images_kolla}" ${"\\"}
       "de.osism.commit.kolla"="${hash_kolla}" ${"\\"}
       "de.osism.commit.release"="${hash_release}" ${"\\"}
       "org.opencontainers.image.created"="${created}" ${"\\"}
       "org.opencontainers.image.documentation"="https://docs.osism.de" ${"\\"}
       "org.opencontainers.image.licenses"="ASL 2.0" ${"\\"}
-      "org.opencontainers.image.source"="https://github.com/osism/docker-kolla-docker" ${"\\"}
+      "org.opencontainers.image.source"="https://github.com/osism/docker-images-kolla" ${"\\"}
       "org.opencontainers.image.title"="{{ image_name }}" ${"\\"}
       "org.opencontainers.image.url"="https://www.osism.de" ${"\\"}
       "org.opencontainers.image.vendor"="Betacloud Solutions GmbH" ${"\\"}
