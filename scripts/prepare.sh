@@ -73,7 +73,7 @@ fi
 
 # Prepare template-overrides.j2
 
-export HASH_DOCKER_KOLLA_DOCKER=$(git rev-parse --short HEAD)
+export HASH_DOCKER_IMAGES_KOLLA=$(git rev-parse --short HEAD)
 export HASH_RELEASE=$(cd release; git rev-parse --short HEAD)
 python3 src/generate-template-overrides-file.py > templates/$OPENSTACK_VERSION/template-overrides.j2
 
