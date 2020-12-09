@@ -20,7 +20,7 @@ RUN apt-get update ${"\\"}
     && rm -rf /var/lib/apt/lists/*
 {% endblock %}
 
-{% set bifrost_deploy_packages_append = ['debootstrap', 'squashfs-tools'] %}
+{% set bifrost_deploy_packages_append = ['debootstrap', 'squashfs-tools', 'cpio'] %}
 
 {% set kolla_toolbox_packages_append = ['iputils-ping', 'traceroute'] %}
 
