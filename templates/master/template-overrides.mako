@@ -6,7 +6,7 @@
 COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
 {% endblock %}
 
-{% set bifrost_deploy_packages_append = ['debootstrap', 'squashfs-tools'] %}
+{% set bifrost_deploy_packages_append = ['debootstrap', 'squashfs-tools', 'cpio'] %}
 
 {% set kolla_toolbox_packages_append = ['iputils-ping', 'traceroute'] %}
 
