@@ -67,11 +67,6 @@ RUN curl -o /usr/bin/skydive -L "https://github.com/skydive-project/skydive/rele
     && chmod +x /usr/bin/skydive
 {% endblock %}
 
-{% block cloudkitty_processor_footer %}
-# NOTE: https://github.com/ultrajson/ultrajson/issues/346
-RUN pip install git+git://github.com/esnme/ultrajson.git
-{% endblock %}
-
 {% block ceilometer_notification_footer %}
 # NOTE: https://github.com/ultrajson/ultrajson/issues/346
 RUN pip install git+git://github.com/esnme/ultrajson.git
