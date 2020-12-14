@@ -11,7 +11,6 @@ set -x
 OPENSTACK_VERSION=${OPENSTACK_VERSION:-master}
 
 KOLLA_CONF_FILE=kolla-build.conf
-LSTFILE=versions.txt
 
 . defaults/$OPENSTACK_VERSION.sh
 
@@ -34,23 +33,20 @@ for tarball in $(grep '# tarball' $KOLLA_CONF_FILE | awk '{ print $4 }'); do
         filename="gnocchi-$filename"
     fi
 
-#    echo Process $filename
-#    tar xzf $filename
-#    directory=$(tar -tzf $filename | head -1 | cut -f1 -d"/")
-#    echo $directory >> $LSTFILE
-#    rm $filename
-#    if [[ -e ../patches/$OPENSTACK_VERSION/${directory%-*} ]]; then
-#        pushd $directory > /dev/null
-#        for patch in $(find ../../patches/$OPENSTACK_VERSION/${directory%-*} -type f -name '*.patch'); do
-#            echo "APPLY PATCH $patch"
-#            patch --forward --batch -p1 --dry-run < $patch || exit 1
-#            patch --forward --batch -p1 < $patch
-#        done
-#        popd > /dev/null
-#    fi
-#    tar czf $filename $directory
-#    rm -r $directory
+    echo Process $filename
+    directory=$(tar -tzf $filename | head -1 | cut -f1 -d"/")
+    if [[ -e ../patches/$OPENSTACK_VERSION/${directory%-*} ]]; then
+        tar xzf $filename
+        rm $filename
+        pushd $directory > /dev/null
+        for patch in $(find ../../patches/$OPENSTACK_VERSION/${directory%-*} -type f -name '*.patch'); do
+            echo "APPLY PATCH $patch"
+            patch --forward --batch -p1 --dry-run < $patch || exit 1
+            patch --forward --batch -p1 < $patch
+        done
+        popd > /dev/null
+        tar czf $filename $directory
+        rm -r $directory
+    fi
     popd > /dev/null
 done
-
-# cat tarballs/$LSTFILE | sort | uniq > $LSTFILE
