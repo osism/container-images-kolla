@@ -1,7 +1,7 @@
 ---
 name: Build docker images
 
-on:  # yamllint disable-line rule:truthy
+"on":
   schedule:
     - cron: "0 0 * * *"
   push:
@@ -10,6 +10,7 @@ on:  # yamllint disable-line rule:truthy
       - files/**
       - overlays/**
       - patches/**
+      - scripts/*
       - src/**
       - templates/**
   pull_request:
@@ -18,15 +19,13 @@ on:  # yamllint disable-line rule:truthy
       - files/**
       - overlays/**
       - patches/**
+      - scripts/*
       - src/**
       - templates/**
 
 jobs:
-
   build-docker-images:
-
     runs-on: ubuntu-latest
-
     strategy:
       matrix:
         openstack_version:
@@ -35,7 +34,6 @@ jobs:
           - train
           - ussuri
           - victoria
-
     steps:
       - uses: actions/checkout@v2
         with:

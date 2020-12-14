@@ -23,12 +23,6 @@ SOURCE_DOCKER_TAG=build-$BUILD_ID
 
 . defaults/$OPENSTACK_VERSION.sh
 
-if [[ $(git name-rev --name-only HEAD) == "master" ]]; then
-    OSISM_VERSION=latest
-else
-    tag=$(git describe --exact-match HEAD)
-    OSISM_VERSION=${tag:1}
-fi
 export OSISM_VERSION
 
 git submodule update --remote
