@@ -1,0 +1,11 @@
+--- a/playbooks/roles/bifrost-ironic-install/templates/ironic.conf.j2
++++ b/playbooks/roles/bifrost-ironic-install/templates/ironic.conf.j2
+@@ -60,6 +60,7 @@ deploy_logs_collect = always
+ {% if ironic_agent_deploy_logs_local_path | default("") != "" %}
+ deploy_logs_local_path = {{ ironic_agent_deploy_logs_local_path }}
+ {% endif %}
++verify_ca = false
+ 
+ [pxe]
+ pxe_append_params = {{ pxe_kernel_params }}
+
