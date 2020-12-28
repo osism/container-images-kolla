@@ -10,6 +10,8 @@ name: Build docker images
       - files/**
       - overlays/**
       - patches/**
+      - release
+      - release/**
       - scripts/*
       - src/**
       - templates/**
@@ -19,6 +21,8 @@ name: Build docker images
       - files/**
       - overlays/**
       - patches/**
+      - release
+      - release/**
       - scripts/*
       - src/**
       - templates/**
