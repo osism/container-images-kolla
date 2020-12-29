@@ -27,6 +27,8 @@ RUN apt-get update ${"\\"}
 RUN {{ macros.install_pip(cinder_volume_pip_packages | customizable("pip_packages")) }}
 {% endblock %}
 
+{% set gnocchi_base_pip_packages_append = ['cradox', 'rados'] %}
+
 {% set rabbitmq_packages_remove = ['rabbitmq-server=3.7.10-1'] %}
 {% set rabbitmq_packages_append = ['rabbitmq-server'] %}
 

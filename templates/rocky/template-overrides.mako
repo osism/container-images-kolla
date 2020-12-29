@@ -27,6 +27,8 @@ RUN apt-get update ${"\\"}
 RUN {{ macros.install_pip(cinder_volume_pip_packages | customizable("pip_packages")) }}
 {% endblock %}
 
+{% set gnocchi_base_pip_packages_append = ['cradox', 'rados'] %}
+
 {% set rabbitmq_packages_remove = ['https://www.rabbitmq.com/releases/rabbitmq-server/v3.6.5/rabbitmq-server_3.6.5-1_all.deb'] %}
 {% set rabbitmq_packages_append = ['erlang-base-hipe', 'rabbitmq-server', 'wget'] %}
 
