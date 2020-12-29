@@ -29,6 +29,8 @@ RUN apt-get update ${"\\"}
 RUN {{ macros.install_pip(cinder_volume_pip_packages | customizable("pip_packages")) }}
 {% endblock %}
 
+{% set gnocchi_base_pip_packages_append = ['cradox', 'rados'] %}
+
 {% block elasticsearch_header %}
 # On systemd-based distributions, the installation scripts will attempt to set
 # kernel parameters (e.g., vm.max_map_count); you can skip this by setting the
