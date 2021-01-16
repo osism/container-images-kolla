@@ -103,6 +103,14 @@ loader = jinja2.FileSystemLoader(searchpath="templates/%s" % OPENSTACK_VERSION)
 environment = jinja2.Environment(loader=loader)
 template = environment.get_template(TEMPLATE_FILE)
 
+# NOTE: Starting with Victoria, only patched tarballs are included in the
+#       kolla-build.conf file.
+
+if versions['openstack_version'] in ["victoria", "wallaby", "master"]:
+    patched_projects = os.listdir("patches/%s/" %
+                                  versions['openstack_version'])
+    projects = [x for x in projects if x['name'] in patched_projects]
+
 template_data = {
     "base": KOLLA_BASE,
     "base_tag": KOLLA_BASE_TAG,

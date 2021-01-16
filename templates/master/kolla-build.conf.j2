@@ -4,7 +4,7 @@ base_package_type = deb
 base_tag = {{ base_tag }}
 install_type = {{ install_type }}
 namespace = osism
-openstack_release = master
+openstack_release = {{ openstack_release }}
 push = false
 tag = latest
 threads = 4
@@ -12,24 +12,20 @@ threads = 4
 #########################################################################
 # sources tracked in release repository
 
-# openstack projects
+# patched projects
 
-{% for project in projects %}
+{%- for project in projects %}
 {% if project.name not in ['horizon', 'neutron-vpnaas-agent'] %}
 [{{ project.name }}-base]
 {% else %}
 [{{ project.name }}]
-{% endif %}
+{% endif -%}
 type = local
-# tarball = https://tarballs.opendev.org/openstack/{{ project.repository }}/{{ project.repository }}-{{ project.version }}.tar.gz
-location = tarballs/{{ project.repository }}-{{ project.version }}.tar.gz
-{% endfor %}
+# tarball = https://tarballs.opendev.org/openstack/{{ project.repository }}/{{ project.repository }}-{{ openstack_release }}.tar.gz
+location = tarballs/{{ project.repository }}-{{ openstack_release }}.tar.gz
+{%- endfor %}
 
-# unpatched projects
-
-[openstack-base]
-type = url
-location = https://tarballs.opendev.org/openstack/requirements/requirements-stable-{{ openstack_release }}.tar.gz
+# projects with a specific version (!= openstack_release)
 
 [gnocchi-base]
 type = git
