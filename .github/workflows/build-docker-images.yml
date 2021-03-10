@@ -33,10 +33,6 @@ jobs:
     strategy:
       matrix:
         openstack_version:
-          - rocky
-          - stein
-          - train
-          - ussuri
           - victoria
     steps:
       - uses: actions/checkout@v2
