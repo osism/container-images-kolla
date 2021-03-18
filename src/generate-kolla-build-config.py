@@ -123,8 +123,7 @@ template_data = {
     "projects": projects,
     "versions": versions,
     "horizon_version": versions['openstack_projects']['horizon'],
-    "gnocchi_version": versions['openstack_projects']['gnocchi'],
-    "integrated_projects": versions['integrated_projects']
+    "gnocchi_version": versions['openstack_projects']['gnocchi']
 }
 
 if "novajoin" in versions['openstack_projects']:

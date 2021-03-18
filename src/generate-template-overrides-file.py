@@ -22,7 +22,6 @@ data = {
     'hash_kolla': HASH_KOLLA,
     'hash_release': HASH_RELEASE,
     'infrastructure_projects': versions['infrastructure_projects'],
-    'integrated_projects': versions['integrated_projects'],
     'openstack_version': OPENSTACK_VERSION,
     'osism_version': OSISM_VERSION,
 }
