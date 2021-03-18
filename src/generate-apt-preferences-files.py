@@ -25,8 +25,7 @@ environment = jinja2.Environment(loader=loader)
 template = environment.get_template(TEMPLATE_FILE)
 
 template_data = {
-    "infrastructure_projects": versions['infrastructure_projects'],
-    "integrated_projects": versions['integrated_projects'],
+    "infrastructure_projects": versions['infrastructure_projects']
 }
 
 result = template.render(template_data)
