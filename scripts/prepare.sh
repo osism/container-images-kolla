@@ -13,7 +13,7 @@ set -x
 
 BUILD_ID=${BUILD_ID:-$(date +%Y%m%d)}
 DOCKER_NAMESPACE=${DOCKER_NAMESPACE:-osism}
-OPENSTACK_VERSION=${OPENSTACK_VERSION:-master}
+OPENSTACK_VERSION=${OPENSTACK_VERSION:-latest}
 OSISM_VERSION=${OSISM_VERSION:-latest}
 
 PROJECT_REPOSITORY=https://github.com/openstack/kolla
@@ -41,7 +41,7 @@ fi
 # Use required kolla release for dockerfiles
 
 pushd $PROJECT_REPOSITORY_PATH > /dev/null
-if [[ "$OPENSTACK_VERSION" != "master" ]]; then
+if [[ "$OPENSTACK_VERSION" != "latest" ]]; then
     git checkout origin/stable/$OPENSTACK_VERSION
 fi
 export HASH_KOLLA=$(git rev-parse --short HEAD)
@@ -59,9 +59,7 @@ done
 
 # Prepare repos.yaml
 
-# NOTE: was introduced with Ussuri, therefore currently only for master
-
-if [[ "$OPENSTACK_VERSION" == "master" ]]; then
+if [[ "OPENSTACK_VERSION" == "victoria" || "$OPENSTACK_VERSION" == "wallaby" || "$OPENSTACK_VERSION" == "latest" ]]; then
     cp templates/$OPENSTACK_VERSION/repos.yaml $PROJECT_REPOSITORY_PATH/kolla/template/repos.yaml
 fi
 

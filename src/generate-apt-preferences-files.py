@@ -3,7 +3,7 @@ import os
 import jinja2
 import yaml
 
-OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "master")
+OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "latest")
 OSISM_VERSION = os.environ.get("OSISM_VERSION", "latest")
 
 TEMPLATE_FILE = "apt_preferences.ubuntu.j2"

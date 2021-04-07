@@ -15,7 +15,7 @@ set -x
 BUILD_ID=${BUILD_ID:-$(date +%Y%m%d)}
 DOCKER_NAMESPACE=${DOCKER_NAMESPACE:-osism}
 DOCKER_REGISTRY=${DOCKER_REGISTRY:-quay.io}
-OPENSTACK_VERSION=${OPENSTACK_VERSION:-master}
+OPENSTACK_VERSION=${OPENSTACK_VERSION:-latest}
 OSISM_VERSION=${OSISM_VERSION:-latest}
 
 KOLLA_TYPE=ubuntu-source
@@ -39,7 +39,7 @@ docker images | grep $DOCKER_NAMESPACE | grep $KOLLA_TYPE | grep $SOURCE_DOCKER_
         new_imagename="$DOCKER_REGISTRY/$new_imagename"
     fi
 
-    if [[ "$OPENSTACK_VERSION" == "master" ]]; then
+    if [[ "$OPENSTACK_VERSION" == "latest" ]]; then
         tag=latest
         docker tag $image:$SOURCE_DOCKER_TAG $new_imagename:$tag
         echo "$new_imagename:$tag" >> $LSTFILE

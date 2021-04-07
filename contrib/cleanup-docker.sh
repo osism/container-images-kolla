@@ -6,7 +6,7 @@
 
 # Set default values
 
-OPENSTACK_VERSION=${OPENSTACK_VERSION:-master}
+OPENSTACK_VERSION=${OPENSTACK_VERSION:-latest}
 
 HASH_DOCKER_IMAGES_KOLLA=$(git rev-parse --short HEAD)
 HASH_RELEASE=$(cd release; git rev-parse --short HEAD)

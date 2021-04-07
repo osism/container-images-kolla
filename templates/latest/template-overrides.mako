@@ -1,9 +1,21 @@
 {% extends parent_template %}
 
-{% set openstack_base_pip_packages_append = ['git+https://github.com/sapcc/openstack-audit-middleware.git'] %}
+{% set openstack_base_pip_packages_append = ['pip', 'git+https://github.com/sapcc/openstack-audit-middleware.git'] %}
 
 {% block base_header %}
 COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
+RUN apt-get update ${"\\"}
+    && apt-get -y install --no-install-recommends locales ${"\\"}
+    && apt-get clean ${"\\"}
+    && rm -rf /var/lib/apt/lists/* ${"\\"}
+    && locale-gen en_US.UTF-8
+{% endblock %}
+
+{% block openstack_base_header %}
+RUN apt-get update ${"\\"}
+    && apt-get -y install --no-install-recommends python3-setuptools ${"\\"}
+    && apt-get clean ${"\\"}
+    && rm -rf /var/lib/apt/lists/*
 {% endblock %}
 
 {% set bifrost_deploy_packages_append = ['debootstrap', 'squashfs-tools', 'cpio'] %}
@@ -46,11 +58,6 @@ RUN apt-get update ${"\\"}
     && apt-get clean ${"\\"}
     && rm -rf /var/lib/apt/lists/* ${"\\"}
     && a2enmod auth_openidc
-{% endblock %}
-
-{% block skydive_install %}
-RUN curl -o /usr/bin/skydive -L "https://github.com/skydive-project/skydive/releases/download/v${infrastructure_projects['skydive']}/skydive" ${"\\"}
-    && chmod +x /usr/bin/skydive
 {% endblock %}
 
 {% block footer %}

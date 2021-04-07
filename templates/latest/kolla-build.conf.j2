@@ -4,7 +4,7 @@ base_package_type = deb
 base_tag = {{ base_tag }}
 install_type = {{ install_type }}
 namespace = osism
-openstack_release = {{ openstack_release }}
+openstack_release = master
 push = false
 tag = latest
 threads = 4
@@ -21,8 +21,8 @@ threads = 4
 [{{ project.name }}]
 {% endif -%}
 type = local
-# tarball = https://tarballs.opendev.org/openstack/{{ project.repository }}/{{ project.repository }}-{{ openstack_release }}.tar.gz
-location = tarballs/{{ project.repository }}-{{ openstack_release }}.tar.gz
+# tarball = https://tarballs.opendev.org/openstack/{{ project.repository }}/{{ project.repository }}-master.tar.gz
+location = tarballs/{{ project.repository }}-master.tar.gz
 {%- endfor %}
 
 # projects with a specific version (!= openstack_release)
@@ -31,8 +31,3 @@ location = tarballs/{{ project.repository }}-{{ openstack_release }}.tar.gz
 type = git
 reference = "{{ gnocchi_version }}"
 location = https://github.com/gnocchixyz/gnocchi.git
-
-[novajoin-base]
-type = local
-# tarball = https://tarballs.opendev.org/openstack/novajoin/novajoin-{{ novajoin_version }}.tar.gz
-location = tarballs/novajoin-{{ novajoin_version }}.tar.gz

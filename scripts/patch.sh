@@ -8,7 +8,7 @@ set -x
 
 # Set default values
 
-OPENSTACK_VERSION=${OPENSTACK_VERSION:-master}
+OPENSTACK_VERSION=${OPENSTACK_VERSION:-latest}
 
 KOLLA_CONF_FILE=kolla-build.conf
 

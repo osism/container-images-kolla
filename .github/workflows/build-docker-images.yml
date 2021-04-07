@@ -34,6 +34,7 @@ jobs:
       matrix:
         openstack_version:
           - victoria
+          - latest
     steps:
       - uses: actions/checkout@v2
         with:
