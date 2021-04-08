@@ -48,10 +48,10 @@ $ source scripts/defaults/$OPENSTACK_VERSION.sh
 ```
 
 ```
-$ bash scripts/prepare.sh
-$ bash scripts/generate.sh
-$ bash scripts/patch.sh
-$ bash scripts/build.sh
-$ bash scripts/tag.sh
-$ bash scripts/push.sh
+$ bash scripts/001-prepare.sh
+$ bash scripts/002-generate.sh
+$ bash scripts/003-patch.sh
+$ bash scripts/004-build.sh
+$ bash scripts/005-tag.sh
+$ bash scripts/006-push.sh
 ```
