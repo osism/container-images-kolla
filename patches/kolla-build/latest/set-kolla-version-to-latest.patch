@@ -7,7 +7,7 @@ index c974be9e..64868c94 100755
                        'tag': self.tag,
                        'maintainer': self.maintainer,
 -                      'kolla_version': kolla_version,
-+                      'kolla_version': 'master',
++                      'kolla_version': 'latest',
                        'image_name': image_name,
                        'users': self.get_users(),
                        'rpm_setup': self.rpm_setup,

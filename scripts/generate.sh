@@ -13,7 +13,7 @@ set -x
 BUILD_ID=${BUILD_ID:-$(date +%Y%m%d)}
 DOCKER_NAMESPACE=${DOCKER_NAMESPACE:-osism}
 DOCKER_REGISTRY=${DOCKER_REGISTRY:-quay.io}
-OPENSTACK_VERSION=${OPENSTACK_VERSION:-master}
+OPENSTACK_VERSION=${OPENSTACK_VERSION:-latest}
 
 . defaults/$OPENSTACK_VERSION.sh
 
@@ -39,8 +39,8 @@ setini DEFAULT base $KOLLA_BASE
 setini DEFAULT base_tag $KOLLA_BASE_TAG
 setini DEFAULT install_type $KOLLA_INSTALL_TYPE
 
-if [[ "$OPENSTACK_VERSION" == "master" ]]; then
-    setini openstack-base location https://tarballs.opendev.org/openstack/requirements/requirements-$OPENSTACK_VERSION.tar.gz
+if [[ "$OPENSTACK_VERSION" == "latest" ]]; then
+    setini openstack-base location https://tarballs.opendev.org/openstack/requirements/requirements-master.tar.gz
 else
     setini openstack-base location https://tarballs.opendev.org/openstack/requirements/requirements-stable-$OPENSTACK_VERSION.tar.gz
 fi

@@ -15,7 +15,7 @@ set -x
 
 BUILD_ID=${BUILD_ID:-$(date +%Y%m%d)}
 BUILD_TYPE=${BUILD_TYPE:-all}
-OPENSTACK_VERSION=${OPENSTACK_VERSION:-master}
+OPENSTACK_VERSION=${OPENSTACK_VERSION:-latest}
 SQUASH=${SQUASH:-false}
 
 KOLLA_CONF=kolla-build.conf
