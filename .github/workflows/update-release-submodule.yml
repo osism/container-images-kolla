@@ -25,11 +25,11 @@ jobs:
         with:
           EXECUTE_COMMANDS: |
             git submodule update --remote
-          COMMIT_EMAIL: 'bot@betacloud-solutions.de'
+          COMMIT_EMAIL: 'bot@osism.io'
           COMMIT_MESSAGE: |
             chore: update release submodule
-            Signed-off-by: Betacloud Solutions Bot <bot@betacloud-solutions.de>
-          COMMIT_NAME: 'Betacloud Solutions Bot'
+            Signed-off-by: OSISM Bot <bot@osism.io>
+          COMMIT_NAME: 'OSISM Bot'
           ONLY_DEFAULT_BRANCH: true
           PR_BRANCH_NAME: 'update-release-submodule'
           PR_BRANCH_PREFIX: 'chore/'
