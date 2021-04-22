@@ -44,9 +44,12 @@ docker images | grep $DOCKER_NAMESPACE | grep $KOLLA_TYPE | grep $SOURCE_DOCKER_
         docker tag $image:$SOURCE_DOCKER_TAG $new_imagename:$tag
         echo "$new_imagename:$tag" >> $LSTFILE
     else
-        tag=$OPENSTACK_VERSION-$OSISM_VERSION
-        docker tag $image:$SOURCE_DOCKER_TAG $new_imagename:$tag
-        echo "$new_imagename:$tag" >> $LSTFILE
+
+        # NOTE: Push no longer the X-Y tags
+        #
+        # tag=$OPENSTACK_VERSION-$OSISM_VERSION
+        # docker tag $image:$SOURCE_DOCKER_TAG $new_imagename:$tag
+        # echo "$new_imagename:$tag" >> $LSTFILE
 
         tag=$OPENSTACK_VERSION
         docker tag $image:$SOURCE_DOCKER_TAG $new_imagename:$tag
