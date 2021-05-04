@@ -1,7 +1,8 @@
 ---
 name: Update release submodule
 
-on:  # yamllint disable-line rule:truthy
+"on":
+  workflow_dispatch:
   push:
     paths:
       - .github/workflows/update-release-submodule.yml
