@@ -60,11 +60,6 @@ RUN apt-get update ${"\\"}
     && a2enmod auth_openidc
 {% endblock %}
 
-{% block skydive_install %}
-RUN curl -o /usr/bin/skydive -L "https://github.com/skydive-project/skydive/releases/download/v${infrastructure_projects['skydive']}/skydive" ${"\\"}
-    && chmod +x /usr/bin/skydive
-{% endblock %}
-
 {% block footer %}
 RUN rm -rf /usr/share/doc/* ${"\\"}
     && rm -rf /usr/share/man/*
