@@ -1,3 +1,4 @@
 apt_preferences.ubuntu
 etc/kolla-build.conf
+tarballs
 template-overrides.j2
