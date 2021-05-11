@@ -1,0 +1,33 @@
+[DEFAULT]
+base = {{ base }}
+base_package_type = deb
+base_tag = {{ base_tag }}
+install_type = {{ install_type }}
+namespace = osism
+openstack_release = {{ openstack_release }}
+push = false
+tag = latest
+threads = 4
+
+#########################################################################
+# sources tracked in release repository
+
+# patched projects
+
+{%- for project in projects %}
+{% if project.name not in ['horizon', 'neutron-vpnaas-agent'] %}
+[{{ project.name }}-base]
+{% else %}
+[{{ project.name }}]
+{% endif -%}
+type = local
+# tarball = https://tarballs.opendev.org/openstack/{{ project.repository }}/{{ project.repository }}-stable-{{ openstack_release }}.tar.gz
+location = tarballs/{{ project.repository }}-stable-{{ openstack_release }}.tar.gz
+{%- endfor %}
+
+# projects with a specific version (!= openstack_release)
+
+[gnocchi-base]
+type = git
+reference = "{{ gnocchi_version }}"
+location = https://github.com/gnocchixyz/gnocchi.git
