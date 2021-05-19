@@ -34,7 +34,6 @@ jobs:
     strategy:
       matrix:
         openstack_version:
-          - victoria
           - wallaby
           - latest
     steps:
