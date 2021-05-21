@@ -9,6 +9,7 @@ OSISM_VERSION = os.environ.get("OSISM_VERSION", "latest")
 KOLLA_BASE = "ubuntu"
 KOLLA_BASE_TAG = os.environ.get("UBUNTU_VERSION", "18.04")
 KOLLA_INSTALL_TYPE = "source"
+KOLLA_NAMESPACE = os.environ.get("DOCKER_NAMESPACE", "osism")
 
 TEMPLATE_FILE = "kolla-build.conf.j2"
 
@@ -114,16 +115,17 @@ if versions['openstack_version'] in ["victoria", "wallaby", "master"]:
 template_data = {
     "base": KOLLA_BASE,
     "base_tag": KOLLA_BASE_TAG,
-    "horizon_plugins":  horizon_plugins,
-    "install_type": KOLLA_INSTALL_TYPE,
-    "neutron_server_plugins":  neutron_server_plugins,
-    "neutron_base_plugins":  neutron_base_plugins,
     "ceilometer_base_plugins":  ceilometer_base_plugins,
+    "gnocchi_version": versions['openstack_projects']['gnocchi'],
+    "horizon_plugins":  horizon_plugins,
+    "horizon_version": versions['openstack_projects']['horizon'],
+    "install_type": KOLLA_INSTALL_TYPE,
+    "namespace": KOLLA_NAMESPACE,
+    "neutron_base_plugins":  neutron_base_plugins,
+    "neutron_server_plugins":  neutron_server_plugins,
     "openstack_release": versions['openstack_version'],
     "projects": projects,
-    "versions": versions,
-    "horizon_version": versions['openstack_projects']['horizon'],
-    "gnocchi_version": versions['openstack_projects']['gnocchi']
+    "versions": versions
 }
 
 if "novajoin" in versions['openstack_projects']:
