@@ -13,7 +13,7 @@ RUN apt-get update ${"\\"}
 
 {% block openstack_base_header %}
 RUN apt-get update ${"\\"}
-    && apt-get -y install --no-install-recommends python3-setuptools pypy3 ${"\\"}
+    && apt-get -y install --no-install-recommends python3-setuptools ${"\\"}
     && apt-get clean ${"\\"}
     && rm -rf /var/lib/apt/lists/*
 {% endblock %}
@@ -30,6 +30,148 @@ RUN {{ macros.install_pip(cinder_volume_pip_packages | customizable("pip_package
 {% endblock %}
 
 {% set gnocchi_base_packages_append = ['python3-rados'] %}
+
+{% block horizon_header %}
+RUN apt-get update ${"\\"}
+    && apt-get -y install --no-install-recommends pypy3 ${"\\"}
+    && apt-get clean ${"\\"}
+    && rm -rf /var/lib/apt/lists/*
+
+RUN rm -rf /var/lib/kolla ${"\\"}
+    && mkdir -p /var/lib/kolla ${"\\"}
+    && virtualenv --python /usr/bin/pypy3 --system-site-packages /var/lib/kolla/venv ${"\\"}
+    && ln -s /var/lib/kolla/venv.pypy/lib/python3.6 /var/lib/kolla/venv.pypy/lib/python3.8
+
+<%text>
+{% set horizon_pip_packages_append = [
+        'Babel',
+        'Mako',
+        'MarkupSafe',
+        'Paste',
+        'PasteDeploy',
+        'PyNaCl',
+        'PyYAML',
+        'Routes',
+        'SQLAlchemy',
+        'Tempita',
+        'WebOb',
+        'WSME',
+        'alembic',
+        'amqp',
+        'anyjson',
+        'aodhclient',
+        'appdirs',
+        'automaton',
+        'bcrypt',
+        'cachetools',
+        'castellan',
+        'click',
+        'cliff',
+        'cmd2',
+        'cryptography',
+        'contextlib2',
+        'debtcollector',
+        'decorator',
+        'elasticsearch',
+        'eventlet',
+        'fasteners',
+        'funcsigs',
+        'futurist',
+        'gnocchiclient',
+        'greenlet',
+        'httplib2',
+        'iso8601',
+        'jinja2',
+        'jsonpatch',
+        'jsonpointer',
+        'jsonschema',
+        'keystoneauth1',
+        'keystonemiddleware',
+        'kombu',
+        'logutils',
+        'monotonic',
+        'mysqlclient',
+        'netaddr',
+        'netifaces',
+        'os-client-config',
+        'os-brick',
+        'os-traits',
+        'os-win',
+        'oslo.concurrency',
+        'oslo.config',
+        'oslo.context',
+        'oslo.db',
+        'oslo.i18n',
+        'oslo.log',
+        'oslo.messaging',
+        'oslo.middleware',
+        'oslo.policy',
+        'oslo.privsep',
+        'oslo.reports',
+        'oslo.rootwrap',
+        'oslo.serialization',
+        'oslo.service',
+        'oslo.upgradecheck',
+        'oslo.utils',
+        'oslo.versionedobjects',
+        'oslo.vmware',
+        'osprofiler',
+        'paramiko',
+        'pbr',
+        'pecan',
+        'pika',
+        'prettytable',
+        'psutil',
+        'pycadf',
+        'pyinotify',
+        'pymongo',
+        'pymysql',
+        'pyngus',
+        'pyparsing',
+        'pyroute2',
+        'python-barbicanclient',
+        'python-cinderclient',
+        'python-cloudkittyclient',
+        'python-dateutil',
+        'python-designateclient',
+        'python-editor',
+        'python-glanceclient',
+        'python-heatclient',
+        'python-ironicclient',
+        'python-keystoneclient',
+        'python-magnumclient',
+        'python-manilaclient',
+        'python-memcached',
+        'python-mistralclient',
+        'python-muranoclient',
+        'python-neutronclient',
+        'python-novaclient',
+        'python-openstackclient',
+        'python-qpid-proton',
+        'python-saharaclient',
+        'python-swiftclient',
+        'python-troveclient',
+        'python-vitrageclient',
+        'pytz',
+        'repoze.lru',
+        'requests',
+        'requestsexceptions',
+        'retrying',
+        'setproctitle',
+        'simplegeneric',
+        'simplejson',
+        'six',
+        'sqlalchemy-migrate',
+        'sqlparse',
+        'stevedore',
+        'tooz[consul,etcd,etcd3,etcd3gw,zake,redis,postgresql,mysql,zookeeper,memcached,ipc]',
+        'unicodecsv',
+        'warlock',
+        'wrapt'
+    ]
+%}
+</%text>
+{% endblock %}
 
 {% block keystone_footer %}
 RUN apt-get update ${"\\"}
