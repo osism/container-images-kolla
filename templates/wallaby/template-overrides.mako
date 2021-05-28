@@ -2,6 +2,8 @@
 
 {% set openstack_base_pip_packages_append = ['pip', 'git+https://github.com/sapcc/openstack-audit-middleware.git'] %}
 
+{% set glance_base_pip_packages_append = ['boto3'] %}
+
 {% block base_header %}
 COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
 RUN apt-get update ${"\\"}
