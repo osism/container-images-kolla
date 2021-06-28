@@ -201,6 +201,6 @@ LABEL "build-date"="{{ build_date }}" ${"\\"}
       "org.opencontainers.image.source"="https://github.com/osism/container-images-kolla" ${"\\"}
       "org.opencontainers.image.title"="{{ image_name }}" ${"\\"}
       "org.opencontainers.image.url"="https://www.osism.de" ${"\\"}
-      "org.opencontainers.image.vendor"="Betacloud Solutions GmbH" ${"\\"}
+      "org.opencontainers.image.vendor"="OSISM GmbH" ${"\\"}
       "org.opencontainers.image.version"="${osism_version}"
 {% endblock %}
