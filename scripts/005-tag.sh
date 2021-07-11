@@ -30,6 +30,9 @@ fi
 
 . defaults/$OPENSTACK_VERSION.sh
 
+export VERSION
+export OPENSTACK_VERSION
+
 rm -f $LSTFILE
 touch $LSTFILE
 

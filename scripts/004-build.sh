@@ -30,6 +30,9 @@ fi
 
 . defaults/$OPENSTACK_VERSION.sh
 
+export VERSION
+export OPENSTACK_VERSION
+
 if [[ $SQUASH == "true" ]]; then
     BUILD_OPTS+=" --squash"
 fi
