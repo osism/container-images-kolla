@@ -10,15 +10,23 @@ set -x
 # KOLLA_IMAGES
 # OPENSTACK_VERSION
 # SQUASH
+# VERSION
 
 # Set default values
 
 BUILD_ID=${BUILD_ID:-$(date +%Y%m%d)}
 BUILD_TYPE=${BUILD_TYPE:-all}
 OPENSTACK_VERSION=${OPENSTACK_VERSION:-latest}
+VERSION=${VERSION:-latest}
 SQUASH=${SQUASH:-false}
 
 KOLLA_CONF=kolla-build.conf
+
+# NOTE: For builds for a specific release, the OpenStack version is taken from the release repository.
+if [[ $VERSION != "latest" ]]; then
+    filename=$(curl -L https://raw.githubusercontent.com/osism/release/master/$VERSION/openstack.yml)
+    OPENSTACK_VERSION=$(curl -L https://raw.githubusercontent.com/osism/release/master/$VERSION/$filename | grep "openstack_version:" | awk -F': ' '{ print $2 }')
+fi
 
 . defaults/$OPENSTACK_VERSION.sh
 

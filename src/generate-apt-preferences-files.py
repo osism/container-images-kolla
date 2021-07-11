@@ -4,7 +4,7 @@ import jinja2
 import yaml
 
 OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "latest")
-OSISM_VERSION = os.environ.get("OSISM_VERSION", "latest")
+VERSION = os.environ.get("VERSION", "latest")
 
 TEMPLATE_FILE = "apt_preferences.ubuntu.j2"
 
@@ -16,7 +16,7 @@ class AttrDict(dict):
         self.__dict__ = self
 
 
-filename = "release/%s/openstack-%s.yml" % (OSISM_VERSION, OPENSTACK_VERSION)
+filename = "release/%s/openstack-%s.yml" % (VERSION, OPENSTACK_VERSION)
 with open(filename, "rb") as fp:
     versions = yaml.load(fp, Loader=yaml.FullLoader)
 

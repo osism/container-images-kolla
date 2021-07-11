@@ -216,13 +216,13 @@ LABEL "build-date"="{{ build_date }}" ${"\\"}
       "de.osism.commit.kolla"="${hash_kolla}" ${"\\"}
       "de.osism.commit.release"="${hash_release}" ${"\\"}
       "de.osism.release.openstack"="${openstack_version}" ${"\\"}
-      "de.osism.version"="${osism_version}" ${"\\"}
+      "de.osism.version"="${version}" ${"\\"}
       "org.opencontainers.image.created"="${created}" ${"\\"}
-      "org.opencontainers.image.documentation"="https://docs.osism.de" ${"\\"}
+      "org.opencontainers.image.documentation"="https://docs.osism.tech" ${"\\"}
       "org.opencontainers.image.licenses"="ASL 2.0" ${"\\"}
       "org.opencontainers.image.source"="https://github.com/osism/container-images-kolla" ${"\\"}
       "org.opencontainers.image.title"="{{ image_name }}" ${"\\"}
-      "org.opencontainers.image.url"="https://www.osism.de" ${"\\"}
+      "org.opencontainers.image.url"="https://www.osism.tech" ${"\\"}
       "org.opencontainers.image.vendor"="OSISM GmbH" ${"\\"}
-      "org.opencontainers.image.version"="${osism_version}"
+      "org.opencontainers.image.version"="${version}"
 {% endblock %}

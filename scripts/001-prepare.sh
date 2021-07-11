@@ -7,28 +7,34 @@ set -x
 # BUILD_ID
 # DOCKER_NAMESPACE
 # OPENSTACK_VERSION
-# OSISM_VERSION
+# VERSION
 
 # Set default values
 
 BUILD_ID=${BUILD_ID:-$(date +%Y%m%d)}
 DOCKER_NAMESPACE=${DOCKER_NAMESPACE:-osism}
 OPENSTACK_VERSION=${OPENSTACK_VERSION:-latest}
-OSISM_VERSION=${OSISM_VERSION:-latest}
+VERSION=${VERSION:-latest}
 
 PROJECT_REPOSITORY=https://github.com/openstack/kolla
 PROJECT_REPOSITORY_PATH=kolla
 KOLLA_TYPE=ubuntu-source
 SOURCE_DOCKER_TAG=build-$BUILD_ID
 
+# NOTE: For builds for a specific release, the OpenStack version is taken from the release repository.
+if [[ $VERSION != "latest" ]]; then
+    filename=$(curl -L https://raw.githubusercontent.com/osism/release/master/$VERSION/openstack.yml)
+    OPENSTACK_VERSION=$(curl -L https://raw.githubusercontent.com/osism/release/master/$VERSION/$filename | grep "openstack_version:" | awk -F': ' '{ print $2 }')
+fi
+
 . defaults/$OPENSTACK_VERSION.sh
 
-export OSISM_VERSION
+export VERSION
 
 git submodule update --remote
 
-if [[ ! -e release/$OSISM_VERSION/base.yml ]]; then
-    echo "release $OSISM_VERSION does not exist"
+if [[ ! -e release/$VERSION/base.yml ]]; then
+    echo "release $VERSION does not exist"
     exit 1
 fi
 
