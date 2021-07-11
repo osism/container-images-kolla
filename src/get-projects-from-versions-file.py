@@ -3,7 +3,7 @@ import sys
 
 import yaml
 
-OSISM_VERSION = os.environ.get("OSISM_VERSION", "latest")
+VERSION = os.environ.get("VERSION", "latest")
 OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "latest")
 BUILD_TYPE = os.environ.get("BUILD_TYPE", "all")
 
@@ -20,7 +20,7 @@ OPENSTACK_CORE_PROJECTS = [
     "placement",
 ]
 
-filename = "release/%s/openstack-%s.yml" % (OSISM_VERSION, OPENSTACK_VERSION)
+filename = "release/%s/openstack-%s.yml" % (VERSION, OPENSTACK_VERSION)
 with open(filename, "rb") as fp:
     versions = yaml.load(fp, Loader=yaml.FullLoader)
 

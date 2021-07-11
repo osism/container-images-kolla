@@ -8,9 +8,9 @@ HASH_DOCKER_IMAGES_KOLLA = os.environ.get("HASH_DOCKER_IMAGES_KOLLA", "none")
 HASH_KOLLA = os.environ.get("HASH_KOLLA", "none")
 HASH_RELEASE = os.environ.get("HASH_RELEASE", "none")
 OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "latest")
-OSISM_VERSION = os.environ.get("OSISM_VERSION", "latest")
+VERSION = os.environ.get("VERSION", "latest")
 
-filename = "release/%s/openstack-%s.yml" % (OSISM_VERSION, OPENSTACK_VERSION)
+filename = "release/%s/openstack-%s.yml" % (VERSION, OPENSTACK_VERSION)
 with open(filename, "rb") as fp:
     versions = yaml.load(fp, Loader=yaml.FullLoader)
 
@@ -23,7 +23,7 @@ data = {
     'hash_release': HASH_RELEASE,
     'infrastructure_projects': versions['infrastructure_projects'],
     'openstack_version': OPENSTACK_VERSION,
-    'osism_version': OSISM_VERSION,
+    'version': VERSION,
 }
 result = template.render(**data)
 print(result)

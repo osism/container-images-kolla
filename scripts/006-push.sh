@@ -7,14 +7,22 @@ set -x
 # BUILD_TYPE
 # DOCKER_PUSH_JOBS
 # PUSH
+# VERSION
 
 # Set default values
 
 BUILD_TYPE=${BUILD_TYPE:-all}
 DOCKER_PUSH_JOBS=${DOCKER_PUSH_JOBS:-2}
 PUSH=${PUSH:-true}
+VERSION=${VERSION:-latest}
 
 LSTFILE=images.txt
+
+# NOTE: For builds for a specific release, the OpenStack version is taken from the release repository.
+if [[ $VERSION != "latest" ]]; then
+    filename=$(curl -L https://raw.githubusercontent.com/osism/release/master/$VERSION/openstack.yml)
+    OPENSTACK_VERSION=$(curl -L https://raw.githubusercontent.com/osism/release/master/$VERSION/$filename | grep "openstack_version:" | awk -F': ' '{ print $2 }')
+fi
 
 . defaults/$OPENSTACK_VERSION.sh
 
