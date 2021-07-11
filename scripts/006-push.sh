@@ -26,6 +26,9 @@ fi
 
 . defaults/$OPENSTACK_VERSION.sh
 
+export VERSION
+export OPENSTACK_VERSION
+
 if [[ $BUILD_TYPE == "base" ]]; then
     # push the base image
     while read image; do

@@ -22,6 +22,9 @@ fi
 
 . defaults/$OPENSTACK_VERSION.sh
 
+export VERSION
+export OPENSTACK_VERSION
+
 mkdir -p tarballs
 
 for tarball in $(grep '# tarball' $KOLLA_CONF_FILE | awk '{ print $4 }'); do
