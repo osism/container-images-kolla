@@ -55,10 +55,9 @@ RUN apt-get update ${"\\"}
     && apt-get clean ${"\\"}
     && rm -rf /var/lib/apt/lists/*
 
-RUN rm -rf /var/lib/kolla ${"\\"}
-    && mkdir -p /var/lib/kolla ${"\\"}
+RUN rm -rf /var/lib/kolla/venv ${"\\"}
     && virtualenv --python /usr/bin/pypy3 --system-site-packages /var/lib/kolla/venv ${"\\"}
-    && ln -s /var/lib/kolla/venv.pypy/lib/python3.6 /var/lib/kolla/venv.pypy/lib/python3.8
+    && ln -s /var/lib/kolla/venv/lib/python3.6 /var/lib/kolla/venv/lib/python3.8
 
 <%text>
 {% set horizon_pip_packages_append = [
