@@ -15,7 +15,7 @@ RUN apt-get update ${"\\"}
 
 {% block openstack_base_header %}
 RUN apt-get update ${"\\"}
-    && apt-get -y install --no-install-recommends python3-setuptools pypy3 ${"\\"}
+    && apt-get -y install --no-install-recommends python3-setuptools ${"\\"}
     && apt-get clean ${"\\"}
     && rm -rf /var/lib/apt/lists/*
 {% endblock %}
