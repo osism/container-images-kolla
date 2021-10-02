@@ -52,19 +52,54 @@ jobs:
       - uses: actions/setup-python@v2
         with:
           python-version: '3.x'
-      - run: |
-          pip3 install -r requirements.txt
-          bash scripts/001-prepare.sh
-          bash scripts/002-generate.sh
-          bash scripts/003-patch.sh
-          bash scripts/004-build.sh
+
+      - name: Install requirements
+        run: pip3 install -r requirements.txt
+
+      - name: Run 001-prepare.sh
+        run: bash scripts/001-prepare.sh
         env:
           DOCKER_NAMESPACE: ${{ secrets.DOCKER_NAMESPACE }}
           DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
           OPENSTACK_VERSION: ${{ matrix.openstack_version }}
-      - run: |
-          bash scripts/005-tag.sh
-          bash scripts/006-push.sh
+
+      - name: Run 002-generate.sh
+        run: bash scripts/002-generate.sh
+        env:
+          DOCKER_NAMESPACE: ${{ secrets.DOCKER_NAMESPACE }}
+          DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
+          OPENSTACK_VERSION: ${{ matrix.openstack_version }}
+
+      - name: Run 003-patch.sh
+        run: bash scripts/003-patch.sh
+        env:
+          DOCKER_NAMESPACE: ${{ secrets.DOCKER_NAMESPACE }}
+          DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
+          OPENSTACK_VERSION: ${{ matrix.openstack_version }}
+
+      - name: Run 004-build.sh
+        run: bash scripts/004-build.sh
+        env:
+          DOCKER_NAMESPACE: ${{ secrets.DOCKER_NAMESPACE }}
+          DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
+          OPENSTACK_VERSION: ${{ matrix.openstack_version }}
+
+      - name: Run 005-tag.sh
+        run: bash scripts/005-tag.sh
+        env:
+          DOCKER_NAMESPACE: ${{ secrets.DOCKER_NAMESPACE }}
+          DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
+          OPENSTACK_VERSION: ${{ matrix.openstack_version }}
+
+      - name: Run 006-finalize.sh
+        run: bash scripts/006-finalize.sh
+        env:
+          DOCKER_NAMESPACE: ${{ secrets.DOCKER_NAMESPACE }}
+          DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
+          OPENSTACK_VERSION: ${{ matrix.openstack_version }}
+
+      - name: Run 007-push.sh
+        run: bash scripts/007-push.sh
         env:
           DOCKER_NAMESPACE: ${{ secrets.DOCKER_NAMESPACE }}
           DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}

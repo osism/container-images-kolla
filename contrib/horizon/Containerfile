@@ -1,0 +1,12 @@
+ARG DOCKER_NAMESPACE=osism
+ARG DOCKER_REGISTRY=quay.io
+ARG OPENSTACK_VERSION=wallaby
+
+FROM ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/horizon:${OPENSTACK_VERSION}
+
+RUN mkdir -p /var/lib/kolla/venv/lib/python3.8/site-packages/openstack_dashboard/themes/default/templates/auth
+COPY files/base.html /var/lib/kolla/venv/lib/python3.8/site-packages/openstack_dashboard/themes/default/templates/base.html
+COPY files/_login_form.html /var/lib/kolla/venv/lib/python3.8/site-packages/openstack_dashboard/themes/default/templates/auth/_login_form.html
+
+COPY files/base.html /var/lib/kolla/venv/lib/python3.8/site-packages/openstack_dashboard/themes/material/templates/base.html
+COPY files/_login_form.html /var/lib/kolla/venv/lib/python3.8/site-packages/openstack_dashboard/themes/material/templates/auth/_login_form.html
