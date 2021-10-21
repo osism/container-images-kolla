@@ -1,57 +1,37 @@
 ---
-name: Build docker images
+name: Release container images
 
 "on":
-  workflow_dispatch:
-  schedule:
-    - cron: "0 */6 * * *"
   push:
-    paths:
-      - .github/workflows/build-docker-images.yml
-      - files/**
-      - overlays/**
-      - patches/**
-      - release
-      - release/**
-      - scripts/*
-      - src/**
-      - templates/**
-  pull_request:
-    paths:
-      - .github/workflows/build-docker-images.yml
-      - files/**
-      - overlays/**
-      - patches/**
-      - release
-      - release/**
-      - scripts/*
-      - src/**
-      - templates/**
+    tags:
+      - '*'
 
 jobs:
-  build-docker-images:
+  release-container-images:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        openstack_version:
-          - victoria
-          - wallaby
-          - latest
     steps:
       - uses: actions/checkout@v2
         with:
           submodules: true
+
       - uses: docker/setup-qemu-action@v1
+
       - uses: docker/setup-buildx-action@v1
+
       - uses: docker/login-action@v1
         with:
           registry: ${{ secrets.DOCKER_REGISTRY }}
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-        if: github.ref == 'refs/heads/main'
+
+      - name: Get the version
+        id: get_version
+        run: echo ::set-output name=VERSION::${GITHUB_REF#refs/tags/}
+
       - uses: actions/setup-python@v2
         with:
           python-version: '3.x'
+
       - run: |
           pip3 install -r requirements.txt
           bash scripts/001-prepare.sh
@@ -61,12 +41,12 @@ jobs:
         env:
           DOCKER_NAMESPACE: ${{ secrets.DOCKER_NAMESPACE }}
           DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
-          OPENSTACK_VERSION: ${{ matrix.openstack_version }}
+          VERSION: ${{ steps.get_version.outputs.VERSION }}
+
       - run: |
           bash scripts/005-tag.sh
           bash scripts/006-push.sh
         env:
           DOCKER_NAMESPACE: ${{ secrets.DOCKER_NAMESPACE }}
           DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
-          OPENSTACK_VERSION: ${{ matrix.openstack_version }}
-        if: github.ref == 'refs/heads/main'
+          VERSION: ${{ steps.get_version.outputs.VERSION }}
