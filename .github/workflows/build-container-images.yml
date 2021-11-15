@@ -69,4 +69,6 @@ jobs:
           DOCKER_NAMESPACE: ${{ secrets.DOCKER_NAMESPACE }}
           DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
           OPENSTACK_VERSION: ${{ matrix.openstack_version }}
-        if: github.ref == 'refs/heads/main'
+        if: |
+          github.repository == 'osism/container-images-kolla' &&
+          github.ref == 'refs/heads/main'
