@@ -53,6 +53,13 @@ RUN apt-get update ${"\\"}
 ENV PATH /usr/share/kibana/bin:$PATH
 {% endblock %}
 
+{% block grafana_footer %}
+RUN curl -o /tmp/kolla-operations.tar.gz https://github.com/osism/kolla-operations/tarball/main ${"\\"}
+    && mkdir -p /operations ${"\\"}
+    && tar --strip-components=1 -xvzf kolla-operations.tar.gz -C /operations ${"\\"}
+    && rm -f /tmp/kolla-operations.tar.gz
+{% endblock %}
+
 {% block keystone_footer %}
 RUN apt-get update ${"\\"}
     && apt-get -y install --no-install-recommends ${"\\"}

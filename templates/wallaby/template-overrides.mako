@@ -33,6 +33,13 @@ RUN {{ macros.install_pip(cinder_volume_pip_packages | customizable("pip_package
 
 {% set gnocchi_base_packages_append = ['python3-rados'] %}
 
+{% block grafana_footer %}
+RUN curl -o /tmp/kolla-operations.tar.gz https://github.com/osism/kolla-operations/tarball/main ${"\\"}
+    && mkdir -p /operations ${"\\"}
+    && tar --strip-components=1 -xvzf kolla-operations.tar.gz -C /operations ${"\\"}
+    && rm -f /tmp/kolla-operations.tar.gz
+{% endblock %}
+
 {% block keystone_footer %}
 RUN apt-get update ${"\\"}
     && apt-get -y install --no-install-recommends ${"\\"}
