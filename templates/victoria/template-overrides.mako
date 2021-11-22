@@ -56,7 +56,7 @@ ENV PATH /usr/share/kibana/bin:$PATH
 {% block grafana_footer %}
 RUN curl -o /tmp/kolla-operations.tar.gz https://github.com/osism/kolla-operations/tarball/main ${"\\"}
     && mkdir -p /operations ${"\\"}
-    && tar --strip-components=1 -xvzf kolla-operations.tar.gz -C /operations ${"\\"}
+    && tar --strip-components=1 -xvzf /tmp/kolla-operations.tar.gz -C /operations ${"\\"}
     && rm -f /tmp/kolla-operations.tar.gz
 {% endblock %}
 
