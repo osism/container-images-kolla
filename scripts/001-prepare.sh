@@ -66,7 +66,7 @@ done
 
 # Prepare repos.yaml
 
-if [[ "OPENSTACK_VERSION" == "victoria" || "$OPENSTACK_VERSION" == "wallaby" || "$OPENSTACK_VERSION" == "latest" ]]; then
+if [[ -f templates/$OPENSTACK_VERSION/repos.yaml ]]; then
     cp templates/$OPENSTACK_VERSION/repos.yaml $PROJECT_REPOSITORY_PATH/kolla/template/repos.yaml
 fi
 
