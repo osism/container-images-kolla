@@ -6,27 +6,9 @@ name: Build container images
   schedule:
     - cron: "0 */6 * * *"
   push:
-    paths:
-      - .github/workflows/build-container-images.yml
-      - files/**
-      - overlays/**
-      - patches/**
-      - release
-      - release/**
-      - scripts/*
-      - src/**
-      - templates/**
+    branches:
+      - main
   pull_request:
-    paths:
-      - .github/workflows/build-container-images.yml
-      - files/**
-      - overlays/**
-      - patches/**
-      - release
-      - release/**
-      - scripts/*
-      - src/**
-      - templates/**
 
 jobs:
   build-container-images:
