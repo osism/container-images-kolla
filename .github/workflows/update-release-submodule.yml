@@ -6,6 +6,8 @@ name: Update release submodule
   push:
     paths:
       - .github/workflows/update-release-submodule.yml
+    branches:
+      - main
   schedule:
     - cron: "0 * * * *"
   repository_dispatch:
