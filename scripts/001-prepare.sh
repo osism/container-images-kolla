@@ -98,7 +98,7 @@ done
 find patches/$OPENSTACK_VERSION -mindepth 1 -type d
 for project in $(find patches/$OPENSTACK_VERSION -mindepth 1 -type d | grep kolla | grep -v kolla-build); do
     project=$(basename $project)
-    for patch in $(find patches/$OPENSTACK_VERSION/$project -type f -name '*.patch'); do
+    for patch in $(find patches/$OPENSTACK_VERSION/$project -type f -name '*.patch' | sort); do
         pushd $project > /dev/null
         echo "APPLY PATCH $patch"
         patch --forward --batch -p1 --dry-run < ../$patch || exit 1
