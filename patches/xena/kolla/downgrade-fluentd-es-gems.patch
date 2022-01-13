@@ -1,0 +1,17 @@
+diff --git a/docker/fluentd/Dockerfile.j2 b/docker/fluentd/Dockerfile.j2
+index 0f3fe11df..05ea25d2d 100644
+--- a/docker/fluentd/Dockerfile.j2
++++ b/docker/fluentd/Dockerfile.j2
+@@ -101,6 +101,12 @@ RUN ln -s /bin/mkdir /usr/bin/mkdir
+ 
+ {{ macros.install_fluent_plugins(fluentd_user, fluentd_plugins | customizable("plugins")) }}
+ 
++# Downgrade elasticsearch gems for OSS compatibility
++RUN td-agent-gem install elasticsearch:7.13.0 \
++    && td-agent-gem uninstall elasticsearch:7.15.0 \
++    && td-agent-gem uninstall elasticsearch-api:7.15.0 \
++    && td-agent-gem uninstall elasticsearch-transport:7.15.0
++
+ {% endblock %}
+ 
+ {% block fluentd_monasca_plugin_install %}

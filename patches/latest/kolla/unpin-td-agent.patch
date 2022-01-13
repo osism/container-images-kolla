@@ -1,0 +1,95 @@
+commit 31d0587b255094e855507e2d1d39e3961d22a10a
+Author: Dr. Jens Harbott <harbott@osism.tech>
+Date:   Tue Dec 14 13:10:39 2021 +0100
+
+    Unpin td-agent and cap elasticsearch gem
+    
+    With [0] the version of td-agent being installed was pinned, which isn't
+    sustainable in the long run, so we drop the pin.
+    
+    Latest version of the elasticsearch gem no longer works with older
+    (OSS) versions of Elasticsearch. This is fixed by downgrading the version
+    of the elasticsearch gems.
+    
+    [0] Iefcdd3100b7e3c5320bc5f1286a18251bdeab885
+    Related-Bug: 1930867
+    Closes-Bug: 1954759
+    Signed-off-by: Dr. Jens Harbott <harbott@osism.tech>
+    Depends-On: https://review.opendev.org/c/openstack/kolla-ansible/+/823155
+    Change-Id: I3045786e863b098d7339d1066aef6c857aa5f97f
+
+diff --git a/docker/base/apt_preferences.debian b/docker/base/apt_preferences.debian
+index 687736c76..0ccc2e016 100644
+--- a/docker/base/apt_preferences.debian
++++ b/docker/base/apt_preferences.debian
+@@ -7,11 +7,6 @@ Package: erlang*
+ Pin: version 1:23.*
+ Pin-Priority: 1000
+ 
+-# FIXME(mgoddard): Pinning to 4.0.* to avoid bug 1930867.
+-Package: td-agent*
+-Pin: version 4.0.*
+-Pin-Priority: 1000
+-
+ # NOTE(mgoddard): logstash 7.9.x is the last version that supports
+ # Elasticsearch OSS.
+ Package: logstash-oss
+diff --git a/docker/base/apt_preferences.ubuntu b/docker/base/apt_preferences.ubuntu
+index 4f0707067..fd8609d94 100644
+--- a/docker/base/apt_preferences.ubuntu
++++ b/docker/base/apt_preferences.ubuntu
+@@ -6,11 +6,6 @@ Package: erlang*
+ Pin: version 1:23.*
+ Pin-Priority: 1000
+ 
+-# FIXME(mgoddard): Pinning to 4.0.* to avoid bug 1930867.
+-Package: td-agent*
+-Pin: version 4.0.*
+-Pin-Priority: 1000
+-
+ # NOTE(mgoddard): logstash 7.9.x is the last version that supports
+ # Elasticsearch OSS.
+ Package: logstash-oss
+diff --git a/docker/fluentd/Dockerfile.j2 b/docker/fluentd/Dockerfile.j2
+index 90eaa45b5..a55e9f661 100644
+--- a/docker/fluentd/Dockerfile.j2
++++ b/docker/fluentd/Dockerfile.j2
+@@ -13,11 +13,10 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% if base_package_type == 'rpm' %}
+ 
+-    # FIXME(mgoddard): Pinning to 4.0.* to avoid bug 1930867.
+     {% set fluentd_packages = [
+         'gcc-c++',
+         'make',
+-        'td-agent-4.0.*',
++        'td-agent',
+     ] %}
+ 
+ {% elif base_package_type == 'deb' %}
+@@ -54,6 +53,12 @@ RUN chmod 755 /usr/local/bin/kolla_extend_start
+ 
+ {{ macros.install_fluent_plugins(fluentd_plugins | customizable("plugins")) }}
+ 
++# Downgrade elasticsearch gems for OSS compatibility
++RUN td-agent-gem install elasticsearch:7.13.0 \
++    && td-agent-gem uninstall elasticsearch:7.15.0 \
++    && td-agent-gem uninstall elasticsearch-api:7.15.0 \
++    && td-agent-gem uninstall elasticsearch-transport:7.15.0
++
+ {% endblock %}
+ 
+ {% block fluentd_monasca_plugin_install %}
+diff --git a/releasenotes/notes/cap-fluentd-elasticsearch-18c0ca8e90c1234c.yaml b/releasenotes/notes/cap-fluentd-elasticsearch-18c0ca8e90c1234c.yaml
+new file mode 100644
+index 000000000..39af5d3ba
+--- /dev/null
++++ b/releasenotes/notes/cap-fluentd-elasticsearch-18c0ca8e90c1234c.yaml
+@@ -0,0 +1,7 @@
++---
++fixes:
++  - |
++    Latest version of the elasticsearch gem no longer works with older
++    (OSS) versions of Elasticsearch. This is fixed by capping the version
++    of the elasticsearch gem installed into the fluentd container.
++    `LP#1954759 <https://launchpad.net/bugs/1954759>`__
