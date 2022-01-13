@@ -10,6 +10,8 @@ Date:   Tue Dec 14 13:10:39 2021 +0100
     Latest version of the elasticsearch gem no longer works with older
     (OSS) versions of Elasticsearch. This is fixed by downgrading the version
     of the elasticsearch gems.
+
+    Dropped docker/base/apt_preferences.ubuntu for the osism version since we override that.
     
     [0] Iefcdd3100b7e3c5320bc5f1286a18251bdeab885
     Related-Bug: 1930867
@@ -23,22 +25,6 @@ index 687736c76..0ccc2e016 100644
 --- a/docker/base/apt_preferences.debian
 +++ b/docker/base/apt_preferences.debian
 @@ -7,11 +7,6 @@ Package: erlang*
- Pin: version 1:23.*
- Pin-Priority: 1000
- 
--# FIXME(mgoddard): Pinning to 4.0.* to avoid bug 1930867.
--Package: td-agent*
--Pin: version 4.0.*
--Pin-Priority: 1000
--
- # NOTE(mgoddard): logstash 7.9.x is the last version that supports
- # Elasticsearch OSS.
- Package: logstash-oss
-diff --git a/docker/base/apt_preferences.ubuntu b/docker/base/apt_preferences.ubuntu
-index 4f0707067..fd8609d94 100644
---- a/docker/base/apt_preferences.ubuntu
-+++ b/docker/base/apt_preferences.ubuntu
-@@ -6,11 +6,6 @@ Package: erlang*
  Pin: version 1:23.*
  Pin-Priority: 1000
  
