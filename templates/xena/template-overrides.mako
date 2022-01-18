@@ -26,7 +26,7 @@ RUN apt-get update ${"\\"}
 
 {% set cinder_volume_packages_append = ['multipath-tools'] %}
 
-{% set cinder_volume_pip_packages = [ 'cinderlib', 'purestorage' ] %}
+{% set cinder_volume_pip_packages = [ 'cinderlib', 'purestorage', 'infinisdk' ] %}
 {% block cinder_volume_footer %}
 RUN {{ macros.install_pip(cinder_volume_pip_packages | customizable("pip_packages")) }}
 {% endblock %}
