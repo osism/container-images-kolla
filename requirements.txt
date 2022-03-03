@@ -1,6 +1,6 @@
 Jinja2==3.0.3
 Mako==1.1.6
 PyYAML==5.4.1
-ansible==4.2.0
+ansible==5.4.0
 docker-squash==1.0.9
 requests==2.27.1
