@@ -64,8 +64,16 @@ RUN curl -o /tmp/kolla-operations.tar.gz https://github.com/osism/kolla-operatio
 RUN apt-get update ${"\\"}
     && apt-get -y install --no-install-recommends ${"\\"}
            libapache2-mod-auth-openidc ${"\\"}
+           libmemcached11 ${"\\"}
     && apt-get clean ${"\\"}
     && rm -rf /var/lib/apt/lists/* ${"\\"}
+    && curl -o /tmp/liboauth2.deb "https://github.com/zmartzone/liboauth2/releases/download/v1.4.4.1/liboauth2_1.4.4.1-1.focal+1_amd64.deb" ${"\\"}
+    && dpkg -i /tmp/liboauth2.deb ${"\\"}
+    && rm -f /tmp/liboauth2.deb ${"\\"}
+    && curl -o /tmp/libapache2-mod-oauth2.deb "https://github.com/zmartzone/mod_oauth2/releases/download/v3.2.2/libapache2-mod-oauth2_3.2.2-1.focal+1_amd64.deb" ${"\\"}
+    && dpkg -i /tmp/libapache2-mod-oauth2.deb ${"\\"}
+    && rm -f /tmp/libapache2-mod-oauth2.deb ${"\\"}
+    && a2enmod oauth2 ${"\\"}
     && a2enmod auth_openidc
 {% endblock %}
 
