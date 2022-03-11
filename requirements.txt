@@ -1,5 +1,5 @@
 Jinja2==3.0.3
-Mako==1.1.6
+Mako==1.2.0
 PyYAML==6.0
 ansible==5.4.0
 docker-squash==1.0.9
