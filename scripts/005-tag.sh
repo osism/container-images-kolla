@@ -7,6 +7,7 @@ set -x
 # BUILD_ID
 # DOCKER_NAMESPACE
 # DOCKER_REGISTRY
+# IS_RELEASE
 # OPENSTACK_VERSION
 # VERSION
 
@@ -15,6 +16,7 @@ set -x
 BUILD_ID=${BUILD_ID:-$(date +%Y%m%d)}
 DOCKER_NAMESPACE=${DOCKER_NAMESPACE:-osism}
 DOCKER_REGISTRY=${DOCKER_REGISTRY:-quay.io}
+IS_RELEASE=${IS_RELEASE:-false}
 OPENSTACK_VERSION=${OPENSTACK_VERSION:-latest}
 VERSION=${VERSION:-latest}
 
@@ -30,8 +32,9 @@ fi
 
 . defaults/$OPENSTACK_VERSION.sh
 
-export VERSION
+export IS_RELEASE
 export OPENSTACK_VERSION
+export VERSION
 
 rm -f $LSTFILE
 touch $LSTFILE
@@ -63,4 +66,5 @@ docker images | grep $DOCKER_NAMESPACE | grep $KOLLA_TYPE | grep $SOURCE_DOCKER_
     fi
 done
 
+python3 src/tag-images-with-the-version.py
 docker images

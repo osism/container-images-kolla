@@ -87,6 +87,7 @@ LABEL "build-date"="{{ build_date }}" ${"\\"}
       "name"="{{ image_name }}" ${"\\"}
       "de.osism.commit.docker_images_kolla"="${hash_docker_images_kolla}" ${"\\"}
       "de.osism.commit.kolla"="${hash_kolla}" ${"\\"}
+      "de.osism.commit.kolla_version"="${kolla_version}" ${"\\"}
       "de.osism.commit.release"="${hash_release}" ${"\\"}
       "de.osism.release.openstack"="${openstack_version}" ${"\\"}
       "de.osism.version"="${version}" ${"\\"}

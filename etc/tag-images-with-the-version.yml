@@ -1,0 +1,84 @@
+---
+aodh: pip3 show aodh
+barbican: pip3 show barbican
+bifrost: pip3 show bifrost
+ceilometer: pip3 show ceilometer
+cinder: pip3 show cinder
+cloudkitty: pip3 show cloudkitty
+collectd: dpkg -s collectd
+cron: dpkg -s cron
+designate: pip3 show designate
+dnsmasq: dpkg -s dnsmasq
+elasticsearch: dpkg -s elasticsearch-oss
+elasticsearch-curator: pip3 show elasticsearch_curator
+etcd: dpkg -s etcd
+fluentd: dpkg -s td-agent
+glance: pip3 show glance
+gnocchi: pip3 show gnocchi
+grafana: dpkg -s grafana
+haproxy: dpkg -s haproxy
+heat: pip3 show openstack-heat
+horizon: pip3 show horizon
+influxdb: dpkg -s influxdb
+ironic: pip3 show ironic
+ironic-inspector: pip3 show ironic-inspector
+ironic-neutron-agent: pip3 show neutron
+iscsid: dpkg -s open-iscsi
+# 2.0.1 (Commit:fa14705e51bd2ce5)
+kafka: /opt/kafka/bin/kafka-topics.sh --version
+keepalived: dpkg -s keepalived
+keystone: pip3 show keystone
+kibana: dpkg -s kibana-oss
+# Version of Kolla is used
+kolla-toolbox: echo
+kuryr-libnetwork: pip3 show kuryr-libnetwork
+logstash: dpkg -s logstash-oss
+magnum: pip3 show magnum
+manila: pip3 show manila
+mariadb: dpkg -s mariadb-client
+memcached: dpkg -s memcached
+mistral: pip3 show mistral
+monasca: pip3 show monasca
+multipathd: dpkg -s multipath-tools
+neutron: pip3 show neutron
+nova: pip3 show nova
+nova-libvirt: dpkg -s libvirt-daemon
+octavia: pip3 show octavia
+openvswitch: dpkg -s openvswitch-switch
+ovn: dpkg -s ovn-common
+placement: pip3 show openstack-placement
+# alertmanager, version 0.20.0 (branch: HEAD, revision: f74be0400a6243d10bb53812d6fa408ad71ff32d)
+prometheus-alertmanager: bash -c '/opt/prometheus_alertmanager/alertmanager --version 2>&1'
+# blackbox_exporter, version 0.16.0 (branch: HEAD, revision: 991f89846ae10db22a3933356a7d196642fcb9a9)
+prometheus-blackbox-exporter: bash -c '/opt/blackbox_exporter/blackbox_exporter --version 2>&1'
+# cAdvisor version v0.38.7 (57a2c804)
+prometheus-cadvisor: /opt/cadvisor --version
+# elasticsearch_exporter, version 1.2.1 (branch: HEAD, revision: 746222a8153db4ecaf99f239dcd34a187fdcb894)
+prometheus-elasticsearch-exporter: bash -c '/opt/elasticsearch_exporter/elasticsearch_exporter --version 2>&1'
+# haproxy_exporter, version 0.10.0 (branch: HEAD, revision: ec68a7b1129651dff5b4268dd1e423571652ca60)
+prometheus-haproxy-exporter: bash -c '/opt/haproxy_exporter/haproxy_exporter --version 2>&1'
+# Version of Kolla is used
+prometheus-libvirt-exporter: echo
+# memcached_exporter, version 0.6.0 (branch: HEAD, revision: d7eadc3523ec9731b7865a188093f70140d54a8d)
+prometheus-memcached-exporter: bash -c '/opt/memcached_exporter/memcached_exporter --version 2>&1'
+# mtail version v3.0.0-rc35 git revision a33283598c4b7a70fc2f113680318f29d5826cca go version go1.14 go arch amd64 go os linux
+prometheus-mtail: /opt/mtail --version
+# mysqld_exporter, version 0.12.1 (branch: HEAD, revision: 48667bf7c3b438b5e93b259f3d17b70a7c9aff96)
+prometheus-mysqld-exporter: bash -c '/opt/mysqld_exporter/mysqld_exporter --version 2>&1'
+# node_exporter, version 0.18.1 (branch: HEAD, revision: 3db77732e925c08f675d7404a8c46466b2ece83e)
+prometheus-node-exporter: bash -c '/opt/node_exporter/node_exporter --version 2>&1'
+# openstack-exporter, version 1.3.0 (branch: HEAD, revision: b33bff9801ebcd714d9d08cabde8997101afe938)
+prometheus-openstack-exporter: bash -c '/opt/openstack-exporter/openstack-exporter --version 2>&1'
+# prometheus, version 2.26.1 (branch: HEAD, revision: 6eeded0fdf760e81af75d9c44ce539ab77da4505)
+prometheus-v2-server: /opt/prometheus/prometheus --version
+rabbitmq: dpkg -s rabbitmq-server
+redis: dpkg -s redis-server
+redis-sentinel: dpkg -s redis-sentinel
+senlin: pip3 show senlin
+# Storm 1.2.2
+storm: /opt/storm/bin/storm version
+swift: pip3 show swift
+tgtd: dpkg -s tgt
+trove: pip3 show trove
+# /opt/zookeeper/zookeeper-3.4.13.jar
+zookeeper: find /opt/zookeeper -maxdepth 1 -name 'zookeeper-*.jar'
