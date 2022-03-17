@@ -7,6 +7,7 @@ import yaml
 HASH_DOCKER_IMAGES_KOLLA = os.environ.get("HASH_DOCKER_IMAGES_KOLLA", "none")
 HASH_KOLLA = os.environ.get("HASH_KOLLA", "none")
 HASH_RELEASE = os.environ.get("HASH_RELEASE", "none")
+KOLLA_VERSION = os.environ.get("KOLLA_VERSION", "none")
 OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "latest")
 VERSION = os.environ.get("VERSION", "latest")
 
@@ -22,6 +23,7 @@ data = {
     'hash_kolla': HASH_KOLLA,
     'hash_release': HASH_RELEASE,
     'infrastructure_projects': versions['infrastructure_projects'],
+    'kolla_version': KOLLA_VERSION,
     'openstack_version': OPENSTACK_VERSION,
     'version': VERSION,
 }

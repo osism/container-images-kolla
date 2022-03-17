@@ -70,15 +70,6 @@ if [[ -f templates/$OPENSTACK_VERSION/repos.yaml ]]; then
     cp templates/$OPENSTACK_VERSION/repos.yaml $PROJECT_REPOSITORY_PATH/kolla/template/repos.yaml
 fi
 
-# Prepare template-overrides.j2
-
-export HASH_DOCKER_IMAGES_KOLLA=$(git rev-parse --short HEAD)
-export HASH_RELEASE=$(cd release; git rev-parse --short HEAD)
-python3 src/generate-template-overrides-file.py > templates/$OPENSTACK_VERSION/template-overrides.j2
-
-echo DEBUG template-overrides.j2
-cat templates/$OPENSTACK_VERSION/template-overrides.j2
-
 # Prepare apt_preferences.ubuntu
 
 python3 src/generate-apt-preferences-files.py > overlays/$OPENSTACK_VERSION/base/apt_preferences.ubuntu
@@ -111,3 +102,14 @@ done
 
 pip3 install -r $PROJECT_REPOSITORY_PATH/requirements.txt
 pip3 install $PROJECT_REPOSITORY_PATH/
+
+export KOLLA_VERSION=$(kolla-build --version)
+
+# Prepare template-overrides.j2
+
+export HASH_DOCKER_IMAGES_KOLLA=$(git rev-parse --short HEAD)
+export HASH_RELEASE=$(cd release; git rev-parse --short HEAD)
+python3 src/generate-template-overrides-file.py > templates/$OPENSTACK_VERSION/template-overrides.j2
+
+echo DEBUG template-overrides.j2
+cat templates/$OPENSTACK_VERSION/template-overrides.j2
