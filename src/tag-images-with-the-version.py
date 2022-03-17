@@ -6,7 +6,12 @@ from tabulate import tabulate
 from yaml import safe_load, YAMLError
 
 IS_RELEASE = os.environ.get("IS_RELEASE", "false")
-VERSION = os.environ.get("OPENSTACK_VERSION", "xena")
+
+if IS_RELEASE == "true":
+    VERSION = os.environ.get("VERSION", "xena")
+else:
+    VERSION = os.environ.get("OPENSTACK_VERSION", "xena")
+
 logging.basicConfig(format='%(asctime)s %(levelname)s - %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
 
 with open("etc/tag-images-with-the-version.yml", "r") as fp:
@@ -37,10 +42,16 @@ for image in client.images.list():
     else:
         continue
 
-    if "de.osism.release.openstack" in image.labels:
-        version = image.labels["de.osism.release.openstack"]
+    if IS_RELEASE == "true":
+        if "de.osism.version" in image.labels:
+            version = image.labels["de.osism.version"]
+        else:
+            continue
     else:
-        continue
+        if "de.osism.release.openstack" in image.labels:
+            version = image.labels["de.osism.release.openstack"]
+        else:
+            continue
 
     if "build-date" in image.labels:
         # NOTE: maybe it is better to use org.opencontainers.image.created here
@@ -52,7 +63,7 @@ for image in client.images.list():
     if name[-4:] == "base":
         continue
 
-    if version == VERSION and tag[(-1 * len(version)):] == VERSION:
+    if tag[(-1 * len(version)):] == VERSION:
 
         best_key = None
         if name in configuration:
