@@ -137,7 +137,7 @@ for image in client.images.list():
 
                 # Move release images to a release subproject
                 if IS_RELEASE == "true":
-                    target_tag = target_tag.replace("/osism/", "/osism/release/")
+                    target_tag = target_tag.replace("/kolla/", "/kolla/release/")
 
                 logging.info(f"Re-tagging {tag} as {target_tag}")
                 image.tag(target_tag)
