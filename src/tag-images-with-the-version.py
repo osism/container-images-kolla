@@ -3,7 +3,7 @@ import logging
 import os
 from re import findall, sub
 from tabulate import tabulate
-from yaml import safe_load, YAMLError
+from yaml import dump, safe_load, YAMLError
 
 IS_RELEASE = os.environ.get("IS_RELEASE", "false")
 
@@ -147,9 +147,13 @@ for image in client.images.list():
         except Exception as e:
             logging.error(f"Something went wrong while processing {tag}: {e}")
 
-with open("tag-images-with-the-version.lst", "w+") as fp:
-    for image in list_of_images:
-        fp.write(f"{image[0]}\n")
+flat_list_of_images = [image[0] for image in list_of_images]
+with open("images.lst", "w+") as fp:
+    for image in flat_list_of_images:
+        fp.write(f"{image}\n")
+
+with open("images.yml", "w+") as fp:
+    dump(flat_list_of_images, fp, default_flow_style=False, explicit_start=True)
 
 print()
 print(tabulate(list_of_images, headers=["image"], tablefmt="psql"))

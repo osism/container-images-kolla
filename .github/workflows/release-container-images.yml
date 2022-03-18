@@ -45,3 +45,8 @@ jobs:
           DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
           IS_RELEASE: "true"
           VERSION: ${{ steps.get_version.outputs.VERSION }}
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: "images-${{ steps.get_version.outputs.VERSION }}"
+          path: images.yml

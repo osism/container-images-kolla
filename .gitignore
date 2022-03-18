@@ -1,6 +1,7 @@
 apt_preferences.ubuntu
 etc/kolla-build.conf
-tag-images-with-the-version.lst
+images.lst
+images.yml
 tarballs
 template-overrides.j2
 *.log
