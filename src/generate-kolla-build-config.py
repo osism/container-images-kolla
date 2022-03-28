@@ -3,6 +3,7 @@ import os
 import jinja2
 import yaml
 
+IS_RELEASE = os.environ.get("IS_RELEASE", "false")
 OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "latest")
 VERSION = os.environ.get("VERSION", "latest")
 
@@ -116,6 +117,7 @@ template_data = {
     "horizon_plugins":  horizon_plugins,
     "horizon_version": versions['openstack_projects']['horizon'],
     "install_type": KOLLA_INSTALL_TYPE,
+    "is_release": IS_RELEASE,
     "namespace": KOLLA_NAMESPACE,
     "neutron_base_plugins":  neutron_base_plugins,
     "neutron_server_plugins":  neutron_server_plugins,
