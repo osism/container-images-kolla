@@ -21,8 +21,13 @@ threads = 4
 [{{ project.name }}]
 {% endif -%}
 type = local
+{% is_release == "false" %}
 # tarball = https://tarballs.opendev.org/openstack/{{ project.repository }}/{{ project.repository }}-stable-{{ openstack_release }}.tar.gz
 location = tarballs/{{ project.repository }}-stable-{{ openstack_release }}.tar.gz
+{% else %}
+# tarball = https://tarballs.opendev.org/openstack/{{ project.repository }}/{{ project.repository }}-{{ project.version }}.tar.gz
+location = tarballs/{{ project.repository }}-{{ project.version }}.tar.gz
+{% endif %}
 {%- endfor %}
 
 # projects with a specific version (!= openstack_release)
