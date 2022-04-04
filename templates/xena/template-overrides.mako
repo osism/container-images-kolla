@@ -81,6 +81,9 @@ RUN apt-get update ${"\\"}
 RUN rm -rf /usr/share/doc/* ${"\\"}
     && rm -rf /usr/share/man/* ${"\\"}
     && rm -rf /*-base-source
+
+RUN apt-get remove -y build-essential ${"\\"}
+    && apt-get autoremove -y
 {% endblock %}
 
 {% block labels %}
