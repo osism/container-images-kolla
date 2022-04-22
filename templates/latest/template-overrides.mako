@@ -77,6 +77,13 @@ RUN apt-get update ${"\\"}
     && a2enmod auth_openidc
 {% endblock %}
 
+{% block bifrost_deploy_footer %}
+# NOTE: Necessary because sources in /bifrost-base-source are accessed in the bifrost-deploy image.
+RUN rm -rf /bifrost ${"\\"}
+    && mkdir /bifrost ${"\\"}
+    && cp -r /bifrost-base-source/*/* /bifrost
+{% endblock %}
+
 {% block footer %}
 RUN rm -rf /usr/share/doc/* ${"\\"}
     && rm -rf /usr/share/man/* ${"\\"}
