@@ -23,10 +23,6 @@ class AttrDict(dict):
 
 
 versions = {}
-ceilometer_base_plugins = []
-neutron_server_plugins = []
-neutron_base_plugins = []
-horizon_plugins = []
 projects = []
 
 filename = "release/%s/openstack-%s.yml" % (VERSION, OPENSTACK_VERSION)
@@ -41,8 +37,25 @@ for project in versions['openstack_projects'].keys():
 
     if project == "neutron-lbaas-agent":
         repository = "neutron-lbaas"
+
     elif project == "neutron-vpnaas-agent":
         repository = "neutron-vpnaas"
+
+    # NOTE: use stable branches for monasca for the moment
+    elif project == "monasca":
+        continue
+
+    # NOTE: only with a specific version the name of the tarball is openstack-heat
+    elif project == "heat" and versions['openstack_projects'][project]:
+        repository = "openstack-heat"
+
+    # NOTE: only with a specific version the name of the tarball is openstack-placement
+    elif project == "placement" and versions['openstack_projects'][project]:
+        repository = "openstack-placement"
+
+    # NOTE: only with a specific version the name of the tarball is kuryr-lib
+    elif project == "kuryr" and versions['openstack_projects'][project]:
+        repository = "kuryr-lib"
 
     projects.append({
         "name": project,
@@ -50,79 +63,21 @@ for project in versions['openstack_projects'].keys():
         "repository": repository
     })
 
-if 'horizon_plugins' in versions:
-    for project in versions['horizon_plugins'].keys():
-        repository = project
-
-        if project == "fwaas-dashboard":
-            repository = "neutron-fwaas-dashboard"
-
-        horizon_plugins.append({
-            "name": project,
-            "version": versions['horizon_plugins'][project],
-            "repository": repository
-        })
-
-if 'ceilometer_base_plugins' in versions:
-    for project in versions['ceilometer_base_plugins'].keys():
-        repository = project
-
-        ceilometer_base_plugins.append({
-            "name": project,
-            "version": versions['ceilometer_base_plugins'][project],
-            "repository": repository
-        })
-
-if 'neutron_base_plugins' in versions:
-    for project in versions['neutron_base_plugins'].keys():
-        repository = project
-
-        if project == "vpnaas-agent":
-            repository = "neutron-vpnaas"
-
-        neutron_base_plugins.append({
-            "name": project,
-            "version": versions['neutron_base_plugins'][project],
-            "repository": repository
-        })
-
-if 'neutron_server_plugins' in versions:
-    for project in versions['neutron_server_plugins'].keys():
-        repository = project
-
-        if project == "vpnaas-agent":
-            repository = "neutron-vpnaas"
-        elif project == "ovn-plugin-networking-ovn":
-            repository = "networking-ovn"
-
-        neutron_server_plugins.append({
-            "name": project,
-            "version": versions['neutron_server_plugins'][project],
-            "repository": repository
-        })
-
 loader = jinja2.FileSystemLoader(searchpath="templates/%s" % OPENSTACK_VERSION)
 environment = jinja2.Environment(loader=loader)
 template = environment.get_template(TEMPLATE_FILE)
 
-patched_projects = os.listdir("patches/%s/" %
-                              versions['openstack_version'])
-projects = [x for x in projects if x['name'] in patched_projects]
+projects_with_version = [x for x in projects if versions['openstack_projects'][x['name']]]
 
 template_data = {
     "base": KOLLA_BASE,
     "base_tag": KOLLA_BASE_TAG,
-    "ceilometer_base_plugins":  ceilometer_base_plugins,
     "gnocchi_version": versions['openstack_projects']['gnocchi'],
-    "horizon_plugins":  horizon_plugins,
-    "horizon_version": versions['openstack_projects']['horizon'],
     "install_type": KOLLA_INSTALL_TYPE,
     "is_release": IS_RELEASE,
     "namespace": KOLLA_NAMESPACE,
-    "neutron_base_plugins":  neutron_base_plugins,
-    "neutron_server_plugins":  neutron_server_plugins,
     "openstack_release": versions['openstack_version'],
-    "projects": projects,
+    "projects": projects_with_version,
     "versions": versions
 }
 
