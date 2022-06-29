@@ -12,8 +12,6 @@ threads = 4
 #########################################################################
 # sources tracked in release repository
 
-# patched projects
-
 {%- for project in projects %}
 {% if project.name not in ['horizon', 'neutron-vpnaas-agent'] %}
 [{{ project.name }}-base]
@@ -21,11 +19,9 @@ threads = 4
 [{{ project.name }}]
 {% endif -%}
 type = local
-# tarball = https://tarballs.opendev.org/openstack/{{ project.repository }}/{{ project.repository }}-master.tar.gz
+# tarball = https://tarballs.opendev.org/openstack/{{ project.repository }}/{{ project.repository }}-{{ project.version }}.tar.gz
 location = tarballs/{{ project.repository }}-master.tar.gz
 {%- endfor %}
-
-# projects with a specific version (!= openstack_release)
 
 [gnocchi-base]
 type = git
