@@ -6,7 +6,7 @@ ubuntu:
     component: "main"
     gpg_key: "elasticsearch.asc"
   erlang:
-    url: "http://ppa.launchpad.net/rabbitmq/rabbitmq-erlang/ubuntu"
+    url: "https://dl.cloudsmith.io/public/rabbitmq/rabbitmq-erlang/deb/ubuntu"
     suite: "focal"
     component: "main"
     gpg_key: "erlang.gpg"
@@ -63,7 +63,7 @@ ubuntu-aarch64:
     component: "main"
     gpg_key: "elasticsearch.asc"
   erlang:
-    url: "http://ppa.launchpad.net/rabbitmq/rabbitmq-erlang/ubuntu"
+    url: "https://dl.cloudsmith.io/public/rabbitmq/rabbitmq-erlang/deb/ubuntu"
     suite: "focal"
     component: "main"
     gpg_key: "erlang.gpg"
