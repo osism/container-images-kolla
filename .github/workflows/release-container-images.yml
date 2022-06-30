@@ -48,5 +48,10 @@ jobs:
 
       - uses: actions/upload-artifact@v3
         with:
+          name: "kolla-build-${{ steps.get_version.outputs.VERSION }}"
+          path: kolla-build.conf
+
+      - uses: actions/upload-artifact@v3
+        with:
           name: "images-${{ steps.get_version.outputs.VERSION }}"
           path: images.yml
