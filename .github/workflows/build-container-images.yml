@@ -19,6 +19,7 @@ jobs:
         openstack_version:
           - wallaby
           - xena
+          - yoga
     steps:
       - uses: actions/checkout@v3
         with:

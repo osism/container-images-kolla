@@ -1,0 +1,109 @@
+---
+ubuntu:
+  elasticsearch:
+    url: "https://artifacts.elastic.co/packages/7.x/apt"
+    suite: "stable"
+    component: "main"
+    gpg_key: "elasticsearch.asc"
+  erlang:
+    url: "https://dl.cloudsmith.io/public/rabbitmq/rabbitmq-erlang/deb/ubuntu"
+    suite: "focal"
+    component: "main"
+    gpg_key: "erlang.gpg"
+  grafana:
+    url: "https://packages.grafana.com/oss/deb"
+    suite: "stable"
+    component: "main"
+    gpg_key: "grafana.asc"
+  haproxy:
+    url: "http://ppa.launchpad.net/vbernat/haproxy-2.2/ubuntu"
+    suite: "focal"
+    component: "main"
+    gpg_key: "haproxy.gpg"
+  influxdb:
+    url: "https://repos.influxdata.com/ubuntu"
+    suite: "focal"
+    component: "stable"
+    gpg_key: "influxdb.asc"
+  logstash:
+    url: "https://artifacts.elastic.co/packages/oss-7.x/apt"
+    suite: "stable"
+    component: "main"
+    gpg_key: "elasticsearch.asc"
+  kibana:
+    url: "https://artifacts.elastic.co/packages/oss-7.x/apt"
+    suite: "stable"
+    component: "main"
+    gpg_key: "elasticsearch.asc"
+  mariadb:
+    url: "http://downloads.mariadb.com/MariaDB/mariadb-10.6/repo/ubuntu"
+    suite: "focal"
+    component: "main"
+    gpg_key: "mariadb.gpg"
+  rabbitmq:
+    url: "https://dl.cloudsmith.io/public/rabbitmq/rabbitmq-server/deb/ubuntu"
+    suite: "focal"
+    component: "main"
+    gpg_key: "rabbitmq.gpg"
+  td-agent:
+    url: "http://packages.treasuredata.com/4/ubuntu/focal/"
+    suite: "focal"
+    component: "contrib"
+    gpg_key: "treasuredata.asc"
+  proxysql:
+    url: "https://repo.proxysql.com/ProxySQL/proxysql-2.3.x/focal/"
+    suite: "./"
+    component: ""
+    gpg_key: "proxysql.asc"
+
+ubuntu-aarch64:
+  elasticsearch:
+    url: "https://artifacts.elastic.co/packages/7.x/apt"
+    suite: "stable"
+    component: "main"
+    gpg_key: "elasticsearch.asc"
+  erlang:
+    url: "https://dl.cloudsmith.io/public/rabbitmq/rabbitmq-erlang/deb/ubuntu"
+    suite: "focal"
+    component: "main"
+    gpg_key: "erlang.gpg"
+  grafana:
+    url: "https://packages.grafana.com/oss/deb"
+    suite: "stable"
+    component: "main"
+    gpg_key: "grafana.asc"
+  haproxy:
+    url: "http://ppa.launchpad.net/vbernat/haproxy-2.2/ubuntu"
+    suite: "focal"
+    component: "main"
+    gpg_key: "haproxy.gpg"
+  influxdb:
+    url: "https://repos.influxdata.com/ubuntu"
+    suite: "focal"
+    component: "stable"
+    gpg_key: "influxdb.asc"
+  logstash:
+    url: "https://artifacts.elastic.co/packages/oss-7.x/apt"
+    suite: "stable"
+    component: "main"
+    gpg_key: "elasticsearch.asc"
+  mariadb:
+    url: "http://downloads.mariadb.com/MariaDB/mariadb-10.6/repo/ubuntu"
+    suite: "focal"
+    component: "main"
+    gpg_key: "mariadb.gpg"
+  rabbitmq:
+    url: "https://dl.cloudsmith.io/public/rabbitmq/rabbitmq-server/deb/ubuntu"
+    suite: "focal"
+    component: "main"
+    gpg_key: "rabbitmq.gpg"
+  td-agent:
+    url: "http://packages.treasuredata.com/4/ubuntu/focal/"
+    suite: "focal"
+    component: "contrib"
+    gpg_key: "treasuredata.asc"
+  proxysql:
+    url: "https://repo.proxysql.com/ProxySQL/proxysql-2.3.x/focal/"
+    suite: "./"
+    component: ""
+    gpg_key: "proxysql.asc"
