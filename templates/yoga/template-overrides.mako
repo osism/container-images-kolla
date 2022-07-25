@@ -4,6 +4,15 @@
 
 {% set glance_base_pip_packages_append = ['boto3'] %}
 
+{% block horizon_header %}
+RUN apt-get update ${"\\"}
+    && apt-get -y install --no-install-recommends libmariadbclient-dev build-essential ${"\\"}
+    && SETUPTOOLS_USE_DISTUTILS=stdlib python3 -m pip --no-cache-dir install --upgrade mysqlclient ${"\\"}
+    && apt-get remove -y libmariadbclient-dev build-essential ${"\\"}
+    && apt-get clean ${"\\"}
+    && rm -rf /var/lib/apt/lists/*
+{% endblock %}
+
 {% block base_header %}
 COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
 RUN apt-get update ${"\\"}
