@@ -8,7 +8,7 @@
 RUN apt-get update ${"\\"}
     && apt-get -y install --no-install-recommends libmariadbclient-dev build-essential ${"\\"}
     && SETUPTOOLS_USE_DISTUTILS=stdlib python3 -m pip --no-cache-dir install --upgrade mysqlclient ${"\\"}
-    && apt-get remove -y libmariadbclient-dev build-essential ${"\\"}
+    && apt-get remove -y build-essential ${"\\"}
     && apt-get clean ${"\\"}
     && rm -rf /var/lib/apt/lists/*
 {% endblock %}
