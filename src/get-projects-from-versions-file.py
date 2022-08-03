@@ -36,7 +36,7 @@ elif BUILD_TYPE == "openstack-additional":
     all_projects = [x for x in versions["openstack_projects"] if x not in OPENSTACK_CORE_PROJECTS]  # noqa: E501
 elif BUILD_TYPE == "infrastructure":
     all_projects = versions["infrastructure_projects"]
-    del(all_projects["openstack-base"])
+    del all_projects["openstack-base"]
 else:
     print("BUILD_TYPE %s not supported" % BUILD_TYPE)
     sys.exit(1)
