@@ -9,7 +9,7 @@ name: Update release submodule
     branches:
       - main
   schedule:
-    - cron: "0 * * * *"
+    - cron: "0 0 * * *"
   repository_dispatch:
     types:
       - update-release-submodule
