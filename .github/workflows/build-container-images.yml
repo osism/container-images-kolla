@@ -47,7 +47,7 @@ jobs:
           DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
           OPENSTACK_VERSION: ${{ matrix.openstack_version }}
       - run: |
-          bash scripts/006-push.sh
+          bash scripts/100-push.sh
         if: |
           github.repository == 'osism/container-images-kolla' &&
           github.ref == 'refs/heads/main'
@@ -55,13 +55,11 @@ jobs:
         with:
           name: "images-${{ matrix.openstack_version }}"
           path: images.yml
-        if: |
-          github.repository == 'osism/container-images-kolla' &&
-          github.ref == 'refs/heads/main'
       - uses: actions/upload-artifact@v3
         with:
           name: "kolla-build-${{ matrix.openstack_version }}"
           path: kolla-build.conf
-        if: |
-          github.repository == 'osism/container-images-kolla' &&
-          github.ref == 'refs/heads/main'
+      - uses: actions/upload-artifact@v3
+        with:
+          name: "kolla-build-${{ matrix.openstack_version }}"
+          path: kolla-build.conf
