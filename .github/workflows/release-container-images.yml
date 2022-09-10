@@ -39,7 +39,7 @@ jobs:
           bash scripts/003-patch.sh
           bash scripts/004-build.sh
           bash scripts/005-tag.sh
-          bash scripts/007-release.sh
+          bash scripts/110-release.sh
         env:
           DOCKER_NAMESPACE: ${{ secrets.DOCKER_NAMESPACE }}
           DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
@@ -55,3 +55,7 @@ jobs:
         with:
           name: "images-${{ steps.get_version.outputs.VERSION }}"
           path: images.yml
+      - uses: actions/upload-artifact@v3
+        with:
+          name: "spdx-${{ steps.get_version.outputs.VERSION }}"
+          path: "*.spdx"

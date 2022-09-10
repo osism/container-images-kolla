@@ -66,5 +66,13 @@ docker images | grep $DOCKER_NAMESPACE | grep $KOLLA_TYPE | grep $SOURCE_DOCKER_
     fi
 done
 
+# NOTE: The generation of SBOMs requires a lot of time and memory.
+#       Therefore, SBOMs are currently only created for release images.
+
+if [[ $IS_RELEASE == "true" ]]; then
+    curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sudo sh -s -- -b /usr/local/bin
+    python3 src/generate-sbom-with-syft.py
+fi
+
 python3 src/tag-images-with-the-version.py
 docker images
