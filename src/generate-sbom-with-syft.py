@@ -1,38 +1,22 @@
 import logging
 import subprocess
-import os
 
-from docker import DockerClient
-
-IS_RELEASE = os.environ.get("IS_RELEASE", "false")
-
-if IS_RELEASE == "true":
-    VERSION = os.environ.get("VERSION", "xena")
-else:
-    VERSION = os.environ.get("OPENSTACK_VERSION", "xena")
+from yaml import safe_load, YAMLError
 
 logging.basicConfig(format='%(asctime)s %(levelname)s - %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
 
-client = DockerClient()
+with open("images.yml", "r") as fp:
+    try:
+        images = safe_load(fp)
+    except YAMLError as e:
+        logging.error(e)
 
-for image in client.images.list():
-    # skip images without a tag
-    if not image.tags:
-        continue
+processes = []
+for image in images:
+    name = image.split("/")[-1].split(":")[0]
+    logging.info(f"Generating SBOM for {image} as {name}.spdx")
+    p = subprocess.Popen(f"/usr/local/bin/syft packages {image} -o spdx-json > {name}.spdx", shell=True)
+    processes.append(p)
 
-    name = None
-    tag = image.tags[0]
-
-    if "org.opencontainers.image.title" in image.labels:
-        name = image.labels["org.opencontainers.image.title"]
-    else:
-        continue
-
-    # skip base images
-    if name[-4:] == "base":
-        continue
-
-    if tag[(-1 * len(VERSION)):] == VERSION:
-        logging.info(f"Generating SBOM for {tag}")
-        p = subprocess.Popen(f"/usr/local/bin/syft packages {tag} -o spdx-json > {name}.spdx", shell=True)
-        p.wait()
+for p in processes:
+    p.wait()

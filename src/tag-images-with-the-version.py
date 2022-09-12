@@ -89,6 +89,9 @@ for image in client.images.list():
             if best_key == "prometheus-libvirt-exporter":
                 r = [VERSION]
 
+            elif best_key == "prometheus-openstack-exporter":
+                r = [VERSION]
+
             elif best_key == "kolla-toolbox":
                 r = [image.labels["de.osism.commit.kolla_version"]]
 

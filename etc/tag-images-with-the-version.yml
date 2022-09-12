@@ -36,6 +36,7 @@ logstash: dpkg -s logstash-oss
 magnum: pip3 show magnum
 manila: pip3 show manila
 mariadb: dpkg -s mariadb-client
+mariadb-clustercheck: dpkg -s mariadb-client
 memcached: dpkg -s memcached
 mistral: pip3 show mistral
 monasca: pip3 show monasca
