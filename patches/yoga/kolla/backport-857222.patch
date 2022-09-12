@@ -1,33 +1,11 @@
-From 0040c6d3f64b9d0a821697557204b35eee11ca0f Mon Sep 17 00:00:00 2001
-From: Christian Berendt <berendt@osism.tech>
-Date: Mon, 12 Sep 2022 21:07:27 +0200
-Subject: [PATCH] Add missing labels blocks
-
-Change-Id: I1396131c3e33e5f139339a203ebfb48841a358d7
----
-
-diff --git a/docker/letsencrypt/Dockerfile.j2 b/docker/letsencrypt/Dockerfile.j2
-index 30062f0..3617e87 100644
---- a/docker/letsencrypt/Dockerfile.j2
-+++ b/docker/letsencrypt/Dockerfile.j2
-@@ -1,5 +1,7 @@
- FROM {{ namespace }}/{{ image_prefix }}openstack-base:{{ tag }}
--LABEL maintainer="{{ maintainer }}" name="{{ image_name }}"
-+{% block labels %}
-+LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build_date }}"
-+{% endblock %}
- 
- {% block letsencrypt_header %}{% endblock %}
- 
-diff --git a/docker/mariadb/mariadb-clustercheck/Dockerfile.j2 b/docker/mariadb/mariadb-clustercheck/Dockerfile.j2
-index 04fb0da..d112bdc 100644
 --- a/docker/mariadb/mariadb-clustercheck/Dockerfile.j2
 +++ b/docker/mariadb/mariadb-clustercheck/Dockerfile.j2
 @@ -1,5 +1,7 @@
- FROM {{ namespace }}/{{ image_prefix }}mariadb-base:{{ tag }}
+ FROM {{ namespace }}/{{ infra_image_prefix }}mariadb-base:{{ tag }}
 +{% block labels %}
  LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build_date }}"
 +{% endblock %}
- 
+
  {% block mariadb_clustercheck_header %}{% endblock %}
- 
+
+
