@@ -68,7 +68,7 @@ prometheus-mysqld-exporter: bash -c '/opt/mysqld_exporter/mysqld_exporter --vers
 # node_exporter, version 0.18.1 (branch: HEAD, revision: 3db77732e925c08f675d7404a8c46466b2ece83e)
 prometheus-node-exporter: bash -c '/opt/node_exporter/node_exporter --version 2>&1'
 # openstack-exporter, version 1.3.0 (branch: HEAD, revision: b33bff9801ebcd714d9d08cabde8997101afe938)
-prometheus-openstack-exporter: bash -c '/opt/openstack-exporter/openstack-exporter --version 2>&1'
+prometheus-openstack-exporter: echo
 # prometheus, version 2.26.1 (branch: HEAD, revision: 6eeded0fdf760e81af75d9c44ce539ab77da4505)
 prometheus-v2-server: /opt/prometheus/prometheus --version
 rabbitmq: dpkg -s rabbitmq-server
