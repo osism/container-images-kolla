@@ -72,7 +72,7 @@ docker images
 # NOTE: The generation of SBOMs requires a lot of time and memory.
 #       Therefore, SBOMs are currently only created for release images.
 
-if [[ $IS_RELEASE == "true" ]]; then
-    curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sudo sh -s -- -b /usr/local/bin
-    python3 src/generate-sbom-with-syft.py
-fi
+# if [[ $IS_RELEASE == "true" ]]; then
+#     curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sudo sh -s -- -b /usr/local/bin
+#     python3 src/generate-sbom-with-syft.py
+# fi
