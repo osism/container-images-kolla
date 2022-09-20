@@ -155,8 +155,87 @@ with open("images.lst", "w+") as fp:
     for image in flat_list_of_images:
         fp.write(f"{image}\n")
 
+sbom = {
+    "images": [],
+    "versions": {}
+}
+
+SBOM_IMAGE_TO_VERSION = {
+    "aodh": "aodh-api",
+    "barbican": "barbican-api",
+    "bifrost": "bifrost-deploy",
+    "ceilometer": "ceilometer-central",
+    "cinder": "cinder-api",
+    "cloudkitty": "cloudkitty-api",
+    "collectd": "collectd",
+    "cron": "cron",
+    "designate": "designate-api",
+    "dnsmasq": "dnsmasq",
+    "elasticsearch": "elasticsearch",
+    "elasticsearch_curator": "elasticsearch-curator",
+    "etcd": "etcd",
+    "fluentd": "fluentd",
+    "glance": "glance-api",
+    "gnocchi": "gnocchi-api",
+    "grafana": "grafana",
+    "haproxy": "haproxy",
+    "heat": "heat-api",
+    "horizon": "horizon",
+    "influxdb": "influxdb",
+    "ironic": "ironic-api",
+    "iscsid": "iscsid",
+    "kafka": "kafka",
+    "keepalived": "keepalived",
+    "keystone": "keystone",
+    "kibana": "kibana",
+    "kolla_toolbox": "kolla-toolbox",
+    "kuryr": "kuryr-libnetwork",
+    "logstash": "logstash",
+    "magnum": "magnum-api",
+    "manila": "manila-api",
+    "mariadb": "mariadb-server",
+    "memcached": "memcached",
+    "mistral": "mistral-api",
+    "multipathd": "multipathd",
+    "neutron": "neutron-server",
+    "nova": "nova-api",
+    "nova_libvirt": "nova-libvirt",
+    "octavia": "octavia-api",
+    "openvswitch": "openvswitch-vswitchd",
+    "ovn": "ovn-controller",
+    "placement": "placement-api",
+    "prometheus": "prometheus-v2-server",
+    "prometheus_alertmanager": "prometheus-alertmanager",
+    "prometheus_blackbox_exporter": "prometheus-blackbox-exporter",
+    "prometheus_cadvisor": "prometheus-cadvisor",
+    "prometheus_elasticsearch_exporter": "prometheus-elasticsearch-exporter",
+    "prometheus_haproxy_exporter": "prometheus-haproxy-exporter",
+    "prometheus_libvirt_exporter": "prometheus-libvirt-exporter",
+    "prometheus_memcached_exporter": "prometheus-memcached-exporter",
+    "prometheus_mtail": "prometheus-mtail",
+    "prometheus_mysqld_exporter": "prometheus-mysqld-exporter",
+    "prometheus_node_exporter": "prometheus-node-exporter",
+    "prometheus_openstack_exporter": "prometheus-openstack-exporter",
+    "rabbitmq": "rabbitmq",
+    "redis": "redis",
+    "senlin": "senlin-api",
+    "storm": "storm",
+    "swift": "swift-object",
+    "tgtd": "tgtd",
+    "trove": "trove-api"
+}
+
+sbom_versions = {}
+for image in flat_list_of_images:
+    sbom["images"].append({"image": image})
+    name, version = image.split("/")[-1].split(":")
+    sbom_versions[name] = version
+
+for name in SBOM_IMAGE_TO_VERSION:
+    sbom["versions"][name] = sbom_versions[SBOM_IMAGE_TO_VERSION[name]]
+
 with open("images.yml", "w+") as fp:
-    dump(flat_list_of_images, fp, default_flow_style=False, explicit_start=True)
+    dump(sbom, fp, default_flow_style=False, explicit_start=True)
 
 print()
 print(tabulate(list_of_images, headers=["image"], tablefmt="psql"))
