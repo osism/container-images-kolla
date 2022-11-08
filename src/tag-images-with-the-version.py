@@ -189,6 +189,7 @@ SBOM_IMAGE_TO_VERSION = {
     "keystone": "keystone",
     "kibana": "kibana",
     "kolla_toolbox": "kolla-toolbox",
+    "kolla-toolbox": "kolla-toolbox",
     "kuryr": "kuryr-libnetwork",
     "logstash": "logstash",
     "magnum": "magnum-api",
@@ -232,7 +233,10 @@ for image in flat_list_of_images:
     sbom_versions[name] = version
 
 for name in SBOM_IMAGE_TO_VERSION:
-    sbom["versions"][name] = sbom_versions[SBOM_IMAGE_TO_VERSION[name]]
+    try:
+        sbom["versions"][name] = sbom_versions[SBOM_IMAGE_TO_VERSION[name]]
+    except KeyError:
+        pass
 
 with open("images.yml", "w+") as fp:
     dump(sbom, fp, default_flow_style=False, explicit_start=True)
