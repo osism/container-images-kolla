@@ -19,6 +19,7 @@ jobs:
         openstack_version:
           - xena
           - yoga
+          - zed
     steps:
       - uses: actions/checkout@v3
         with:
