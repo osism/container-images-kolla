@@ -50,7 +50,7 @@ for tarball in $(grep '# tarball' $KOLLA_CONF_FILE | awk '{ print $4 }'); do
         tar xzf $filename
         rm $filename
         pushd $directory > /dev/null
-        for patch in $(find ../../patches/$OPENSTACK_VERSION/${directory%-*} -type f -name '*.patch'); do
+        for patch in $(find ../../patches/$OPENSTACK_VERSION/${directory%-*} -type f -name '*.patch' | sort); do
             echo "APPLY PATCH $patch"
             patch --forward --batch -p1 --dry-run < $patch || exit 1
             patch --forward --batch -p1 < $patch
