@@ -6,7 +6,7 @@
 
 {% block horizon_header %}
 RUN apt-get update ${"\\"}
-    && apt-get -y install --no-install-recommends build-essential ${"\\"}
+    && apt-get -y install --no-install-recommends build-essential libmariadb-dev-compat ${"\\"}
     && SETUPTOOLS_USE_DISTUTILS=stdlib python3 -m pip --no-cache-dir install --upgrade mysqlclient ${"\\"}
     && apt-get remove -y build-essential ${"\\"}
     && apt-get clean ${"\\"}

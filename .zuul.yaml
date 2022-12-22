@@ -1,8 +1,28 @@
 ---
+- job:
+    name: container-images-kolla-build
+    pre-run: playbooks/pre.yml
+    run: playbooks/build.yml
+    timeout: 5400
+
+- job:
+    name: container-images-kolla-build-yoga
+    parent: container-images-kolla-build
+    vars:
+      version_openstack: yoga
+
+- job:
+    name: container-images-kolla-build-zed
+    parent: container-images-kolla-build
+    vars:
+      version_openstack: zed
+
 - project:
     check:
       jobs:
         - tox-linters
+        - container-images-kolla-build-yoga
+        - container-images-kolla-build-zed
     gate:
       jobs:
         - tox-linters

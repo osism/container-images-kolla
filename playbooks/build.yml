@@ -1,0 +1,24 @@
+---
+- name: Build images
+  hosts: all
+
+  vars:
+    version_openstack: zed
+
+  tasks:
+    - name: Run build scripts
+      ansible.builtin.shell:
+        executable: /bin/bash
+        chdir: "{{ zuul.project.src_dir }}"
+        cmd: |
+          set -e
+          set -x
+          git submodule update --init
+          sudo pip3 install -r requirements.txt
+          export OPENSTACK_VERSION={{ version_openstack }}
+          export PATH=/home/zuul/.local/bin:$PATH
+          scripts/001-prepare.sh
+          scripts/002-generate.sh
+          scripts/003-patch.sh
+          scripts/004-build.sh
+          scripts/005-tag.sh
