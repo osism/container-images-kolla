@@ -6,7 +6,7 @@
 
 {% block horizon_header %}
 RUN apt-get update ${"\\"}
-    && apt-get -y install --no-install-recommends build-essential ${"\\"}
+    && apt-get -y install --no-install-recommends build-essential libmariadb-dev-compat ${"\\"}
     && SETUPTOOLS_USE_DISTUTILS=stdlib python3 -m pip --no-cache-dir install --upgrade mysqlclient ${"\\"}
     && apt-get remove -y build-essential ${"\\"}
     && apt-get clean ${"\\"}
@@ -59,6 +59,9 @@ RUN apt-get update ${"\\"}
     && curl -o /tmp/liboauth2.deb "https://github.com/zmartzone/liboauth2/releases/download/v1.4.5.2/liboauth2_1.4.5.2-1.jammy_amd64.deb" ${"\\"}
     && dpkg -i /tmp/liboauth2.deb ${"\\"}
     && rm -f /tmp/liboauth2.deb ${"\\"}
+    && curl -o /tmp/liboauth2-apache.deb "https://github.com/zmartzone/liboauth2/releases/download/v1.4.5.2/liboauth2-apache_1.4.5.2-1.jammy_amd64.deb" ${"\\"}
+    && dpkg -i /tmp/liboauth2-apache.deb ${"\\"}
+    && rm -f /tmp/liboauth2-apache.deb ${"\\"}
     && curl -o /tmp/libapache2-mod-oauth2.deb "https://github.com/zmartzone/mod_oauth2/releases/download/v3.3.0/libapache2-mod-oauth2_3.3.0-1.jammy_amd64.deb" ${"\\"}
     && dpkg -i /tmp/libapache2-mod-oauth2.deb ${"\\"}
     && rm -f /tmp/libapache2-mod-oauth2.deb ${"\\"}
