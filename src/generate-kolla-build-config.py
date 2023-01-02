@@ -29,8 +29,8 @@ filename = "release/%s/openstack-%s.yml" % (VERSION, OPENSTACK_VERSION)
 with open(filename, "rb") as fp:
     versions = yaml.load(fp, Loader=yaml.FullLoader)
 
-for project in versions['openstack_projects'].keys():
-    if project in ['gnocchi', 'novajoin']:
+for project in versions["openstack_projects"].keys():
+    if project in ["gnocchi", "novajoin"]:
         continue
 
     repository = project
@@ -46,43 +46,47 @@ for project in versions['openstack_projects'].keys():
         continue
 
     # NOTE: only with a specific version the name of the tarball is openstack-heat
-    elif project == "heat" and versions['openstack_projects'][project]:
+    elif project == "heat" and versions["openstack_projects"][project]:
         repository = "openstack-heat"
 
     # NOTE: only with a specific version the name of the tarball is openstack-placement
-    elif project == "placement" and versions['openstack_projects'][project]:
+    elif project == "placement" and versions["openstack_projects"][project]:
         repository = "openstack-placement"
 
     # NOTE: only with a specific version the name of the tarball is kuryr-lib
-    elif project == "kuryr" and versions['openstack_projects'][project]:
+    elif project == "kuryr" and versions["openstack_projects"][project]:
         repository = "kuryr-lib"
 
-    projects.append({
-        "name": project,
-        "version": versions['openstack_projects'][project],
-        "repository": repository
-    })
+    projects.append(
+        {
+            "name": project,
+            "version": versions["openstack_projects"][project],
+            "repository": repository,
+        }
+    )
 
 loader = jinja2.FileSystemLoader(searchpath="templates/%s" % OPENSTACK_VERSION)
 environment = jinja2.Environment(loader=loader)
 template = environment.get_template(TEMPLATE_FILE)
 
-projects_with_version = [x for x in projects if versions['openstack_projects'][x['name']]]
+projects_with_version = [
+    x for x in projects if versions["openstack_projects"][x["name"]]
+]
 
 template_data = {
     "base": KOLLA_BASE,
     "base_tag": KOLLA_BASE_TAG,
-    "gnocchi_version": versions['openstack_projects']['gnocchi'],
+    "gnocchi_version": versions["openstack_projects"]["gnocchi"],
     "install_type": KOLLA_INSTALL_TYPE,
     "is_release": IS_RELEASE,
     "namespace": KOLLA_NAMESPACE,
-    "openstack_release": versions['openstack_version'],
+    "openstack_release": versions["openstack_version"],
     "projects": projects_with_version,
-    "versions": versions
+    "versions": versions,
 }
 
-if "novajoin" in versions['openstack_projects']:
-    novajoin_version = versions['openstack_projects']['novajoin']
+if "novajoin" in versions["openstack_projects"]:
+    novajoin_version = versions["openstack_projects"]["novajoin"]
     template_data["novajoin_version"] = novajoin_version
 
 result = template.render(template_data)

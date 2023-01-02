@@ -1,8 +1,9 @@
-from docker import DockerClient
-import logging
 import os
 from re import findall, sub
+
+from docker import DockerClient
 from tabulate import tabulate
+from loguru import logger
 from yaml import dump, safe_load, YAMLError
 
 IS_RELEASE = os.environ.get("IS_RELEASE", "false")
@@ -12,19 +13,19 @@ if IS_RELEASE == "true":
 else:
     VERSION = os.environ.get("OPENSTACK_VERSION", "xena")
 
-logging.basicConfig(format='%(asctime)s %(levelname)s - %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-
 with open("etc/tag-images-with-the-version.yml", "r") as fp:
     try:
         configuration = safe_load(fp)
     except YAMLError as e:
-        logging.error(e)
+        logger.error(e)
 
 client = DockerClient()
 
 list_of_images = []
 
-for image in client.images.list():
+for image in client.images.list(
+    filters={"label": f"de.osism.release.openstack={VERSION}"}
+):
     build_date = None
     name = None
     version = None
@@ -35,35 +36,40 @@ for image in client.images.list():
 
     tag = image.tags[0]
 
-    logging.info(f"Analysing {tag}")
+    logger.info(f"Analysing {tag}")
 
     if "org.opencontainers.image.title" in image.labels:
         name = image.labels["org.opencontainers.image.title"]
     else:
+        logger.info(f"Label org.opencontainers.image.title not found for {tag}")
         continue
 
     if IS_RELEASE == "true":
         if "de.osism.version" in image.labels:
             version = image.labels["de.osism.version"]
         else:
+            logger.info(f"Label de.osism.version not found for {tag}")
             continue
     else:
         if "de.osism.release.openstack" in image.labels:
             version = image.labels["de.osism.release.openstack"]
         else:
+            logger.info(f"Label de.osism.release.openstack not found for {tag}")
             continue
 
     if "build-date" in image.labels:
         # NOTE: maybe it is better to use org.opencontainers.image.created here
         build_date = image.labels["build-date"]
     else:
+        logger.info(f"Label build-date not found for {tag}")
         continue
 
     # skip base images
     if name[-4:] == "base":
+        logger.info(f"{tag} is a base image and not handled at the moment")
         continue
 
-    if tag[(-1 * len(version)):] == VERSION:
+    if tag[(-1 * len(version)) :] == VERSION:  # noqa  E203 whitespace before ':'
 
         best_key = None
         if name in configuration:
@@ -72,16 +78,20 @@ for image in client.images.list():
             best_key = name.split("-")[0]
 
         if best_key not in configuration:
-            logging.error(f"Configuration for {name} ({best_key}) not found")
+            logger.error(f"Configuration for {name} ({best_key}) not found")
             continue
 
         command = configuration[best_key]
-        logging.info(f"Best match in configuration for {tag} is {best_key}, using {command}")
+        logger.info(
+            f"Best match in configuration for {tag} is {best_key}, using {command}"
+        )
 
-        logging.info(f"Checking {tag}")
+        logger.info(f"Checking {tag}")
 
         try:
-            result = client.containers.run(image, command=command, remove=True, detach=False)
+            result = client.containers.run(
+                image, command=command, remove=True, detach=False
+            )
             result = result.decode("utf-8")
 
             # NOTE: the libvirt_export binary has no --version argument
@@ -135,30 +145,31 @@ for image in client.images.list():
                 # remove +X postfix
                 target_version = sub(r"\+.*", "", target_version)
 
-                logging.info(f"Found version '{target_version}' with build date '{build_date}' for {tag}")
-                target_tag = f"{tag[:(-1 * len(version) - 1)]}:{target_version}.{build_date}"
+                logger.info(
+                    f"Found version '{target_version}' with build date '{build_date}' for {tag}"
+                )
+                target_tag = (
+                    f"{tag[:(-1 * len(version) - 1)]}:{target_version}.{build_date}"
+                )
 
                 # Move release images to a release subproject
                 if IS_RELEASE == "true":
                     target_tag = target_tag.replace("/kolla/", "/kolla/release/")
 
-                logging.info(f"Re-tagging {tag} as {target_tag}")
+                logger.info(f"Re-tagging {tag} as {target_tag}")
                 image.tag(target_tag)
                 list_of_images.append([target_tag])
             else:
-                logging.warning(f"Version not found for {tag}")
+                logger.warning(f"Version not found for {tag}")
         except Exception as e:
-            logging.error(f"Something went wrong while processing {tag}: {e}")
+            logger.error(f"Something went wrong while processing {tag}: {e}")
 
 flat_list_of_images = [image[0] for image in list_of_images]
 with open("images.lst", "w+") as fp:
     for image in flat_list_of_images:
         fp.write(f"{image}\n")
 
-sbom = {
-    "images": [],
-    "versions": {}
-}
+sbom = {"images": [], "versions": {}}
 
 SBOM_IMAGE_TO_VERSION = {
     "aodh": "aodh-api",
@@ -223,7 +234,7 @@ SBOM_IMAGE_TO_VERSION = {
     "storm": "storm",
     "swift": "swift-object",
     "tgtd": "tgtd",
-    "trove": "trove-api"
+    "trove": "trove-api",
 }
 
 sbom_versions = {}

@@ -31,9 +31,13 @@ if BUILD_TYPE in ["all", "base"]:
     all_projects = versions["openstack_projects"].copy()
     all_projects.update(versions["infrastructure_projects"])
 elif BUILD_TYPE == "openstack-core":
-    all_projects = [x for x in versions["openstack_projects"] if x in OPENSTACK_CORE_PROJECTS]  # noqa: E501
+    all_projects = [
+        x for x in versions["openstack_projects"] if x in OPENSTACK_CORE_PROJECTS
+    ]  # noqa: E501
 elif BUILD_TYPE == "openstack-additional":
-    all_projects = [x for x in versions["openstack_projects"] if x not in OPENSTACK_CORE_PROJECTS]  # noqa: E501
+    all_projects = [
+        x for x in versions["openstack_projects"] if x not in OPENSTACK_CORE_PROJECTS
+    ]  # noqa: E501
 elif BUILD_TYPE == "infrastructure":
     all_projects = versions["infrastructure_projects"]
     del all_projects["openstack-base"]
