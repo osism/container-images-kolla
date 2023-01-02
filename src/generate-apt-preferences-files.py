@@ -24,9 +24,7 @@ loader = jinja2.FileSystemLoader(searchpath="templates/%s" % OPENSTACK_VERSION)
 environment = jinja2.Environment(loader=loader)
 template = environment.get_template(TEMPLATE_FILE)
 
-template_data = {
-    "infrastructure_projects": versions['infrastructure_projects']
-}
+template_data = {"infrastructure_projects": versions["infrastructure_projects"]}
 
 result = template.render(template_data)
 print(result)

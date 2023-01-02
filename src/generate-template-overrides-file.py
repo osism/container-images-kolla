@@ -18,14 +18,14 @@ with open(filename, "rb") as fp:
 filename = "templates/%s/template-overrides.mako" % OPENSTACK_VERSION
 template = Template(filename=filename)
 data = {
-    'created': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-    'hash_docker_images_kolla': HASH_DOCKER_IMAGES_KOLLA,
-    'hash_kolla': HASH_KOLLA,
-    'hash_release': HASH_RELEASE,
-    'infrastructure_projects': versions['infrastructure_projects'],
-    'kolla_version': KOLLA_VERSION,
-    'openstack_version': OPENSTACK_VERSION,
-    'version': VERSION,
+    "created": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    "hash_docker_images_kolla": HASH_DOCKER_IMAGES_KOLLA,
+    "hash_kolla": HASH_KOLLA,
+    "hash_release": HASH_RELEASE,
+    "infrastructure_projects": versions["infrastructure_projects"],
+    "kolla_version": KOLLA_VERSION,
+    "openstack_version": OPENSTACK_VERSION,
+    "version": VERSION,
 }
 result = template.render(**data)
 print(result)

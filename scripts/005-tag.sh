@@ -20,7 +20,6 @@ IS_RELEASE=${IS_RELEASE:-false}
 OPENSTACK_VERSION=${OPENSTACK_VERSION:-latest}
 VERSION=${VERSION:-latest}
 
-KOLLA_TYPE=ubuntu-source
 LSTFILE=images.txt
 SOURCE_DOCKER_TAG=build-$BUILD_ID
 
@@ -30,6 +29,7 @@ if [[ $VERSION != "latest" ]]; then
     OPENSTACK_VERSION=$(curl -L https://raw.githubusercontent.com/osism/release/main/$VERSION/$filename | grep "openstack_version:" | awk -F': ' '{ print $2 }')
 fi
 
+. defaults/all.sh
 . defaults/$OPENSTACK_VERSION.sh
 
 export IS_RELEASE
@@ -39,9 +39,10 @@ export VERSION
 rm -f $LSTFILE
 touch $LSTFILE
 
-docker images | grep $DOCKER_NAMESPACE | grep $KOLLA_TYPE | grep $SOURCE_DOCKER_TAG | awk '{ print $1 }' | while read image; do
+# change build_id tags to openstack version tags
+docker images -f label="de.osism.release.openstack=${OPENSTACK_VERSION}" | grep $SOURCE_DOCKER_TAG | awk '{ print $1 }' | while read image; do
     imagename=$(echo $image | awk -F/ '{ print $NF }')
-    new_imagename=${imagename#${KOLLA_TYPE}-}
+    new_imagename=${imagename#${KOLLA_TYPE}}
 
     # http://stackoverflow.com/questions/12766406/how-to-get-the-first-part-of-the-string-in-bash
     project=${new_imagename%%-*}
@@ -57,15 +58,20 @@ docker images | grep $DOCKER_NAMESPACE | grep $KOLLA_TYPE | grep $SOURCE_DOCKER_
         echo "$new_imagename:$tag" >> $LSTFILE
     else
         if [[ $VERSION == "latest" ]]; then
-             tag=$OPENSTACK_VERSION
-         else
-             tag=$VERSION
-         fi
+            tag=$OPENSTACK_VERSION
+        else
+            tag=$VERSION
+        fi
         docker tag $image:$SOURCE_DOCKER_TAG $new_imagename:$tag
         echo "$new_imagename:$tag" >> $LSTFILE
     fi
-done
 
+    # remove the build_id tag
+    docker rmi $image:$SOURCE_DOCKER_TAG
+done
+docker images
+
+# use version tags
 python3 src/tag-images-with-the-version.py
 docker images
 
