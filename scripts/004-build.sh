@@ -66,4 +66,9 @@ else
       $KOLLA_IMAGES 2>&1 | tee kolla-build-$BUILD_ID.log
 fi
 
+if grep -q "Failed with status: error" kolla-build-$BUILD_ID.log; then
+    echo "ERROR: Not all the required images could be built."
+    exit 1
+fi
+
 docker images
