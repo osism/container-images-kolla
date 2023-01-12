@@ -18,13 +18,9 @@ VERSION=${VERSION:-latest}
 
 PROJECT_REPOSITORY=https://github.com/openstack/kolla
 PROJECT_REPOSITORY_PATH=kolla
+RELEASE_REPOSITORY=https://github.com/osism/release
+RELEASE_REPOSITORY_PATH=release
 SOURCE_DOCKER_TAG=build-$BUILD_ID
-
-# NOTE: For builds for a specific release, the OpenStack version is taken from the release repository.
-if [[ $VERSION != "latest" ]]; then
-    filename=$(curl -L https://raw.githubusercontent.com/osism/release/main/$VERSION/openstack.yml)
-    OPENSTACK_VERSION=$(curl -L https://raw.githubusercontent.com/osism/release/main/$VERSION/$filename | grep "openstack_version:" | awk -F': ' '{ print $2 }')
-fi
 
 . defaults/all.sh
 . defaults/$OPENSTACK_VERSION.sh
@@ -32,11 +28,20 @@ fi
 export VERSION
 export OPENSTACK_VERSION
 
-git submodule update --remote
+# Clone release repository
+
+if [[ ! -e $RELEASE_REPOSITORY_PATH ]]; then
+    git clone $RELEASE_REPOSITORY $RELEASE_REPOSITORY_PATH
+fi
 
 if [[ ! -e release/$VERSION/base.yml ]]; then
     echo "release $VERSION does not exist"
     exit 1
+fi
+
+# NOTE: For builds for a specific release, the OpenStack version is taken from the release repository.
+if [[ $VERSION != "latest" ]]; then
+    OPENSTACK_VERSION=$(grep "openstack_version:" release/$VERSION/openstack.yml | awk -F': ' '{ print $2 }')
 fi
 
 # Clone repository

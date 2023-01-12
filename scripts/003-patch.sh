@@ -16,8 +16,7 @@ KOLLA_CONF_FILE=kolla-build.conf
 
 # NOTE: For builds for a specific release, the OpenStack version is taken from the release repository.
 if [[ $VERSION != "latest" ]]; then
-    filename=$(curl -L https://raw.githubusercontent.com/osism/release/main/$VERSION/openstack.yml)
-    OPENSTACK_VERSION=$(curl -L https://raw.githubusercontent.com/osism/release/main/$VERSION/$filename | grep "openstack_version:" | awk -F': ' '{ print $2 }')
+    OPENSTACK_VERSION=$(grep "openstack_version:" release/$VERSION/openstack.yml | awk -F': ' '{ print $2 }')
 fi
 
 . defaults/all.sh
