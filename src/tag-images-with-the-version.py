@@ -7,6 +7,7 @@ from loguru import logger
 from yaml import dump, safe_load, YAMLError
 
 IS_RELEASE = os.environ.get("IS_RELEASE", "false")
+TAG_POSTFIX = os.environ.get("TAG_POSTFIX", None)
 
 if IS_RELEASE == "true":
     VERSION = os.environ.get("VERSION", "xena")
@@ -151,6 +152,12 @@ for image in client.images.list(
                 target_tag = (
                     f"{tag[:(-1 * len(version) - 1)]}:{target_version}.{build_date}"
                 )
+
+                if TAG_POSTFIX:
+                    target_tag = f"{target_tag}.{TAG_POSTFIX}"
+                    logger.info(
+                        f"Tag postfix '{TAG_POSTFIX}. is defined, extended tag is {target_tag}."
+                    )
 
                 # Move release images to a release subproject
                 if IS_RELEASE == "true":
