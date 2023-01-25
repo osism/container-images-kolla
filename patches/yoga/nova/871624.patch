@@ -1,0 +1,143 @@
+From 516f0de1f6a54cd24d8ebc906c1e3fd3bab0d32e Mon Sep 17 00:00:00 2001
+From: Dan Smith <dansmith@redhat.com>
+Date: Thu, 10 Nov 2022 09:55:48 -0800
+Subject: [PATCH] [stable-only][cve] Check VMDK create-type against an allowed list
+
+NOTE(sbauza): Stable policy allows us to proactively merge a backport without waiting for the parent patch to be merged (exception to rule #4 in [1]. Marking [stable-only] in order to silence nova-tox-validate-backport
+
+[1] https://docs.openstack.org/project-team-guide/stable-branches.html#appropriate-fixes
+
+Related-Bug: #1996188
+Change-Id: I5a399f1d3d702bfb76c067893e9c924904c8c360
+---
+
+diff --git a/nova/conf/compute.py b/nova/conf/compute.py
+index 5abe7694..3520800 100644
+--- a/nova/conf/compute.py
++++ b/nova/conf/compute.py
+@@ -1008,6 +1008,15 @@
+   filtering computes based on supported image types, which is required
+   to be enabled for this to take effect.
+ """),
++    cfg.ListOpt('vmdk_allowed_types',
++                default=['streamOptimized', 'monolithicSparse'],
++                help="""
++A list of strings describing allowed VMDK "create-type" subformats
++that will be allowed. This is recommended to only include
++single-file-with-sparse-header variants to avoid potential host file
++exposure due to processing named extents. If this list is empty, then no
++form of VMDK image will be allowed.
++"""),
+     cfg.BoolOpt('packing_host_numa_cells_allocation_strategy',
+         default=True,
+         help="""
+diff --git a/nova/tests/unit/virt/test_images.py b/nova/tests/unit/virt/test_images.py
+index 085b169..563330b 100644
+--- a/nova/tests/unit/virt/test_images.py
++++ b/nova/tests/unit/virt/test_images.py
+@@ -16,6 +16,8 @@
+ 
+ import mock
+ from oslo_concurrency import processutils
++from oslo_serialization import jsonutils
++from oslo_utils import imageutils
+ 
+ from nova.compute import utils as compute_utils
+ from nova import exception
+@@ -135,3 +137,47 @@
+                     '-O', 'out_format', '-f', 'in_format', 'source', 'dest')
+         mock_disk_op_sema.__enter__.assert_called_once()
+         self.assertTupleEqual(expected, mock_execute.call_args[0])
++
++    def test_convert_image_vmdk_allowed_list_checking(self):
++        info = {'format': 'vmdk',
++                'format-specific': {
++                    'type': 'vmdk',
++                    'data': {
++                        'create-type': 'monolithicFlat',
++                }}}
++
++        # If the format is not in the allowed list, we should get an error
++        self.assertRaises(exception.ImageUnacceptable,
++                          images.check_vmdk_image, 'foo',
++                          imageutils.QemuImgInfo(jsonutils.dumps(info),
++                                                 format='json'))
++
++        # With the format in the allowed list, no error
++        self.flags(vmdk_allowed_types=['streamOptimized', 'monolithicFlat',
++                                       'monolithicSparse'],
++                   group='compute')
++        images.check_vmdk_image('foo',
++                                imageutils.QemuImgInfo(jsonutils.dumps(info),
++                                                       format='json'))
++
++        # With an empty list, allow nothing
++        self.flags(vmdk_allowed_types=[], group='compute')
++        self.assertRaises(exception.ImageUnacceptable,
++                          images.check_vmdk_image, 'foo',
++                          imageutils.QemuImgInfo(jsonutils.dumps(info),
++                                                 format='json'))
++
++    @mock.patch.object(images, 'fetch')
++    @mock.patch('nova.privsep.qemu.unprivileged_qemu_img_info')
++    def test_fetch_checks_vmdk_rules(self, mock_info, mock_fetch):
++        info = {'format': 'vmdk',
++                'format-specific': {
++                    'type': 'vmdk',
++                    'data': {
++                        'create-type': 'monolithicFlat',
++                }}}
++        mock_info.return_value = jsonutils.dumps(info)
++        with mock.patch('os.path.exists', return_value=True):
++            e = self.assertRaises(exception.ImageUnacceptable,
++                                  images.fetch_to_raw, None, 'foo', 'anypath')
++            self.assertIn('Invalid VMDK create-type specified', str(e))
+diff --git a/nova/virt/images.py b/nova/virt/images.py
+index 5358f376..f13c872 100644
+--- a/nova/virt/images.py
++++ b/nova/virt/images.py
+@@ -110,6 +110,34 @@
+     return IMAGE_API.get(context, image_href)
+ 
+ 
++def check_vmdk_image(image_id, data):
++    # Check some rules about VMDK files. Specifically we want to make
++    # sure that the "create-type" of the image is one that we allow.
++    # Some types of VMDK files can reference files outside the disk
++    # image and we do not want to allow those for obvious reasons.
++
++    types = CONF.compute.vmdk_allowed_types
++
++    if not len(types):
++        LOG.warning('Refusing to allow VMDK image as vmdk_allowed_'
++                    'types is empty')
++        msg = _('Invalid VMDK create-type specified')
++        raise exception.ImageUnacceptable(image_id=image_id, reason=msg)
++
++    try:
++        create_type = data.format_specific['data']['create-type']
++    except KeyError:
++        msg = _('Unable to determine VMDK create-type')
++        raise exception.ImageUnacceptable(image_id=image_id, reason=msg)
++
++    if create_type not in CONF.compute.vmdk_allowed_types:
++        LOG.warning('Refusing to process VMDK file with create-type of %r '
++                    'which is not in allowed set of: %s', create_type,
++                    ','.join(CONF.compute.vmdk_allowed_types))
++        msg = _('Invalid VMDK create-type specified')
++        raise exception.ImageUnacceptable(image_id=image_id, reason=msg)
++
++
+ def fetch_to_raw(context, image_href, path, trusted_certs=None):
+     path_tmp = "%s.part" % path
+     fetch(context, image_href, path_tmp, trusted_certs)
+@@ -129,6 +157,9 @@
+                 reason=(_("fmt=%(fmt)s backed by: %(backing_file)s") %
+                         {'fmt': fmt, 'backing_file': backing_file}))
+ 
++        if fmt == 'vmdk':
++            check_vmdk_image(image_href, data)
++
+         if fmt != "raw" and CONF.force_raw_images:
+             staged = "%s.converted" % path
+             LOG.debug("%s was %s, converting to raw", image_href, fmt)
