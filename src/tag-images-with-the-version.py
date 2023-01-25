@@ -11,8 +11,10 @@ TAG_POSTFIX = os.environ.get("TAG_POSTFIX", None)
 
 if IS_RELEASE == "true":
     VERSION = os.environ.get("VERSION", "xena")
+    FILTERS = {"label": f"de.osism.version={VERSION}"}
 else:
     VERSION = os.environ.get("OPENSTACK_VERSION", "xena")
+    FILTERS = {"label": f"de.osism.release.openstack={VERSION}"}
 
 with open("etc/tag-images-with-the-version.yml", "r") as fp:
     try:
@@ -24,9 +26,7 @@ client = DockerClient()
 
 list_of_images = []
 
-for image in client.images.list(
-    filters={"label": f"de.osism.release.openstack={VERSION}"}
-):
+for image in client.images.list(filters=FILTERS):
     build_date = None
     name = None
     version = None
