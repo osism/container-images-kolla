@@ -9,7 +9,7 @@ collectd: dpkg -s collectd
 cron: dpkg -s cron
 designate: pip3 show designate
 dnsmasq: dpkg -s dnsmasq
-elasticsearch: dpkg -s elasticsearch
+elasticsearch: dpkg -s elasticsearch-oss
 elasticsearch-curator: pip3 show elasticsearch_curator
 etcd: dpkg -s etcd
 fluentd: dpkg -s td-agent
