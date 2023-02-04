@@ -21,7 +21,7 @@ OPENSTACK_VERSION=${OPENSTACK_VERSION:-latest}
 VERSION=${VERSION:-latest}
 
 LSTFILE=images.txt
-SOURCE_DOCKER_TAG=build-$BUILD_ID
+SOURCE_DOCKER_TAG=latest
 
 # NOTE: For builds for a specific release, the OpenStack version is taken from the release repository.
 if [[ $VERSION != "latest" ]]; then
@@ -38,8 +38,10 @@ export VERSION
 rm -f $LSTFILE
 touch $LSTFILE
 
+docker images
+
 # change build_id tags to openstack version tags
-docker images -f label="de.osism.release.openstack=${OPENSTACK_VERSION}" | grep $SOURCE_DOCKER_TAG | awk '{ print $1 }' | while read image; do
+docker images -f label="de.osism.release.openstack=${OPENSTACK_VERSION}" | tail -n +2 | awk '{ print $1 }' | while read image; do
     imagename=$(echo $image | awk -F/ '{ print $NF }')
     new_imagename=${imagename#${KOLLA_TYPE}}
 
@@ -70,7 +72,6 @@ docker images -f label="de.osism.release.openstack=${OPENSTACK_VERSION}" | grep 
 done
 docker images
 
-# use version tags
 python3 src/tag-images-with-the-version.py
 docker images
 
