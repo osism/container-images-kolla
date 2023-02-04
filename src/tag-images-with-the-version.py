@@ -126,6 +126,10 @@ for image in client.images.list(filters=FILTERS):
                 # Storm 1.2.2
                 r = findall(r"Storm (.*)", result)
 
+            elif best_key == "etcd":
+                # etcd Version: 3.2.26
+                r = findall(r"etcd Version: (.*)", result)
+
             elif best_key == "zookeeper":
                 # /opt/zookeeper/zookeeper-3.4.13.jar
                 r = findall(r"zookeeper-(.*)\.jar", result)

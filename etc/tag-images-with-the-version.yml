@@ -11,12 +11,14 @@ designate: pip3 show designate
 dnsmasq: dpkg -s dnsmasq
 elasticsearch: dpkg -s elasticsearch-oss
 elasticsearch-curator: pip3 show elasticsearch_curator
-etcd: dpkg -s etcd
+# etcd Version: 3.2.26
+etcd: etcd --version
 fluentd: dpkg -s td-agent
 glance: pip3 show glance
 gnocchi: pip3 show gnocchi
 grafana: dpkg -s grafana
 haproxy: dpkg -s haproxy
+haproxy-ssh: dpkg -s openssh-server
 heat: pip3 show openstack-heat
 horizon: pip3 show horizon
 influxdb: dpkg -s influxdb
@@ -76,6 +78,8 @@ rabbitmq: dpkg -s rabbitmq-server
 redis: dpkg -s redis-server
 redis-sentinel: dpkg -s redis-sentinel
 senlin: pip3 show senlin
+skyline-api: pip3 show skyline-api
+skyline-console: pip3 show skyline-console
 # Storm 1.2.2
 storm: /opt/storm/bin/storm version
 swift: pip3 show swift
