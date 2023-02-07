@@ -40,6 +40,11 @@ RUN apt-get update ${"\\"}
 RUN {{ macros.install_pip(cinder_volume_pip_packages | customizable("pip_packages")) }}
 {% endblock %}
 
+{% set manila_base_additional_pip_packages = [ 'pywinrm' ] %}
+{% block manila_base_footer %}
+RUN {{ macros.install_pip(manila_base_additional_pip_packages | customizable("pip_packages")) }}
+{% endblock %}
+
 {% set gnocchi_base_packages_append = ['python3-rados'] %}
 
 {% block grafana_footer %}
