@@ -45,6 +45,11 @@ RUN {{ macros.install_pip(cinder_volume_pip_packages | customizable("pip_package
 RUN {{ macros.install_pip(manila_base_additional_pip_packages | customizable("pip_packages")) }}
 {% endblock %}
 
+{% set magnum_base_additional_pip_packages = [ 'magnum-cluster-api' ] %}
+{% block magnum_base_footer %}
+RUN {{ macros.install_pip(magnum_base_additional_pip_packages | customizable("pip_packages")) }}
+{% endblock %}
+
 {% set gnocchi_base_packages_append = ['python3-rados'] %}
 
 {% block grafana_footer %}
