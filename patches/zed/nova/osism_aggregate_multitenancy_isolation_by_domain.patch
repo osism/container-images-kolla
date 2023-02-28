@@ -89,10 +89,9 @@
 +             "content": resp.content})
 +        # realize we did something wrong, but move on with a warning
 +        return None
-index 0000000000..cef732d0d2
 --- /dev/null
 +++ b/nova/scheduler/filters/osism_aggregate_multitenancy_isolation_by_domain.py
-@@ -0,0 +1,62 @@
+@@ -0,0 +1,63 @@
 +# Copyright (c) 2011-2013 OpenStack Foundation
 +# Copyright (c) 2022 OSISM GmbH
 +# All Rights Reserved.
@@ -152,6 +151,7 @@ index 0000000000..cef732d0d2
 +            else:
 +                if "BYOC" in domain_description:
 +                    LOG.debug("No domain id's defined on host. Host fails because of BYOC.")
++                    return False
 +                else:
 +                    LOG.debug("No domain id's defined on host. Host passes.")
 +        return True
