@@ -21,13 +21,13 @@
  
  
  def verify_project_id(context, project_id):
-@@ -79,3 +85,66 @@ def verify_project_id(context, project_id):
+@@ -79,3 +85,67 @@ def verify_project_id(context, project_id):
               "content": resp.content})
          # realize we did something wrong, but move on with a warning
          return True
 +
 +
-+def get_project(project_id):
++def get_domain(project_id):
 +    """get domain details of a project by a project_id
 +
 +    If it does not, an HTTPBadRequest is emitted. Also HTTPBadRequest
@@ -47,6 +47,7 @@
 +        data = resp.json()
 +        domain_id = data["project"]["domain_id"]
 +        resp = adap.get('/domains/%s' % domain_id)
++        data = resp.json()
 +    except kse.EndpointNotFound:
 +        LOG.error(
 +            "Keystone identity service version 3.0 was not found. This "
