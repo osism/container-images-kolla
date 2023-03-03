@@ -19,15 +19,7 @@ threads = 1
 [{{ project.name }}]
 {% endif -%}
 type = local
-{% if project.repository == "openstack-heat" %}
-# tarball = https://tarballs.opendev.org/openstack/heat/{{ project.repository }}-{{ project.version }}.tar.gz
-{% elif project.repository == "kuryr-lib" %}
-# tarball = https://tarballs.opendev.org/openstack/kuryr/{{ project.repository }}-{{ project.version }}.tar.gz
-{% elif project.repository == "openstack-placement" %}
-# tarball = https://tarballs.opendev.org/openstack/placement/{{ project.repository }}-{{ project.version }}.tar.gz
-{% else %}
 # tarball = https://tarballs.opendev.org/openstack/{{ project.repository }}/{{ project.repository }}-{{ project.version }}.tar.gz
-{% endif -%}
 location = tarballs/{{ project.repository }}-{{ project.version }}.tar.gz
 {%- endfor %}
 

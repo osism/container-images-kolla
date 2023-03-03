@@ -46,15 +46,27 @@ for project in versions["openstack_projects"].keys():
         continue
 
     # NOTE: only with a specific version the name of the tarball is openstack-heat
-    elif project == "heat" and versions["openstack_projects"][project]:
+    elif (
+        project == "heat"
+        and versions["openstack_projects"][project]
+        and OPENSTACK_VERSION in ["xena", "yoga"]
+    ):
         repository = "openstack-heat"
 
     # NOTE: only with a specific version the name of the tarball is openstack-placement
-    elif project == "placement" and versions["openstack_projects"][project]:
+    elif (
+        project == "placement"
+        and versions["openstack_projects"][project]
+        and OPENSTACK_VERSION in ["xena", "yoga"]
+    ):
         repository = "openstack-placement"
 
     # NOTE: only with a specific version the name of the tarball is kuryr-lib
-    elif project == "kuryr" and versions["openstack_projects"][project]:
+    elif (
+        project == "kuryr"
+        and versions["openstack_projects"][project]
+        and OPENSTACK_VERSION in ["xena", "yoga"]
+    ):
         repository = "kuryr-lib"
 
     projects.append(
