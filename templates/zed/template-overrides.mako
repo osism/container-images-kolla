@@ -63,6 +63,7 @@ RUN curl -o /tmp/kolla-operations.tar.gz https://github.com/osism/kolla-operatio
 RUN apt-get update ${"\\"}
     && apt-get -y install --no-install-recommends ${"\\"}
            libapache2-mod-auth-openidc ${"\\"}
+           libldap-common ${"\\"}
            libmemcached11 ${"\\"}
     && apt-get clean ${"\\"}
     && rm -rf /var/lib/apt/lists/* ${"\\"}
