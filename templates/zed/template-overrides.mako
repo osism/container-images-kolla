@@ -51,6 +51,10 @@ RUN {{ macros.install_pip(magnum_base_additional_pip_packages | customizable("pi
 {% endblock %}
 
 {% set gnocchi_base_packages_append = ['python3-rados'] %}
+{% block gnocchi_base_footer %}
+RUN mkdir -p /var/lib/gnocchi/tmp ${"\\"}
+    && chown -R gnocchi: /var/lib/gnocchi/tmp
+{% endblock %}
 
 {% block grafana_footer %}
 RUN curl -o /tmp/kolla-operations.tar.gz https://github.com/osism/kolla-operations/tarball/main ${"\\"}

@@ -41,6 +41,10 @@ RUN {{ macros.install_pip(cinder_volume_pip_packages | customizable("pip_package
 {% endblock %}
 
 {% set gnocchi_base_packages_append = ['python3-rados'] %}
+{% block gnocchi_base_footer %}
+RUN mkdir -p /var/lib/gnocchi/tmp ${"\\"}
+    && chown -R gnocchi: /var/lib/gnocchi/tmp
+{% endblock %}
 
 {% block elasticsearch_header %}
 # On systemd-based distributions, the installation scripts will attempt to set
