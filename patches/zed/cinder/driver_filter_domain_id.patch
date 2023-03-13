@@ -1,40 +1,53 @@
-diff --git a/cinder/scheduler/filters/driver_filter.py b/cinder/scheduler/filters/driver_filter.py
-index edfeb9f2d..42e1076a6 100644
 --- a/cinder/scheduler/filters/driver_filter.py
 +++ b/cinder/scheduler/filters/driver_filter.py
 @@ -13,6 +13,8 @@
  #    License for the specific language governing permissions and limitations
  #    under the License.
- 
+
 +from keystoneauth1 import loading as ks_loading
 +from oslo_config import cfg
  from oslo_log import log as logging
- 
+
  from cinder.scheduler.evaluator import evaluator
 @@ -20,6 +22,7 @@ from cinder.scheduler import filters
- 
- 
+
+
  LOG = logging.getLogger(__name__)
 +CONF = cfg.CONF
- 
- 
+
+
  class DriverFilter(filters.BaseBackendFilter):
-@@ -139,6 +142,19 @@ class DriverFilter(filters.BaseBackendFilter):
+@@ -139,6 +142,34 @@ class DriverFilter(filters.BaseBackendFilter):
          request_spec = filter_properties.get('request_spec', {})
          volume_stats = request_spec.get('volume_properties', {})
- 
-+        LOG.debug('Creating Keystone auth plugin from conf')
-+        n_auth = ks_loading.load_auth_from_conf_options(CONF, 'nova')
-+        session = ks_loading.load_session_from_conf_options(
-+            CONF, 'nova', auth=n_auth)
-+        project_id = request_spec["volume"]["project_id"]
-+        resp = session.get('/projects/%s' % project_id,
-+                   endpoint_filter={'service_type': 'identity',
-+                                    'interface': 'internal',
-+                                    'min_version': '3',
-+                                    'max_version': 'latest'})
-+        data = resp.json()
-+        volume_stats["domain_id"] = data["project"]["domain_id"]
+
++        # NOTE: This is a special filter. It allows to map a single domain to a specific
++        #       storage backend. This filter cannot be used in combination with other
++        #       filters at the moment. The code path is only activated if volume.domain_id
++        #       is set as a filter function in a storage backend.
++        if "volume.domain_id" in filter_function:
++            if "volume" in request_spec:
++                request_spec_type = "volume"
++            elif "volume_properties" in request_spec:
++                request_spec_type = "volume_properties"
++            else:
++                request_spec_type = None
++            if request_spec_type and "project_id" in request_spec[request_spec_type]:
++                LOG.debug('Creating Keystone auth plugin from conf')
++                n_auth = ks_loading.load_auth_from_conf_options(CONF, 'nova')
++                session = ks_loading.load_session_from_conf_options(
++                    CONF, 'nova', auth=n_auth)
++                project_id = request_spec[request_spec_type]["project_id"]
++                resp = session.get('/projects/%s' % project_id,
++                           endpoint_filter={'service_type': 'identity',
++                                            'interface': 'internal',
++                                            'min_version': '3',
++                                            'max_version': 'latest'})
++                data = resp.json()
++                volume_stats["domain_id"] = data["project"]["domain_id"]
++            else:
++                filter_function = None
++                uses_protocol = False
 +
          stats = {
              'backend_stats': backend_stats,
