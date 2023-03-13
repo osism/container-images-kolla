@@ -49,6 +49,8 @@ nova-libvirt: dpkg -s libvirt-daemon
 octavia: pip3 show octavia
 # Version: 2.3.0, Build: tar/6f6e84ebc54af31a976f53af36a5c69d474a5140/2022-09-09T00:07:12.137133581Z, JVM: 17.0.4
 opensearch: /usr/share/opensearch/bin/opensearch --version
+# 2.3.0
+opensearch-dashboards: /usr/share/opensearch-dashboards/bin/opensearch-dashboards --version
 openvswitch: dpkg -s openvswitch-switch
 ovn: dpkg -s ovn-common
 placement: pip3 show openstack-placement
