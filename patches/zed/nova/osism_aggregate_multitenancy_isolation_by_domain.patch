@@ -91,9 +91,9 @@
 +        return None
 --- /dev/null
 +++ b/nova/scheduler/filters/osism_aggregate_multitenancy_isolation_by_domain.py
-@@ -0,0 +1,63 @@
+@@ -0,0 +1,66 @@
 +# Copyright (c) 2011-2013 OpenStack Foundation
-+# Copyright (c) 2022 OSISM GmbH
++# Copyright (c) 2023 OSISM GmbH
 +# All Rights Reserved.
 +#
 +#    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -154,4 +154,7 @@
 +                    return False
 +                else:
 +                    LOG.debug("No domain id's defined on host. Host passes.")
++        elif "BYOC" in domain_description:
++            LOG.debug("No domain id's defined on host. Host fails because of BYOC.")
++            return False
 +        return True
