@@ -10,10 +10,10 @@ IS_RELEASE = os.environ.get("IS_RELEASE", "false")
 TAG_POSTFIX = os.environ.get("TAG_POSTFIX", None)
 
 if IS_RELEASE == "true":
-    VERSION = os.environ.get("VERSION", "xena")
+    VERSION = os.environ.get("VERSION", "zed")
     FILTERS = {"label": f"de.osism.version={VERSION}"}
 else:
-    VERSION = os.environ.get("OPENSTACK_VERSION", "xena")
+    VERSION = os.environ.get("OPENSTACK_VERSION", "zed")
     FILTERS = {"label": f"de.osism.release.openstack={VERSION}"}
 
 with open("etc/tag-images-with-the-version.yml", "r") as fp:
