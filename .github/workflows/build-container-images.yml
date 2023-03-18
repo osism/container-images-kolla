@@ -17,7 +17,6 @@ jobs:
       fail-fast: false
       matrix:
         openstack_version:
-          - xena
           - yoga
           - zed
     steps:
