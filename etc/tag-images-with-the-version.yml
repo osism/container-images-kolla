@@ -52,8 +52,8 @@ opensearch: bash -c '/usr/share/opensearch/bin/opensearch --version 2> /dev/null
 # 2.3.0
 opensearch-dashboards: /usr/share/opensearch-dashboards/bin/opensearch-dashboards --version
 openvswitch: dpkg -s openvswitch-switch
-ovn: dpkg -s ovn-common
 ovsdpdk: dpkg -s openvswitch-switch-dpdk
+ovn: ovn-controller --version
 placement: pip3 show openstack-placement
 # alertmanager, version 0.20.0 (branch: HEAD, revision: f74be0400a6243d10bb53812d6fa408ad71ff32d)
 prometheus-alertmanager: bash -c '/opt/prometheus_alertmanager/alertmanager --version 2>&1'
