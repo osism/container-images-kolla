@@ -16,10 +16,10 @@ RUN apt-get update ${"\\"}
 {% block base_header %}
 COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
 RUN apt-get update ${"\\"}
-    && apt-get -y install --no-install-recommends locales ${"\\"}
+    && apt-get -y install --no-install-recommends locales ca-certificates ${"\\"}
+    && locale-gen en_US.UTF-8 ${"\\"}
     && apt-get clean ${"\\"}
-    && rm -rf /var/lib/apt/lists/* ${"\\"}
-    && locale-gen en_US.UTF-8
+    && rm -rf /var/lib/apt/lists/*
 {% endblock %}
 
 {% block openstack_base_header %}
