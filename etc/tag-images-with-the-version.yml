@@ -48,11 +48,12 @@ nova: pip3 show nova
 nova-libvirt: dpkg -s libvirt-daemon
 octavia: pip3 show octavia
 # Version: 2.3.0, Build: tar/6f6e84ebc54af31a976f53af36a5c69d474a5140/2022-09-09T00:07:12.137133581Z, JVM: 17.0.4
-opensearch: /usr/share/opensearch/bin/opensearch --version
+opensearch: bash -c '/usr/share/opensearch/bin/opensearch --version 2> /dev/null'
 # 2.3.0
 opensearch-dashboards: /usr/share/opensearch-dashboards/bin/opensearch-dashboards --version
 openvswitch: dpkg -s openvswitch-switch
 ovn: dpkg -s ovn-common
+ovsdpdk: dpkg -s openvswitch-switch-dpdk
 placement: pip3 show openstack-placement
 # alertmanager, version 0.20.0 (branch: HEAD, revision: f74be0400a6243d10bb53812d6fa408ad71ff32d)
 prometheus-alertmanager: bash -c '/opt/prometheus_alertmanager/alertmanager --version 2>&1'
@@ -68,21 +69,25 @@ prometheus-haproxy-exporter: bash -c '/opt/haproxy_exporter/haproxy_exporter --v
 prometheus-libvirt-exporter: echo
 # memcached_exporter, version 0.6.0 (branch: HEAD, revision: d7eadc3523ec9731b7865a188093f70140d54a8d)
 prometheus-memcached-exporter: bash -c '/opt/memcached_exporter/memcached_exporter --version 2>&1'
+# v1.5.1
+prometheus-msteams: /opt/prometheus-msteams --version
 # mtail version v3.0.0-rc35 git revision a33283598c4b7a70fc2f113680318f29d5826cca go version go1.14 go arch amd64 go os linux
-prometheus-mtail: /opt/mtail --version
+prometheus-mtail: bash -c '/opt/mtail --version 2>&1'
 # mysqld_exporter, version 0.12.1 (branch: HEAD, revision: 48667bf7c3b438b5e93b259f3d17b70a7c9aff96)
 prometheus-mysqld-exporter: bash -c '/opt/mysqld_exporter/mysqld_exporter --version 2>&1'
 # node_exporter, version 0.18.1 (branch: HEAD, revision: 3db77732e925c08f675d7404a8c46466b2ece83e)
 prometheus-node-exporter: bash -c '/opt/node_exporter/node_exporter --version 2>&1'
 # openstack-exporter, version 1.3.0 (branch: HEAD, revision: b33bff9801ebcd714d9d08cabde8997101afe938)
 prometheus-openstack-exporter: echo
+# ovn-exporter 1.0.4
+prometheus-ovn-exporter: /opt/ovn-exporter --version
 # prometheus, version 2.26.1 (branch: HEAD, revision: 6eeded0fdf760e81af75d9c44ce539ab77da4505)
 prometheus-v2-server: /opt/prometheus/prometheus --version
 rabbitmq: dpkg -s rabbitmq-server
 redis: dpkg -s redis-server
 redis-sentinel: dpkg -s redis-sentinel
 senlin: pip3 show senlin
-skyline-api: pip3 show skyline-api
+skyline-apiserver: pip3 show skyline-apiserver
 skyline-console: pip3 show skyline-console
 # Storm 1.2.2
 storm: /opt/storm/bin/storm version
