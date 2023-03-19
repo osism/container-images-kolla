@@ -1,4 +1,5 @@
 import os
+from packaging import version as packaging_version
 from re import findall, sub
 
 from docker import DockerClient
@@ -165,6 +166,10 @@ for image in client.images.list(filters=FILTERS):
 
                 # remove +X postfix
                 target_version = sub(r"\+.*", "", target_version)
+
+                # beautify version
+                parsed_version = packaging_version.parse(target_version)
+                target_version = ".".join([str(x) for x in list(parsed_version.release)])
 
                 logger.info(
                     f"Found version '{target_version}' with build date '{build_date}' for {tag}"
