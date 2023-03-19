@@ -103,12 +103,16 @@ for image in client.images.list(filters=FILTERS):
             elif best_key == "prometheus-openstack-exporter":
                 r = [VERSION]
 
+            elif best_key == "prometheus-ovn-exporter":
+                # ovn-exporter 1.0.4
+                r = findall(r"ovn-exporter (.*)", result)
+
             elif best_key == "kolla-toolbox":
                 r = [image.labels["de.osism.commit.kolla_version"]]
 
             elif best_key == "opensearch":
                 # Version: 2.3.0, Build: tar/6f6e84ebc54af31a976f53af36a5c69d474a5140/2022-09-09T00:07:12.137133581Z, JVM: 17.0.4
-                r = findall(r",Version (.*), Build:", result)
+                r = findall(r"Version: (.*), Build:", result)
 
             elif best_key == "opensearch-dashboards":
                 # 2.3.0
@@ -128,7 +132,11 @@ for image in client.images.list(filters=FILTERS):
 
                 if not r:
                     # mtail version v3.0.0-rc35 git revision a33283598c4b7a70fc2f113680318f29d5826cca go version go1.14 go arch amd64 go os linux
-                    r = findall(r"mtail version v(.*) git revision", result)
+                    r = findall(r"mtail version v?(.*) git revision", result)
+
+                if not r:
+                    # v1.5.1 (msteams)
+                    r = findall(r"v(.*)", result)
 
             elif best_key == "storm":
                 # Storm 1.2.2
@@ -147,7 +155,7 @@ for image in client.images.list(filters=FILTERS):
                 r = findall(r"Version: (.*)\n", result)
 
             if r:
-                target_version = r[0]
+                target_version = r[0].strip()
 
                 # remove X: prefix from ubuntu package versions
                 target_version = sub(r"[0-9]:", "", target_version)
@@ -243,10 +251,12 @@ SBOM_IMAGE_TO_VERSION = {
     "prometheus_haproxy_exporter": "prometheus-haproxy-exporter",
     "prometheus_libvirt_exporter": "prometheus-libvirt-exporter",
     "prometheus_memcached_exporter": "prometheus-memcached-exporter",
+    "prometheus_msteams": "prometheus-msteams",
     "prometheus_mtail": "prometheus-mtail",
     "prometheus_mysqld_exporter": "prometheus-mysqld-exporter",
     "prometheus_node_exporter": "prometheus-node-exporter",
     "prometheus_openstack_exporter": "prometheus-openstack-exporter",
+    "prometheus_ovn_exporter": "prometheus-ovn-exporter",
     "rabbitmq": "rabbitmq",
     "redis": "redis",
     "senlin": "senlin-api",
