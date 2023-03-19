@@ -15,6 +15,9 @@ RUN apt-get update ${"\\"}
 
 {% block base_header %}
 COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
+COPY osism.list /etc/apt/sources.list.d/osism.list
+COPY osism-archive-keyring.gpg /etc/apt/keyrings/osism-archive-keyring.gpg
+
 RUN apt-get update ${"\\"}
     && apt-get -y install --no-install-recommends locales ca-certificates ${"\\"}
     && locale-gen en_US.UTF-8 ${"\\"}
