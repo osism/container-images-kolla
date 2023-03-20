@@ -1,6 +1,7 @@
 import os
 from packaging import version as packaging_version
 from re import findall, sub
+import tempfile
 
 from docker import DockerClient
 from tabulate import tabulate
@@ -188,8 +189,14 @@ for image in client.images.list(filters=FILTERS):
                 if IS_RELEASE == "true":
                     target_tag = target_tag.replace("/kolla/", "/kolla/release/")
 
-                logger.info(f"Re-tagging {tag} as {target_tag}")
-                image.tag(target_tag)
+                logger.info(f"Adding de.osism.service.version='{target_version}' label to {tag}")
+                with tempfile.NamedTemporaryFile() as fp:
+                    fp.write(f"FROM {tag}\n".encode())
+                    fp.write(f"LABEL de.osism.service.version='{target_version}'\n".encode())
+                    fp.seek(0)
+
+                    client.images.build(fileobj=fp, tag=target_tag)
+
                 list_of_images.append([target_tag])
             else:
                 logger.warning(f"Version not found for {tag}")
