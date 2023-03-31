@@ -1,0 +1,2 @@
+deb [signed-by=/etc/apt/keyrings/osism-archive-keyring.gpg] https://packagecloud.io/berendt/osism/ubuntu/ jammy main
+deb-src [signed-by=/etc/apt/keyrings/osism-archive-keyring.gpg] https://packagecloud.io/berendt/osism/ubuntu/ jammy main
