@@ -3,9 +3,13 @@
     merge-mode: squash-merge
     check:
       jobs:
-        - yamllint
         - flake8
+        - yamllint
     gate:
       jobs:
-        - yamllint
         - flake8
+        - yamllint
+    periodic-daily:
+      jobs:
+        - flake8
+        - yamllint
