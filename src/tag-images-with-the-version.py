@@ -174,7 +174,10 @@ for image in client.images.list(filters=FILTERS):
 
                 # beautify version
                 parsed_version = packaging_version.parse(target_version)
-                target_version = ".".join([str(x) for x in list(parsed_version.release)])
+
+                # NOTE: We use only the first 3 places of the version. This prevents
+                #       versions like 15.0.0.0.
+                target_version = ".".join([str(x) for x in list(parsed_version.release)[0:3]])
 
                 logger.info(
                     f"Found version '{target_version}' with build date '{build_date}' for {tag}"
