@@ -172,6 +172,9 @@ for image in client.images.list(filters=FILTERS):
                 # remove +X postfix
                 target_version = sub(r"\+.*", "", target_version)
 
+                # remove pX postfix
+                target_version = sub(r"p.*", "", target_version)
+
                 # beautify version
                 parsed_version = packaging_version.parse(target_version)
 
@@ -259,6 +262,7 @@ SBOM_IMAGE_TO_VERSION = {
     "nova": "nova-api",
     "nova_libvirt": "nova-libvirt",
     "octavia": "octavia-api",
+    "opensearch": "opensearch",
     "openvswitch": "openvswitch-vswitchd",
     "ovn": "ovn-controller",
     "placement": "placement-api",
@@ -279,6 +283,7 @@ SBOM_IMAGE_TO_VERSION = {
     "rabbitmq": "rabbitmq",
     "redis": "redis",
     "senlin": "senlin-api",
+    "skyline": "skyline-apiserver",
     "storm": "storm",
     "swift": "swift-object",
     "tgtd": "tgtd",
