@@ -243,7 +243,7 @@ SBOM_IMAGE_TO_VERSION = {
     "horizon": "horizon",
     "influxdb": "influxdb",
     "ironic": "ironic-api",
-    "ironic_inspector": "ironic-inspector"
+    "ironic_inspector": "ironic-inspector",
     "iscsid": "iscsid",
     "kafka": "kafka",
     "keepalived": "keepalived",
