@@ -2,7 +2,7 @@ Jinja2==3.1.2
 Mako==1.2.4
 PyYAML==6.0
 ansible-core==2.15.0
-docker-squash==1.0.10
+docker-squash==1.1.0
 docker==6.1.2
 loguru==0.7.0
 requests==2.30.0
