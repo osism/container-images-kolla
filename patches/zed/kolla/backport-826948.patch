@@ -164,19 +164,20 @@ index c8a3648e0..e4397a200 100644
          'type': 'url',
          'location': ('$tarballs_base/openstack/solum/'
 diff --git a/kolla/common/users.py b/kolla/common/users.py
-index c47528d93..bad630235 100644
+index 777ef1364..68d608d0a 100644
 --- a/kolla/common/users.py
 +++ b/kolla/common/users.py
-@@ -333,5 +333,9 @@ USERS = {
-     'opensearch-user': {
+@@ -334,6 +334,10 @@ USERS = {
          'uid': 42490,
          'gid': 42490,
-+    },
+     },
 +    'skyline-user': {
 +        'uid': 42491,
 +        'gid': 42491,
-     }
- }
++    },
+     'opensearch-dashboards-user': {
+         'uid': 42492,
+         'gid': 42492,
 diff --git a/releasenotes/notes/add-skyline-200d1bca7907b00c.yaml b/releasenotes/notes/add-skyline-200d1bca7907b00c.yaml
 new file mode 100644
 index 000000000..91147eb8f
