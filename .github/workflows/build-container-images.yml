@@ -19,6 +19,7 @@ jobs:
         openstack_version:
           - yoga
           - zed
+          - 2023.1
     steps:
       - uses: actions/checkout@v3
         with:
