@@ -14,13 +14,20 @@ RUN apt-get update ${"\\"}
 {% endblock %}
 
 {% block base_header %}
+RUN apt-get update ${"\\"}
+    && apt-get -y install --no-install-recommends locales ca-certificates curl gnupg2 ${"\\"}
+    && locale-gen en_US.UTF-8 ${"\\"}
+    && apt-get clean ${"\\"}
+    && rm -rf /var/lib/apt/lists/*
 COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
+COPY erlang.list /etc/apt/sources.list.d/erlang.list
+COPY rabbitmq.list /etc/apt/sources.list.d/rabbitmq.list
 COPY osism.list /etc/apt/sources.list.d/osism.list
 COPY osism-archive-keyring.gpg /etc/apt/keyrings/osism-archive-keyring.gpg
 
-RUN apt-get update ${"\\"}
-    && apt-get -y install --no-install-recommends locales ca-certificates ${"\\"}
-    && locale-gen en_US.UTF-8 ${"\\"}
+RUN curl -sLfo /etc/apt/keyrings/erlang_solutions.asc https://packages.erlang-solutions.com/ubuntu/erlang_solutions.asc ${"\\"}
+    && curl -sLf https://ppa1.novemberain.com/gpg.9F4587F226208342.key | gpg --dearmor > /etc/apt/keyrings/rabbitmq.gpg ${"\\"}
+    && apt-get update ${"\\"}
     && apt-get clean ${"\\"}
     && rm -rf /var/lib/apt/lists/*
 {% endblock %}

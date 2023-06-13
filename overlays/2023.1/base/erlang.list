@@ -1,0 +1,1 @@
+deb [signed-by=/etc/apt/keyrings/erlang_solutions.asc] https://packages.erlang-solutions.com/ubuntu focal contrib
