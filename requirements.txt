@@ -1,7 +1,8 @@
+HiYaPyCo==0.5.1
 Jinja2==3.1.2
 Mako==1.2.4
 PyYAML==6.0
-ansible-core==2.15.0
+ansible==8.0.0
 docker-squash==1.1.0
 docker==6.1.3
 loguru==0.7.0

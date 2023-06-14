@@ -72,7 +72,7 @@ done
 # Prepare repos.yaml
 
 if [[ -f templates/$OPENSTACK_VERSION/repos.yaml ]]; then
-    cp templates/$OPENSTACK_VERSION/repos.yaml $PROJECT_REPOSITORY_PATH/kolla/template/repos.yaml
+    python3 src/merge-repos-yaml.py templates/$OPENSTACK_VERSION/repos.yaml $PROJECT_REPOSITORY_PATH/kolla/template/repos.yaml
 fi
 
 # Prepare apt_preferences.ubuntu

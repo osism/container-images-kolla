@@ -15,6 +15,8 @@ RUN apt-get update ${"\\"}
 
 {% block base_header %}
 COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
+COPY *.gpg /etc/kolla/apt-keys/
+
 RUN apt-get update ${"\\"}
     && apt-get -y install --no-install-recommends locales ${"\\"}
     && apt-get clean ${"\\"}
