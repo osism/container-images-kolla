@@ -117,8 +117,8 @@ for image in client.images.list(filters=FILTERS):
                 r = findall(r"Version: (.*), Build:", result)
 
             elif best_key == "opensearch-dashboards":
-                # 2.3.0
-                r = [result]
+                # v16.20.0
+                r = findall(r"v(.*)", result)
 
             elif best_key == "kafka":
                 # 2.0.1 (Commit:fa14705e51bd2ce5)
