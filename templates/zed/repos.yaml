@@ -1,0 +1,14 @@
+ubuntu:
+  erlang:
+    url: https://packages.erlang-solutions.com/ubuntu
+    suite: focal
+    component: contrib
+    gpg_key: erlang.gpg
+  rabbitmq:
+    url: https://ppa1.novemberain.com/rabbitmq/rabbitmq-server/deb/ubuntu
+    gpg_key: rabbitmq.gpg
+  osism:
+    url: https://packagecloud.io/berendt/osism/ubuntu/
+    suite: jammy
+    component: main
+    gpg_key: osism.gpg

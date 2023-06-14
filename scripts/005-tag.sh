@@ -21,7 +21,7 @@ OPENSTACK_VERSION=${OPENSTACK_VERSION:-latest}
 VERSION=${VERSION:-latest}
 
 LSTFILE=images.txt
-SOURCE_DOCKER_TAG=latest
+SOURCE_DOCKER_TAG=build-$BUILD_ID
 
 # NOTE: For builds for a specific release, the OpenStack version is taken from the release repository.
 if [[ $VERSION != "latest" ]]; then
