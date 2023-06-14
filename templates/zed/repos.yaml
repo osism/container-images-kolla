@@ -7,7 +7,7 @@ ubuntu:
   rabbitmq:
     url: https://ppa1.novemberain.com/rabbitmq/rabbitmq-server/deb/ubuntu
     gpg_key: rabbitmq.gpg
-  osism:
+  openvswitch:
     url: https://packagecloud.io/berendt/osism/ubuntu/
     suite: jammy
     component: main
