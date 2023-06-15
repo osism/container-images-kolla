@@ -264,6 +264,7 @@ SBOM_IMAGE_TO_VERSION = {
     "nova_libvirt": "nova-libvirt",
     "octavia": "octavia-api",
     "opensearch": "opensearch",
+    "opensearch_dashboards": "opensearch_dashboards",
     "openvswitch": "openvswitch-vswitchd",
     "ovn": "ovn-controller",
     "placement": "placement-api",
