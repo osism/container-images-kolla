@@ -46,7 +46,11 @@ else:
     sys.exit(1)
 
 for project in all_projects:
-    if "vpnaas" not in project and "lbaas" not in project:
+    if (
+        "vpnaas" not in project
+        and "lbaas" not in project
+        and "dynamic-routing" not in project
+    ):
         projects.append(project)
 
 print("^" + " ^".join(sorted(projects)))

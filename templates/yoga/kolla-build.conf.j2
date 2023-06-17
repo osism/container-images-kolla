@@ -13,8 +13,10 @@ threads = 4
 # sources tracked in release repository
 
 {%- for project in projects %}
-{% if project.name not in ['horizon', 'neutron-vpnaas-agent'] %}
+{% if project.name not in ['horizon', 'neutron-vpnaas-agent', 'neutron-dynamic-routing'] %}
 [{{ project.name }}-base]
+{% elif project.name == 'neutron-dynamic-routing' %}
+[neutron-bgp-dragent]
 {% else %}
 [{{ project.name }}]
 {% endif -%}
@@ -29,6 +31,13 @@ type = local
 # tarball = https://tarballs.opendev.org/openstack/{{ project.repository }}/{{ project.repository }}-{{ project.version }}.tar.gz
 {% endif -%}
 location = tarballs/{{ project.repository }}-{{ project.version }}.tar.gz
+
+{% if project.repository == 'neutron-dynamic-routing' %}
+[neutron-server-plugin-neutron-dynamic-routing]
+type = local
+# tarball = https://tarballs.opendev.org/openstack/{{ project.repository }}/{{ project.repository }}-{{ project.version }}.tar.gz
+location = tarballs/{{ project.repository }}-{{ project.version }}.tar.gz
+{% endif %}
 {%- endfor %}
 
 [gnocchi-base]
