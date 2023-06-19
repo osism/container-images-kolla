@@ -1,0 +1,26 @@
+commit 8f5539abc054bd39d8f28fdcc52dcd5b220e3f1d
+Author: Dr. Jens Harbott <harbott@osism.tech>
+Date:   Tue Jun 13 14:24:23 2023 +0200
+
+    DNM: Fix tenant subnet filtering
+    
+    In _tenant_prefixes_by_router() a check for the matching ip_version was
+    missing, leading to neutron trying to announce additional cidrs.
+    
+    TODO: Add testing and reno
+    
+    Closes-Bug: 2023632
+    Change-Id: I843999d56b9b90af5bd8f4e102e64d261fd483fe
+
+diff --git a/neutron_dynamic_routing/db/bgp_db.py b/neutron_dynamic_routing/db/bgp_db.py
+index 0b9a7db..081c628 100644
+--- a/neutron_dynamic_routing/db/bgp_db.py
++++ b/neutron_dynamic_routing/db/bgp_db.py
+@@ -1018,6 +1018,7 @@ class BgpDbMixin(object):
+                 l3_db.Router.gw_port_id == models_v2.Port.id,
+                 models_v2.Port.network_id == binding.network_id,
+                 binding.bgp_speaker_id == BgpSpeaker.id,
++                models_v2.Subnet.ip_version == binding.ip_version,
+                 l3_db.RouterPort.port_type == DEVICE_OWNER_ROUTER_INTF,
+                 models_v2.IPAllocation.port_id == l3_db.RouterPort.port_id]
+ 
