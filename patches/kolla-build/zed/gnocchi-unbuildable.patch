@@ -1,0 +1,33 @@
+commit 5505cd000ce7f12c272c5b62074c9cc6bf1bb7a7
+Author: Maksim Malchuk <maksim.malchuk@gmail.com>
+Date:   Tue Jun 20 13:06:48 2023 +0300
+
+    Disable build of Gnocchi containers
+    
+    Revert this commit when [1] is solved.
+    
+    1. https://github.com/gnocchixyz/gnocchi/issues/1304
+    
+    Fixed merged conflict for cherry-pick, only marked ubuntu.
+
+    Change-Id: Iafeb9093340621d65a9c9cd126d65679d981dfb1
+    Signed-off-by: Maksim Malchuk <maksim.malchuk@gmail.com>
+
+diff --git a/kolla/image/unbuildable.py b/kolla/image/unbuildable.py
+index c945fcf1b..e91493dc3 100644
+--- a/kolla/image/unbuildable.py
++++ b/kolla/image/unbuildable.py
+@@ -42,9 +42,10 @@ UNBUILDABLE_IMAGES = {
+     },
+ 
+     'ubuntu': {
+-        "bifrost-base",          # Failing on new efi shim file location
+-        "collectd",              # Missing collectd-core package
+-        "telegraf",              # Missing collectd-core package
++        "bifrost-base",   # Failing on new efi shim file location
++        "collectd",       # Missing collectd-core package
++        "gnocchi-base",   # https://github.com/gnocchixyz/gnocchi/issues/1304
++        "telegraf",       # Missing collectd-core package
+     },
+ 
+     'ubuntu+aarch64': {
