@@ -1,0 +1,84 @@
+From e4a89a72c7018d04e31f2358766cc9093f10d46a Mon Sep 17 00:00:00 2001
+From: Markin, Sergiy (sm515x) <sm515x@att.com>
+Date: Mon, 03 Oct 2022 18:51:04 +0000
+Subject: [PATCH] LDAP connection error handling
+
+This PS implements LDAP connection error handling.
+
+Closes-Bug: https://bugs.launchpad.net/keystone/+bug/1953627
+
+Change-Id: I99157759fe58df77d20cfc1c2b44f64fb31560a3
+Signed-off-by: Sven Kieske <kieske@osism.tech>
+---
+
+diff --git a/keystone/identity/backends/ldap/common.py b/keystone/identity/backends/ldap/common.py
+index a3b2b69..8794441 100644
+--- a/keystone/identity/backends/ldap/common.py
++++ b/keystone/identity/backends/ldap/common.py
+@@ -680,8 +680,15 @@
+     def wrapper(self, *args, **kwargs):
+         # assert isinstance(self, PooledLDAPHandler)
+         with self._get_pool_connection() as conn:
+-            self._apply_options(conn)
+-            return func(self, conn, *args, **kwargs)
++            try:
++                self._apply_options(conn)
++                return func(self, conn, *args, **kwargs)
++            except ldap.SERVER_DOWN:
++                self._remove_connection_from_pool(conn, "SERVER_DOWN")
++                raise
++            except ldap.TIMEOUT:
++                self._remove_connection_from_pool(conn, "TIMEOUT")
++                raise
+     return wrapper
+ 
+ 
+@@ -790,6 +797,10 @@
+         for option, invalue in self.conn_options.items():
+             conn.set_option(option, invalue)
+ 
++    def _remove_connection_from_pool(self, conn, reason=None):
++        LOG.warning("Removing connection from ldap pool. Reason: %s", reason)
++        self.conn_pool._pool.remove(conn)
++
+     def _get_pool_connection(self):
+         return self.conn_pool.connection(self.who, self.cred)
+ 
+@@ -842,9 +853,16 @@
+                                     filterstr, attrlist, attrsonly,
+                                     serverctrls, clientctrls,
+                                     timeout, sizelimit)
+-        except Exception:
+-            conn_ctxt.__exit__(*sys.exc_info())
+-            raise
++        except Exception as exc:
++            if isinstance(exc, ldap.SERVER_DOWN):
++                self._remove_connection_from_pool(conn,
++                                                  "SERVER_DOWN")
++                conn_ctxt.__exit__(*sys.exc_info())
++                raise
++            if isinstance(exc, ldap.TIMEOUT):
++                self._remove_connection_from_pool(conn, "TIMEOUT")
++                conn_ctxt.__exit__(*sys.exc_info())
++                raise
+         return AsynchronousMessage(msgid, conn, conn_ctxt)
+ 
+     def result3(self, message, all=1, timeout=None,
+@@ -872,6 +890,17 @@
+         # ultimately renders the pool unusable, causing a DoS.
+         try:
+             results = message.connection.result3(message.id, all, timeout)
++        except ldap.SERVER_DOWN:
++            self._remove_connection_from_pool(message.connection,
++                                              "SERVER_DOWN")
++            raise
++        except ldap.TIMEOUT:
++            self._remove_connection_from_pool(message.connection, "TIMEOUT")
++            raise
++        except Exception:
++            # We don't want to ignore thrown
++            # exceptions, raise them
++            raise
+         finally:
+             # Now that we have the results from the LDAP server for
+             # the message, we don't need the the context manager used
