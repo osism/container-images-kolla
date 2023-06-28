@@ -13,6 +13,12 @@ RUN apt-get update ${"\\"}
     && rm -rf /var/lib/apt/lists/*
 {% endblock %}
 
+{% block horizon_footer %}
+RUN curl -q -L -o /tmp/openstack-themes.tar.gz https://github.com/osism/openstack-themes/archive/main.tar.gz ${"\\"}
+    && tar xzvf /tmp/openstack-themes.tar.gz --directory=/var/lib/kolla/venv/lib/python3.10/site-packages/openstack_dashboard/themes --strip-components 2 openstack-themes-main/horizon ${"\\"}
+    && rm /tmp/openstack-themes.tar.gz
+{% endblock %}
+
 {% block base_header %}
 COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
 COPY *.gpg /etc/kolla/apt-keys/
