@@ -9,7 +9,6 @@ set -x
 # BUILD_TYPE
 # KOLLA_IMAGES
 # OPENSTACK_VERSION
-# SQUASH
 # VERSION
 
 # Set default values
@@ -18,7 +17,6 @@ BUILD_ID=${BUILD_ID:-$(date +%Y%m%d)}
 BUILD_TYPE=${BUILD_TYPE:-all}
 OPENSTACK_VERSION=${OPENSTACK_VERSION:-latest}
 VERSION=${VERSION:-latest}
-SQUASH=${SQUASH:-false}
 
 KOLLA_CONF=kolla-build.conf
 
@@ -32,10 +30,6 @@ fi
 
 export VERSION
 export OPENSTACK_VERSION
-
-if [[ $SQUASH == "true" ]]; then
-    BUILD_OPTS+=" --squash"
-fi
 
 if [[ -z "$KOLLA_IMAGES" ]]; then
     KOLLA_IMAGES="$(python3 src/get-projects-from-versions-file.py)"
@@ -51,6 +45,9 @@ if [[ $BUILD_TYPE == "base" ]]; then
         fi
     done
 
+    # The line can be commented out for tests to build keystone images only.
+    KOLLA_IMAGES_BASE=^keystone-base
+
     kolla-build \
       --template-override templates/$OPENSTACK_VERSION/template-overrides.j2 \
       --config-file $KOLLA_CONF \
@@ -58,6 +55,9 @@ if [[ $BUILD_TYPE == "base" ]]; then
       $BUILD_OPTS \
       $KOLLA_IMAGES_BASE 2>&1 | tee kolla-build-$BUILD_ID.log
 else
+    # The line can be commented out for tests to build keystone images only.
+    KOLLA_IMAGES=^keystone
+
     kolla-build \
       --template-override templates/$OPENSTACK_VERSION/template-overrides.j2 \
       --config-file $KOLLA_CONF \
@@ -71,4 +71,15 @@ if grep -q "Failed with status: error" kolla-build-$BUILD_ID.log; then
     exit 1
 fi
 
+# Cleanup images
+
+export DOCKER_NAMESPACE=${DOCKER_NAMESPACE:-osism}
+export DOCKER_REGISTRY=${DOCKER_REGISTRY:-quay.io}
+
+python3 src/cleanup-images.py
+
+# List images
+
 docker images
+
+docker inspect testing
