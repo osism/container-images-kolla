@@ -55,6 +55,7 @@ kolla-build \
 kolla-build \
   --template-override templates/$OPENSTACK_VERSION/template-overrides.j2 \
   --config-file $KOLLA_CONF \
+  --squash \
   --skip-existing \
   $BUILD_OPTS \
   $KOLLA_IMAGES 2>&1 | tee kolla-build-$BUILD_ID.log
