@@ -1,0 +1,51 @@
+---
+- name: Build images
+  hosts: all
+
+  tasks:
+    - name: Log into registry
+      community.docker.docker_login:
+        registry_url: "{{ docker_registry }}"
+        username: "{{ secret.DOCKER_USERNAME }}"
+        password: "{{ secret.DOCKER_PASSWORD }}"
+      when: push_images | bool
+
+    - name: Run build script
+      ansible.builtin.shell:
+        executable: /bin/bash
+        chdir: "{{ zuul.project.src_dir }}"
+        cmd: |
+          set -e
+          set -x
+
+          export PATH=/home/zuul/.local/bin:$PATH
+
+          bash scripts/001-prepare.sh
+          bash scripts/002-generate.sh
+          bash scripts/003-patch.sh
+          bash scripts/004-build.sh
+          bash scripts/005-tag.sh
+      changed_when: false
+      environment:
+        DOCKER_NAMESPACE: "{{ docker_namespace }}"
+        DOCKER_REGISTRY: "{{ docker_registry }}"
+        OPENSTACK_VERSION: "{{ version_openstack }}"
+
+    - name: Run push script
+      ansible.builtin.shell:
+        executable: /bin/bash
+        chdir: "{{ zuul.project.src_dir }}"
+        cmd: |
+          set -e
+          set -x
+
+          export PATH=/home/zuul/.local/bin:$PATH
+
+          bash scripts/100-push.sh
+      changed_when: false
+      when: push_images | bool
+      no_log: true
+      environment:
+        DOCKER_NAMESPACE: "{{ docker_namespace }}"
+        DOCKER_REGISTRY: "{{ docker_registry }}"
+        OPENSTACK_VERSION: "{{ version_openstack }}"
