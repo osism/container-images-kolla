@@ -1,10 +1,84 @@
 ---
+- secret:
+    name: SECRET_CONTAINER_IMAGES_KOLLA
+    data:
+      DOCKER_USERNAME: !encrypted/pkcs1-oaep
+        - TIgSEYhQn6UuiABEV1t1vWypKyay/8dsvQmIBo1W3fwEZ7PsUpmJDZ3FtDZaYuJlukZpg
+          uvlII0RHl8DouDblLqmIDNSOKUAAovgjzGU7RUOLPCbsZBFAfmVND8rMV863RrcyVmjUI
+          El5vviLHHMFQCuG11wxn9pWfhJGwcGPNkZSa+nZ/3ovFNDq8a6ODLapS7I2/qKRizM4Jj
+          AOmQZoZbKh+NDbeNlBXg5b00fdxP6h6EWfONjOIhb5YRGDiYK1vHSJmCsp4PB8gkaTpNk
+          zjz8qaFE0tyW/f9zCe5/GiKBatKJWpfZG/rIKdzhx4xNODo7J8Ckdg9tK3uZ66kW8za0d
+          dUxugaAB/zlm1WjU0TffFVfY79ZCr/PZqAEbvCm7d7PNJU4Zimd5QPGnYL6lCvYVYB3Sk
+          MkTF7zBn2f0BzVdTGsBBy2toNOH0qg8axLOCKINhDp3s5c0CiwIfgu+2I5LrGvcw5ZkdA
+          Dtw4IDYOILmu0PKGK0CNqJ6B9L4FUONVKeaDRE8cZ0H4kK5FmFeACTRpjQ+bII5BJ5umr
+          oxWFV3vcEAXEzFjVFt5ULJlMWUrx9BnTPd6ANmoxmER/sFxUgfFmnqtbXI8S+4vTgc+P6
+          wF9Gsmu85cgLnh/5kiucknN92tNp7BsYFG3DjVy/ymfOH9bBNqd7yL+iZ4GqI0=
+      DOCKER_PASSWORD: !encrypted/pkcs1-oaep
+        - Ar4P8ITJih5tTIz8py4bXivSYBOMTGWuoMxaMg7mc3Yxp5ktDF694tK/Rggw8gtTw/8k5
+          ggYf/SMa+JXsOCGzcArhEqqug7SGdOr4m2MhdbSKyBUD+os77FfsmmH6TyfdSuBQJuvtN
+          udvK8SiwsKaNjafhpPWdTVyMWwNipIolDIyiKMuO10UoM3OMPFqX76rrnQhSzVl+fAw98
+          rta1G4Ypb7PVHlFyFbSq9eAsnCtpAeqSqbKcCV2CqeIlkyGK7snp+U8BJhSzYATKvVAgQ
+          vrTcjUKcvk4djk2hJEr2bQ0Tb3sBwtEEStq7ri8VaBuWSf1nJD+NAwPGUINGQbwVAMy8Q
+          r40YFyU8IYoMuHLZPPnZssbaOoLiboc818uCbI9+A536UZsjH+1qaVuEi+t9Z2oug3lTy
+          cJm2VVJTvA2zCSLCELPij4vvsl7D/XiNqJP44QfoUqelNeB1wOIl1EEyCqLRjCrblYOiY
+          y52PVLvmb/znVXcqe1miSnEab9je609GusQFrTJIZbRcOCkHYPx0yNglBqe5S/GWvETFV
+          ViBCPuwADevjKN0NUBAIE6aaHRWiC7AG4oPZ0DLzV0toLZ9s9J+dXg1+P3ZtgCnMC9FzU
+          514KtK8UQXX8fcsyf453pq4bmxG5ITNpnfurtC11KUve0gqjK7eVY7jUzmZUbI=
+
+- job:
+     name: container-images-kolla-build
+     nodeset: ubuntu-jammy-large
+     pre-run: playbooks/pre.yml
+     run: playbooks/build.yml
+     timeout: 5400
+     vars:
+       docker_namespace: kolla
+       docker_registry: osism.harbor.regio.digital
+
+- job:
+    name: container-images-kolla-build-zed
+    parent: container-images-kolla-build
+    vars:
+      version_openstack: zed
+      push_images: false
+
+- job:
+    name: container-images-kolla-build-antelope
+    parent: container-images-kolla-build
+    vars:
+      version_openstack: "2023.1"
+      push_images: false
+
+- job:
+    name: container-images-kolla-push-zed
+    parent: container-images-kolla-build
+    vars:
+      version_openstack: zed
+      push_images: true
+    secrets:
+      - name: secret
+        secret: SECRET_CONTAINER_IMAGES_KOLLA
+        pass-to-parent: true
+
+- job:
+    name: container-images-kolla-push-antelope
+    parent: container-images-kolla-build
+    vars:
+      version_openstack: "2023.1"
+      push_images: true
+    secrets:
+      - name: secret
+        secret: SECRET_CONTAINER_IMAGES_KOLLA
+        pass-to-parent: true
+
 - project:
     merge-mode: squash-merge
     check:
       jobs:
         - flake8
         - yamllint
+        - container-images-kolla-build-zed
+        - container-images-kolla-build-antelope
     gate:
       jobs:
         - flake8
@@ -13,3 +87,11 @@
       jobs:
         - flake8
         - yamllint
+        - container-images-kolla-push-zed
+        - container-images-kolla-push-antelope
+    post:
+      jobs:
+        - container-images-kolla-push-zed:
+            branches: main
+        - container-images-kolla-push-antelope:
+            branches: main

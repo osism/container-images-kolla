@@ -1,0 +1,26 @@
+---
+- hosts: all
+
+  roles:
+    - ensure-docker
+    - ensure-pip
+
+  tasks:
+    - name: Install required packages
+      become: true
+      ansible.builtin.apt:
+        name:
+          - python3-docker
+          - python3-requests
+
+    - name: Run install script
+      ansible.builtin.shell:
+        executable: /bin/bash
+        chdir: "{{ zuul.project.src_dir }}"
+        cmd: |
+          set -e
+          set -x
+
+          git submodule update --init
+
+          sudo pip3 install -r requirements.txt
