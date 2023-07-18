@@ -9,6 +9,7 @@
         username: "{{ secret.DOCKER_USERNAME }}"
         password: "{{ secret.DOCKER_PASSWORD }}"
       when: push_images | bool
+      no_log: true
 
     - name: Run build script
       ansible.builtin.shell:
@@ -44,8 +45,3 @@
           bash scripts/100-push.sh
       changed_when: false
       when: push_images | bool
-      no_log: true
-      environment:
-        DOCKER_NAMESPACE: "{{ docker_namespace }}"
-        DOCKER_REGISTRY: "{{ docker_registry }}"
-        OPENSTACK_VERSION: "{{ version_openstack }}"
