@@ -1,3 +1,4 @@
 export BUILD_ID=$(date +%Y%m%d)
 export KOLLA_TYPE=
-export BASE_VERSION=22.04
+export BASE=python
+export BASE_VERSION=3.11
