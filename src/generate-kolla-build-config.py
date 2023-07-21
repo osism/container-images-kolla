@@ -7,8 +7,8 @@ IS_RELEASE = os.environ.get("IS_RELEASE", "false")
 OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "latest")
 VERSION = os.environ.get("VERSION", "latest")
 
-KOLLA_BASE = "ubuntu"
-KOLLA_BASE_TAG = os.environ.get("UBUNTU_VERSION", "18.04")
+KOLLA_BASE = os.environ.get("BASE", "ubuntu")
+KOLLA_BASE_TAG = os.environ.get("BASE_VERSION", "22.04")
 KOLLA_INSTALL_TYPE = "source"
 KOLLA_NAMESPACE = os.environ.get("DOCKER_NAMESPACE", "osism")
 
