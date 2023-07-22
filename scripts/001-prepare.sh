@@ -16,7 +16,7 @@ DOCKER_NAMESPACE=${DOCKER_NAMESPACE:-osism}
 OPENSTACK_VERSION=${OPENSTACK_VERSION:-latest}
 VERSION=${VERSION:-latest}
 
-PROJECT_REPOSITORY=https://github.com/openstack/kolla
+PROJECT_REPOSITORY=https://opendev.org/openstack/kolla.git
 PROJECT_REPOSITORY_PATH=kolla
 RELEASE_REPOSITORY=https://github.com/osism/release
 RELEASE_REPOSITORY_PATH=release
