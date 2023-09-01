@@ -71,6 +71,17 @@
         secret: SECRET_CONTAINER_IMAGES_KOLLA
         pass-to-parent: true
 
+- job:
+    name: container-images-kolla-release
+    parent: container-images-kolla-build
+    vars:
+      is_release: true
+      push_images: true
+    secrets:
+      - name: secret
+        secret: SECRET_CONTAINER_IMAGES_KOLLA
+        pass-to-parent: true
+
 - project:
     merge-mode: squash-merge
     check:
@@ -95,3 +106,6 @@
             branches: main
         - container-images-kolla-push-antelope:
             branches: main
+    tag:
+      jobs:
+        - container-images-kolla-release
