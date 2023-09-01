@@ -8,10 +8,10 @@ from tabulate import tabulate
 from loguru import logger
 from yaml import dump, safe_load, YAMLError
 
-IS_RELEASE = os.environ.get("IS_RELEASE", "false")
+IS_RELEASE = os.environ.get("IS_RELEASE", "False")
 TAG_POSTFIX = os.environ.get("TAG_POSTFIX", None)
 
-if IS_RELEASE == "true":
+if IS_RELEASE == "True":
     VERSION = os.environ.get("VERSION", "zed")
     FILTERS = {"label": f"de.osism.version={VERSION}"}
 else:
@@ -47,7 +47,7 @@ for image in client.images.list(filters=FILTERS):
         logger.info(f"Label org.opencontainers.image.title not found for {tag}")
         continue
 
-    if IS_RELEASE == "true":
+    if IS_RELEASE == "True":
         if "de.osism.version" in image.labels:
             version = image.labels["de.osism.version"]
         else:
@@ -196,7 +196,7 @@ for image in client.images.list(filters=FILTERS):
                     )
 
                 # Move release images to a release subproject
-                if IS_RELEASE == "true":
+                if IS_RELEASE == "True":
                     target_tag = target_tag.replace("/kolla/", "/kolla/release/")
 
                 logger.info(f"Adding de.osism.service.version='{target_version}' label to {tag}")

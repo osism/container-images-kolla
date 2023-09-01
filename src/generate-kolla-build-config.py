@@ -3,7 +3,7 @@ import os
 import jinja2
 import yaml
 
-IS_RELEASE = os.environ.get("IS_RELEASE", "false")
+IS_RELEASE = os.environ.get("IS_RELEASE", "False")
 OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "latest")
 VERSION = os.environ.get("VERSION", "latest")
 
