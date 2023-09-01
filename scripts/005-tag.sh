@@ -16,7 +16,7 @@ set -x
 BUILD_ID=${BUILD_ID:-$(date +%Y%m%d)}
 DOCKER_NAMESPACE=${DOCKER_NAMESPACE:-osism}
 DOCKER_REGISTRY=${DOCKER_REGISTRY:-quay.io}
-IS_RELEASE=${IS_RELEASE:-false}
+IS_RELEASE=${IS_RELEASE:-False}
 OPENSTACK_VERSION=${OPENSTACK_VERSION:-latest}
 VERSION=${VERSION:-latest}
 
@@ -75,10 +75,29 @@ docker images
 python3 src/tag-images-with-the-version.py
 docker images
 
+if [[ $IS_RELEASE == "True" ]]; then
+    git config --local user.name "OSISM Zuul CI"
+    git config --local user.email "zuul@osism.tech"
+    git config --local core.sshCommand "/usr/bin/ssh -i $PWD/id_rsa.sbom"
+
+    git clone git@github.com:osism/sbom.git
+
+    pushd sbom
+    mkdir -p $VERSION
+    cp ../images.yml $VERSION/openstack.yml
+    git checkout -b openstack-$VERSION
+    git add $VERSION/openstack.yml
+    git commit -s -a -m "Add openstack $VERSION images"
+    git push --set-upstream origin openstack-$VERSION
+    popd
+
+    cat images.yml
+fi
+
 # NOTE: The generation of SBOMs requires a lot of time and memory.
 #       Therefore, SBOMs are currently only created for release images.
 
-# if [[ $IS_RELEASE == "true" ]]; then
+# if [[ $IS_RELEASE == "True" ]]; then
 #     curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sudo sh -s -- -b /usr/local/bin
 #     python3 src/generate-sbom-with-syft.py
 # fi
