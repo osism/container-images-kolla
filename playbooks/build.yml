@@ -30,6 +30,7 @@
       environment:
         DOCKER_NAMESPACE: "{{ docker_namespace }}"
         DOCKER_REGISTRY: "{{ docker_registry }}"
+        IS_RELEASE: "{{ is_release|default('false') }}"
         OPENSTACK_VERSION: "{{ version_openstack }}"
 
     - name: Run push script
