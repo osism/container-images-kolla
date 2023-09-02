@@ -76,27 +76,9 @@ python3 src/tag-images-with-the-version.py
 docker images
 
 if [[ $IS_RELEASE == "True" ]]; then
-    git config --local user.name "OSISM Zuul CI"
-    git config --local user.email "zuul@osism.tech"
-    git config --local core.sshCommand "/usr/bin/ssh -i $PWD/id_rsa.sbom"
-
-    # https://serverfault.com/questions/856194/securely-add-a-host-e-g-github-to-the-ssh-known-hosts-file
-    curl --silent https://api.github.com/meta | jq --raw-output '"github.com "+.ssh_keys[]' >> ~/.ssh/known_hosts
-
-    git clone git@github.com:osism/sbom.git
-
-    pushd sbom
     mkdir -p $VERSION
-    cp ../images.yml $VERSION/openstack.yml
-
-    python3 ../add-image-checksum.py
-
-    git checkout -b openstack-$VERSION
-    git add $VERSION/openstack.yml
-    git commit -s -a -m "Add openstack $VERSION images"
-    git push --set-upstream origin openstack-$VERSION
-    popd
-
+    cp images.yml $VERSION/openstack.yml
+    python3 add-image-checksum.py
     cat $VERSION/openstack.yml
 fi
 
