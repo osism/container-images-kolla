@@ -10,9 +10,11 @@
       become: true
       ansible.builtin.apt:
         name:
+          - jq
           - parallel
           - python3-docker
           - python3-requests
+          - skopeo
 
     - name: Run install script
       ansible.builtin.shell:
