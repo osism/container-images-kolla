@@ -78,7 +78,7 @@ docker images
 if [[ $IS_RELEASE == "True" ]]; then
     mkdir -p $VERSION
     cp images.yml $VERSION/openstack.yml
-    python3 add-image-checksum.py
+    python3 src/add-image-checksum.py
     cat $VERSION/openstack.yml
 fi
 
