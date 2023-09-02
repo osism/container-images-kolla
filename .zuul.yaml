@@ -136,7 +136,6 @@
     name: container-images-kolla-release
     parent: container-images-kolla-build
     vars:
-      docker_namespace: kolla/release
       is_release: true
       push_images: true
     secrets:
