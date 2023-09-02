@@ -112,14 +112,6 @@ for image in client.images.list(filters=FILTERS):
             elif best_key == "kolla-toolbox":
                 r = [image.labels["de.osism.commit.kolla_version"]]
 
-            elif best_key == "opensearch":
-                # Version: 2.3.0, Build: tar/6f6e84ebc54af31a976f53af36a5c69d474a5140/2022-09-09T00:07:12.137133581Z, JVM: 17.0.4
-                r = findall(r"Version: (.*), Build:", result)
-
-            elif best_key == "opensearch-dashboards":
-                # v16.20.0
-                r = findall(r"v(.*)", result)
-
             elif best_key == "kafka":
                 # 2.0.1 (Commit:fa14705e51bd2ce5)
                 r = findall(r"(.*) \(Commit:", result)
