@@ -1,0 +1,81 @@
+From 89c6722087421fbacf3026a01397337b7fb46f82 Mon Sep 17 00:00:00 2001
+From: Maksim Malchuk <maksim.malchuk@gmail.com>
+Date: Wed, 02 Aug 2023 10:50:46 +0300
+Subject: [PATCH] Revert "Disable build of Gnocchi containers"
+
+This reverts commit 5505cd000ce7f12c272c5b62074c9cc6bf1bb7a7.
+Reason: Closed #1304 [1] as completed.
+Also build from master until new tag releases since #1304 fixed
+in master [2] only.
+
+1. https://github.com/gnocchixyz/gnocchi/issues/1304
+2. https://github.com/gnocchixyz/gnocchi/commit/b52f7414d595e8d765fde50992f2776a77b98de6
+
+Change-Id: I3ca4e10508c26b752412789502ceb917ecb4dbeb
+Signed-off-by: Maksim Malchuk <maksim.malchuk@gmail.com>
+(cherry picked from commit 4e5e508282dfd40a7d7831217e109a055073bd7c)
+---
+
+diff --git a/kolla/common/sources.py b/kolla/common/sources.py
+index 4ee06a4..ec2e7a7 100644
+--- a/kolla/common/sources.py
++++ b/kolla/common/sources.py
+@@ -65,7 +65,7 @@
+                      'glance-${openstack_branch}.tar.gz')},
+     'gnocchi-base': {
+         'type': 'git',
+-        'reference': '4.5.0',
++        'reference': 'stable/4.5',  # TODO(mmalchuk) change to >4.5.0 when released
+         'location': ('https://github.com/gnocchixyz/'
+                      'gnocchi.git')},
+     'heat-base': {
+diff --git a/kolla/image/unbuildable.py b/kolla/image/unbuildable.py
+index 9bf9e2b..5617d29 100644
+--- a/kolla/image/unbuildable.py
++++ b/kolla/image/unbuildable.py
+@@ -17,7 +17,6 @@
+ UNBUILDABLE_IMAGES = {
+     'aarch64': {
+         "bifrost-base",        # someone need to get upstream working first
+-        "gnocchi-base",        # https://github.com/gnocchixyz/gnocchi/issues/1304 # noqa
+         "prometheus-msteams",  # no aarch64 binary
+         "prometheus-mtail",    # no aarch64 binary
+     },
+@@ -25,7 +24,6 @@
+     # Issues for SHA1 keys:
+     # https://github.com/grafana/grafana/issues/41036
+     'centos': {
+-        "gnocchi-base",          # https://github.com/gnocchixyz/gnocchi/issues/1304 # noqa
+         "hacluster-pcs",         # Missing crmsh package
+         "nova-spicehtml5proxy",  # Missing spicehtml5 package
+         "ovsdpdk",               # Not supported on CentOS
+@@ -33,11 +31,9 @@
+     },
+ 
+     'debian': {
+-        "gnocchi-base",  # https://github.com/gnocchixyz/gnocchi/issues/1304
+     },
+ 
+     'rocky': {
+-        "gnocchi-base",          # https://github.com/gnocchixyz/gnocchi/issues/1304 # noqa
+         "hacluster-pcs",         # Missing crmsh package
+         "nova-spicehtml5proxy",  # Missing spicehtml5 package
+         "ovsdpdk",               # Not supported on CentOS
+@@ -46,17 +42,14 @@
+ 
+     'ubuntu': {
+         "collectd",      # Missing collectd-core package
+-        "gnocchi-base",  # https://github.com/gnocchixyz/gnocchi/issues/1304
+         "telegraf",      # Missing collectd-core package
+     },
+ 
+     'ubuntu+aarch64': {
+         "barbican-base",  # https://github.com/unbit/uwsgi/issues/2434
+-        "gnocchi-base",   # https://github.com/gnocchixyz/gnocchi/issues/1304
+     },
+ 
+     'centos+aarch64': {
+-        "gnocchi-base",  # https://github.com/gnocchixyz/gnocchi/issues/1304
+         "telegraf",      # no binary package
+     },
+ }
