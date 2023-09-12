@@ -86,6 +86,14 @@
           vVm+0nGAwoy/7G5tgLUnIZOoYmmNOJIblBuqbBXMaL1OUAZ+nQbcfr+f6FEFm/yonGWrq
           RwuErxyB0erVvm076vn7Dx8NT9T58s08hNS0HFLG7aOpwV2nHECCHYDWO0yWXI=
 
+- semaphore:
+    name: semaphore-container-images-kolla-push-zed
+    max: 1
+
+- semaphore:
+    name: semaphore-container-images-kolla-push-antelope
+    max: 1
+
 - job:
      name: container-images-kolla-build
      nodeset: ubuntu-jammy-large
@@ -113,6 +121,8 @@
 - job:
     name: container-images-kolla-push-zed
     parent: container-images-kolla-build
+    semaphores:
+      - name: semaphore-container-images-kolla-push-zed
     vars:
       version_openstack: zed
       push_images: true
@@ -124,6 +134,8 @@
 - job:
     name: container-images-kolla-push-antelope
     parent: container-images-kolla-build
+    semaphores:
+      - name: semaphore-container-images-kolla-push-zed
     vars:
       version_openstack: "2023.1"
       push_images: true
