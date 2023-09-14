@@ -135,7 +135,7 @@
     name: container-images-kolla-push-antelope
     parent: container-images-kolla-build
     semaphores:
-      - name: semaphore-container-images-kolla-push-zed
+      - name: semaphore-container-images-kolla-push-antelope
     vars:
       version_openstack: "2023.1"
       push_images: true
