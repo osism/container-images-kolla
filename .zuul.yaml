@@ -161,6 +161,8 @@
       jobs:
         - flake8
         - yamllint
+    label:
+      jobs:
         - container-images-kolla-build-zed
         - container-images-kolla-build-antelope
     gate:
