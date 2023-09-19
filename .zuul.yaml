@@ -99,7 +99,7 @@
      nodeset: ubuntu-jammy-large
      pre-run: playbooks/pre.yml
      run: playbooks/build.yml
-     timeout: 5400
+     timeout: 10800
      vars:
        docker_namespace: kolla
        docker_registry: osism.harbor.regio.digital
