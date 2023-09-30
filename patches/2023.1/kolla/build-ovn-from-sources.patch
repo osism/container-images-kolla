@@ -39,7 +39,7 @@ index 247eab83a..2f2e4c7a7 100644
 +        jq \
 +        libjemalloc2 \
 +        procps \
-+    && git clone -b v23.06.1 --depth 1 https://github.com/ovn-org/ovn.git /ovn \
++    && git clone -b v23.06.2 --depth 1 https://github.com/ovn-org/ovn.git /ovn \
 +    && cd /ovn \
 +    && ./boot.sh \
 +    && git submodule update --init --depth 1 \
