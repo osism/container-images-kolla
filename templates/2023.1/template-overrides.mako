@@ -56,6 +56,8 @@ RUN {{ macros.install_pip(manila_base_additional_pip_packages | customizable("pi
 {% set magnum_base_additional_pip_packages = [ 'magnum-cluster-api' ] %}
 {% block magnum_base_footer %}
 RUN {{ macros.install_pip(magnum_base_additional_pip_packages | customizable("pip_packages")) }}
+RUN curl -o /tmp/helm.tar.gz https://get.helm.sh/helm-v3.13.0-linux-amd64.tar.gz ${"\\"}
+    && tar --strip-components=1 -xvzf /tmp/helm.tar.gz -C /usr/local/bin linux-amd64/helm
 {% endblock %}
 
 {% set gnocchi_base_packages_append = ['python3-rados'] %}
