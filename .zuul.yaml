@@ -94,6 +94,10 @@
     name: semaphore-container-images-kolla-push-antelope
     max: 1
 
+- semaphore:
+    name: semaphore-container-images-kolla-push-bobcat
+    max: 1
+
 - job:
      name: container-images-kolla-build
      nodeset: ubuntu-jammy-large
@@ -116,6 +120,13 @@
     parent: container-images-kolla-build
     vars:
       version_openstack: "2023.1"
+      push_images: false
+
+- job:
+    name: container-images-kolla-build-bobcat
+    parent: container-images-kolla-build
+    vars:
+      version_openstack: "2023.2"
       push_images: false
 
 - job:
@@ -145,6 +156,19 @@
         pass-to-parent: true
 
 - job:
+    name: container-images-kolla-push-bobcat
+    parent: container-images-kolla-build
+    semaphores:
+      - name: semaphore-container-images-kolla-push-bobcat
+    vars:
+      version_openstack: "2023.2"
+      push_images: true
+    secrets:
+      - name: secret
+        secret: SECRET_CONTAINER_IMAGES_KOLLA
+        pass-to-parent: true
+
+- job:
     name: container-images-kolla-release
     parent: container-images-kolla-build
     vars:
@@ -165,6 +189,7 @@
       jobs:
         - container-images-kolla-build-zed
         - container-images-kolla-build-antelope
+        - container-images-kolla-build-bobcat
     gate:
       jobs:
         - flake8
@@ -175,11 +200,14 @@
         - yamllint
         - container-images-kolla-push-zed
         - container-images-kolla-push-antelope
+        - container-images-kolla-push-bobcat
     post:
       jobs:
         - container-images-kolla-push-zed:
             branches: main
         - container-images-kolla-push-antelope:
+            branches: main
+        - container-images-kolla-push-bobcat:
             branches: main
     tag:
       jobs:
