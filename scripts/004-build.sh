@@ -18,7 +18,7 @@ BUILD_ID=${BUILD_ID:-$(date +%Y%m%d)}
 BUILD_TYPE=${BUILD_TYPE:-all}
 OPENSTACK_VERSION=${OPENSTACK_VERSION:-latest}
 VERSION=${VERSION:-latest}
-SQUASH=${SQUASH:-false}
+SQUASH=${SQUASH:-true}
 
 KOLLA_CONF=kolla-build.conf
 
