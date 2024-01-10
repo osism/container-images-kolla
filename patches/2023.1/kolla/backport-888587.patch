@@ -1,0 +1,31 @@
+From 77cfb749d128977ba6b6958ae3d3ee39cd31dd1c Mon Sep 17 00:00:00 2001
+From: Christian Berendt <berendt@osism.tech>
+Date: Fri, 14 Jul 2023 17:30:41 +0200
+Subject: [PATCH] octavia: bootstrap octavia_persistence database
+
+Change-Id: I141dbf2f5338ce3ce8f66d0b948463a084b94f56
+---
+
+diff --git a/docker/octavia/octavia-api/extend_start.sh b/docker/octavia/octavia-api/extend_start.sh
+index 72bfe57..3c45e25 100644
+--- a/docker/octavia/octavia-api/extend_start.sh
++++ b/docker/octavia/octavia-api/extend_start.sh
+@@ -4,6 +4,7 @@
+ # of the KOLLA_BOOTSTRAP variable being set, including empty.
+ if [[ "${!KOLLA_BOOTSTRAP[@]}" ]]; then
+     octavia-db-manage upgrade head
++    octavia-db-manage upgrade_persistence
+     exit 0
+ fi
+ 
+diff --git a/releasenotes/notes/octavia_persistence-9cae39010b28bcee.yaml b/releasenotes/notes/octavia_persistence-9cae39010b28bcee.yaml
+new file mode 100644
+index 0000000..cc03d56
+--- /dev/null
++++ b/releasenotes/notes/octavia_persistence-9cae39010b28bcee.yaml
+@@ -0,0 +1,5 @@
++---
++features:
++  - |
++    The octavia-api container image now also performs the upgrade
++    of the octavia_persistence database in bootstrap mode.
