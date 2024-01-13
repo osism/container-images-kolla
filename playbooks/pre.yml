@@ -16,6 +16,24 @@
           - python3-requests
           - skopeo
 
+    - name: Enable dockerd exerpimental features
+      become: true
+      ansible.builtin.copy:
+        content: |
+          {
+            "experimental": true
+          }
+        dest: /etc/docker/daemon.json
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Restart docker service
+      become: true
+      ansible.builtin.service:
+        name: docker
+        state: restarted
+
     - name: Run install script
       ansible.builtin.shell:
         executable: /bin/bash
