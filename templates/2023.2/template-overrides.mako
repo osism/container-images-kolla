@@ -102,6 +102,10 @@ RUN apt-get remove -y build-essential ${"\\"}
     && apt-get autoremove -y
 {% endblock %}
 
+{% block fluentd_footer %}
+LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build_date }}" fluentd_binary="fluentd" fluentd_user="{{ fluentd_user }}"
+{% endblock %}
+
 {% block labels %}
 LABEL "build-date"="{{ build_date }}" ${"\\"}
       "name"="{{ image_name }}" ${"\\"}
