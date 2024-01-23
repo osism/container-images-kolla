@@ -1,0 +1,10 @@
+--- a/kolla/image/tasks.py
++++ b/kolla/image/tasks.py
+@@ -377,6 +377,7 @@ class BuildTask(EngineTask):
+                                          network_mode=self.conf.network_mode,
+                                          pull=pull,
+                                          forcerm=self.forcerm,
++                                         squash=True,
+                                          buildargs=buildargs):
+                 if 'stream' in stream:
+                     for line in stream['stream'].split('\n'):

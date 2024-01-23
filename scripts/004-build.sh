@@ -9,7 +9,6 @@ set -x
 # BUILD_TYPE
 # KOLLA_IMAGES
 # OPENSTACK_VERSION
-# SQUASH
 # VERSION
 
 # Set default values
@@ -18,7 +17,6 @@ BUILD_ID=${BUILD_ID:-$(date +%Y%m%d)}
 BUILD_TYPE=${BUILD_TYPE:-all}
 OPENSTACK_VERSION=${OPENSTACK_VERSION:-latest}
 VERSION=${VERSION:-latest}
-SQUASH=${SQUASH:-false}
 
 KOLLA_CONF=kolla-build.conf
 
@@ -32,10 +30,6 @@ fi
 
 export VERSION
 export OPENSTACK_VERSION
-
-if [[ $SQUASH == "true" ]]; then
-    BUILD_OPTS+=" --squash"
-fi
 
 if [[ -z "$KOLLA_IMAGES" ]]; then
     KOLLA_IMAGES="$(python3 src/get-projects-from-versions-file.py)"
