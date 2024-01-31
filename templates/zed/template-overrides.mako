@@ -94,10 +94,11 @@ RUN apt-get update ${"\\"}
 
 {% block footer %}
 RUN rm -rf /usr/share/doc/* ${"\\"}
-    && rm -rf /usr/share/man/*
-
-RUN apt-get remove -y build-essential ${"\\"}
-    && apt-get autoremove -y
+    && rm -rf /usr/share/man/* ${"\\"}
+    && apt-get remove -y build-essential ${"\\"}
+    && apt-get autoremove -y ${"\\"}
+    && if [ -e /var/lib/kolla/venv/bin/python3 ]; then /var/lib/kolla/venv/bin/python3 -Bc "import pathlib; [p.unlink() for p in pathlib.Path('.').rglob('*.py[co]')]"; fi ${"\\"}
+    && if [ -e /var/lib/kolla/venv/bin/python3 ]; then /var/lib/kolla/venv/bin/python3 -Bc "import pathlib; [p.rmdir() for p in pathlib.Path('.').rglob('__pycache__')]"; fi
 {% endblock %}
 
 {% block labels %}
