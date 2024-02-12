@@ -13,7 +13,7 @@ elasticsearch: dpkg -s elasticsearch-oss
 elasticsearch-curator: pip3 show elasticsearch_curator
 # etcd Version: 3.2.26
 etcd: etcd --version
-fluentd: dpkg -s td-agent
+fluentd: dpkg -s fluent-package
 glance: pip3 show glance
 gnocchi: pip3 show gnocchi
 grafana: dpkg -s grafana
@@ -81,6 +81,7 @@ prometheus-openstack-exporter: echo
 prometheus-ovn-exporter: /opt/ovn-exporter --version
 # prometheus, version 2.26.1 (branch: HEAD, revision: 6eeded0fdf760e81af75d9c44ce539ab77da4505)
 prometheus-v2-server: /opt/prometheus/prometheus --version
+proxysql: dpkg -s proxysql
 rabbitmq: dpkg -s rabbitmq-server
 redis: dpkg -s redis-server
 redis-sentinel: dpkg -s redis-sentinel
