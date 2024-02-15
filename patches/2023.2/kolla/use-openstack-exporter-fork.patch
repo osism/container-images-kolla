@@ -1,0 +1,13 @@
+--- a/docker/prometheus/prometheus-openstack-exporter/Dockerfile.j2
++++ b/docker/prometheus/prometheus-openstack-exporter/Dockerfile.j2
+@@ -6,8 +6,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ {% block prometheus_openstack_exporter_header %}{% endblock %}
+
+ {% block prometheus_openstack_exporter_repository_version %}
+-ARG prometheus_openstack_exporter_version=1.6.0
+-ARG prometheus_openstack_exporter_url=https://github.com/openstack-exporter/openstack-exporter/releases/download/v${prometheus_openstack_exporter_version}/openstack-exporter_${prometheus_openstack_exporter_version}_linux_{{debian_arch}}.tar.gz
++ARG prometheus_openstack_exporter_version=0.20240215.0
++ARG prometheus_openstack_exporter_url=https://github.com/osism/openstack-exporter/releases/download/v${prometheus_openstack_exporter_version}/openstack-exporter_${prometheus_openstack_exporter_version}_linux_{{debian_arch}}.tar.gz
+ {% endblock %}
+
+ {% block prometheus_openstack_exporter_install %}
