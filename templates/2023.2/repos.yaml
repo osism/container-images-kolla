@@ -1,3 +1,4 @@
+---
 ubuntu:
   openvswitch:
     url: https://packagecloud.io/berendt/osism/ubuntu/

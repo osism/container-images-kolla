@@ -99,14 +99,14 @@
     max: 1
 
 - job:
-     name: container-images-kolla-build
-     nodeset: ubuntu-jammy-large
-     pre-run: playbooks/pre.yml
-     run: playbooks/build.yml
-     timeout: 10800
-     vars:
-       docker_namespace: kolla
-       docker_registry: osism.harbor.regio.digital
+    name: container-images-kolla-build
+    nodeset: ubuntu-jammy-large
+    pre-run: playbooks/pre.yml
+    run: playbooks/build.yml
+    timeout: 10800
+    vars:
+      docker_namespace: kolla
+      docker_registry: osism.harbor.regio.digital
 
 - job:
     name: container-images-kolla-build-zed

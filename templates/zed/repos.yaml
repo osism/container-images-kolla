@@ -1,3 +1,4 @@
+---
 ubuntu:
   erlang:
     url: https://ppa1.novemberain.com/rabbitmq/rabbitmq-erlang/deb/ubuntu
