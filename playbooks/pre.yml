@@ -1,5 +1,6 @@
 ---
-- hosts: all
+- name: Run preparations
+  hosts: all
 
   roles:
     - ensure-docker
