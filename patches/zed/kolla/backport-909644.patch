@@ -1,0 +1,26 @@
+From 756ee984c3c761514115c342e7cba9a3cb533d02 Mon Sep 17 00:00:00 2001
+From: Michal Nasiadka <mnasiadka@gmail.com>
+Date: Wed, 21 Feb 2024 11:10:30 +0100
+Subject: [PATCH] opensearch: set OPENSEARCH_INITIAL_ADMIN_PASSWORD
+
+Since 2.12 OpenSearch requires setting initial admin password,
+that is not trivial/weak.
+
+Closes-Bug: #2054586
+
+Change-Id: I6b6ef656bc2009a2dc3cdfcb01956d50fba4b7b9
+---
+
+diff --git a/docker/opensearch/opensearch/Dockerfile.j2 b/docker/opensearch/opensearch/Dockerfile.j2
+index d9add65..891c1f7 100644
+--- a/docker/opensearch/opensearch/Dockerfile.j2
++++ b/docker/opensearch/opensearch/Dockerfile.j2
+@@ -14,6 +14,8 @@
+         'opensearch'
+     ] %}
+ 
++ENV OPENSEARCH_INITIAL_ADMIN_PASSWORD="Kolla24OpenSearch"
++
+ {{ macros.install_packages(opensearch_packages | customizable("packages")) }}
+ 
+ COPY extend_start.sh /usr/local/bin/kolla_extend_start
