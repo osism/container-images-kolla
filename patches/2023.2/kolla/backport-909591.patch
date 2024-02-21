@@ -1,0 +1,21 @@
+From 88c582ceeabf354fd7baab37e94c43fdd0d9e728 Mon Sep 17 00:00:00 2001
+From: Christian Berendt <berendt@osism.tech>
+Date: Tue, 20 Feb 2024 16:17:18 +0100
+Subject: [PATCH] Use openstack-exporter 1.7.0
+
+Change-Id: I5570e405815d5f1fd0eeb017875cd2fa2ffed6bc
+---
+
+diff --git a/docker/prometheus/prometheus-openstack-exporter/Dockerfile.j2 b/docker/prometheus/prometheus-openstack-exporter/Dockerfile.j2
+index e139576..82608a6 100644
+--- a/docker/prometheus/prometheus-openstack-exporter/Dockerfile.j2
++++ b/docker/prometheus/prometheus-openstack-exporter/Dockerfile.j2
+@@ -6,7 +6,7 @@
+ {% block prometheus_openstack_exporter_header %}{% endblock %}
+ 
+ {% block prometheus_openstack_exporter_repository_version %}
+-ARG prometheus_openstack_exporter_version=1.6.0
++ARG prometheus_openstack_exporter_version=1.7.0
+ ARG prometheus_openstack_exporter_url=https://github.com/openstack-exporter/openstack-exporter/releases/download/v${prometheus_openstack_exporter_version}/openstack-exporter_${prometheus_openstack_exporter_version}_linux_{{debian_arch}}.tar.gz
+ {% endblock %}
+ 
