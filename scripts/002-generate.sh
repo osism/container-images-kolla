@@ -54,7 +54,8 @@ setini DEFAULT base $KOLLA_BASE
 setini DEFAULT base_tag $KOLLA_BASE_TAG
 setini DEFAULT install_type $KOLLA_INSTALL_TYPE
 
-if [[ "$OPENSTACK_VERSION" == "latest" ]]; then
+# Remove this after the final release of 2024.1
+if [[ "$OPENSTACK_VERSION" == "2024.1" ]]; then
     setini openstack-base location https://tarballs.opendev.org/openstack/requirements/requirements-master.tar.gz
 else
     setini openstack-base location https://tarballs.opendev.org/openstack/requirements/requirements-stable-$OPENSTACK_VERSION.tar.gz

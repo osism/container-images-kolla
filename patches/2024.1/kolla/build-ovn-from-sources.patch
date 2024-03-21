@@ -1,0 +1,175 @@
+diff --git a/docker/ovn/ovn-base/Dockerfile.j2 b/docker/ovn/ovn-base/Dockerfile.j2
+index 247eab83a..2f2e4c7a7 100644
+--- a/docker/ovn/ovn-base/Dockerfile.j2
++++ b/docker/ovn/ovn-base/Dockerfile.j2
+@@ -5,20 +5,52 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block ovn_base_header %}{% endblock %}
+ 
+-{% import "macros.j2" as macros with context %}
+-
+-{% if base_package_type == 'rpm' %}
+-    {% set ovn_base_packages = [
+-        'openvswitch-ovn-common',
+-    ] %}
+-
+-{% elif base_package_type == 'deb' %}
+-    {% set ovn_base_packages = [
+-        'ovn-common',
+-    ] %}
+-
+-{% endif %}
+-{{ macros.install_packages(ovn_base_packages | customizable("packages")) }}
++# based on https://gitlab.com/yaook/images/ovn/-/blob/devel/Dockerfile
++# and https://ovn-org.readthedocs.io/en/latest/intro/install/general.html
++
++RUN apt-get update \
++    && apt-get install -y \
++        git \
++        build-essential \
++        autoconf \
++        automake \
++        libtool \
++        libssl-dev \
++        libcap-ng-dev \
++        libunbound-dev \
++        libjemalloc-dev \
++        libunbound8 \
++        iproute2 \
++        jq \
++        libjemalloc2 \
++        procps \
++    && git clone -b v24.03.1 --depth 1 https://github.com/ovn-org/ovn.git /ovn \
++    && cd /ovn \
++    && ./boot.sh \
++    && git submodule update --init --depth 1 \
++    && cd /ovn/ovs \
++    && ./boot.sh \
++    && ./configure --localstatedir=/var --sysconfdir=/etc --prefix=/usr CFLAGS="-g -O2 -march=broadwell" LIBS=-ljemalloc \
++    && gmake -j 4 \
++    && make -j 4 install \
++    && cd /ovn \
++    && ./configure --localstatedir=/var --sysconfdir=/etc --prefix=/usr CFLAGS="-g -O2 -march=broadwell" LIBS=-ljemalloc \
++    && gmake -j 4 \
++    && make -j 4 install \
++    && apt-get remove -y \
++        git \
++        build-essential \
++        autoconf \
++        automake \
++        libtool \
++        libssl-dev \
++        libcap-ng-dev \
++        libunbound-dev \
++        libjemalloc-dev \
++    && rm -rf \
++      /var/lib/apt/lists/* \
++      /var/tmp/* \
++    && rm -rf /ovn
+ 
+ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ 
+diff --git a/docker/ovn/ovn-controller/Dockerfile.j2 b/docker/ovn/ovn-controller/Dockerfile.j2
+index ef4d05ddc..78e05ebb0 100644
+--- a/docker/ovn/ovn-controller/Dockerfile.j2
++++ b/docker/ovn/ovn-controller/Dockerfile.j2
+@@ -4,21 +4,5 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ {% endblock %}
+ 
+ {% block ovn_controller_header %}{% endblock %}
+-
+-{% import "macros.j2" as macros with context %}
+-
+-{% if base_package_type == 'rpm' %}
+-    {% set ovn_controller_packages = [
+-        'openvswitch-ovn-host'
+-    ] %}
+-
+-{% elif base_package_type == 'deb' %}
+-    {% set ovn_controller_packages = [
+-        'ovn-host'
+-    ] %}
+-
+-{% endif %}
+-{{ macros.install_packages(ovn_controller_packages | customizable("packages")) }}
+-
+ {% block ovn_controller_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/ovn/ovn-nb-db-server/Dockerfile.j2 b/docker/ovn/ovn-nb-db-server/Dockerfile.j2
+index ecc94651b..24838f6e7 100644
+--- a/docker/ovn/ovn-nb-db-server/Dockerfile.j2
++++ b/docker/ovn/ovn-nb-db-server/Dockerfile.j2
+@@ -5,21 +5,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block ovn_nb_db_server_header %}{% endblock %}
+ 
+-{% import "macros.j2" as macros with context %}
+-
+-{% if base_package_type == 'rpm' %}
+-    {% set ovn_nb_db_server_packages = [
+-        'openvswitch-ovn-central',
+-    ] %}
+-
+-{% elif base_package_type == 'deb' %}
+-    {% set ovn_nb_db_server_packages = [
+-        'ovn-central',
+-    ] %}
+-
+-{% endif %}
+-{{ macros.install_packages(ovn_nb_db_server_packages | customizable("packages")) }}
+-
+ COPY start_nb_db_server.sh /usr/local/bin/start-nb-db-server
+ RUN chmod 755 /usr/local/bin/start-nb-db-server
+ 
+diff --git a/docker/ovn/ovn-northd/Dockerfile.j2 b/docker/ovn/ovn-northd/Dockerfile.j2
+index 2c94f2f20..f0f94d380 100644
+--- a/docker/ovn/ovn-northd/Dockerfile.j2
++++ b/docker/ovn/ovn-northd/Dockerfile.j2
+@@ -4,21 +4,5 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ {% endblock %}
+ 
+ {% block ovn_northd_header %}{% endblock %}
+-
+-{% import "macros.j2" as macros with context %}
+-
+-{% if base_package_type == 'rpm' %}
+-    {% set ovn_northd_packages = [
+-        'openvswitch-ovn-central',
+-    ] %}
+-
+-{% elif base_package_type == 'deb' %}
+-    {% set ovn_northd_packages = [
+-        'ovn-central',
+-    ] %}
+-
+-{% endif %}
+-{{ macros.install_packages(ovn_northd_packages | customizable("packages")) }}
+-
+ {% block ovn_northd_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/ovn/ovn-sb-db-server/Dockerfile.j2 b/docker/ovn/ovn-sb-db-server/Dockerfile.j2
+index 9acd01fa3..c1f40c0ee 100644
+--- a/docker/ovn/ovn-sb-db-server/Dockerfile.j2
++++ b/docker/ovn/ovn-sb-db-server/Dockerfile.j2
+@@ -5,21 +5,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block ovn_sb_db_server_header %}{% endblock %}
+ 
+-{% import "macros.j2" as macros with context %}
+-
+-{% if base_package_type == 'rpm' %}
+-    {% set ovn_sb_db_server_packages = [
+-        'openvswitch-ovn-central',
+-    ] %}
+-
+-{% elif base_package_type == 'deb' %}
+-    {% set ovn_sb_db_server_packages = [
+-        'ovn-central',
+-    ] %}
+-
+-{% endif %}
+-{{ macros.install_packages(ovn_sb_db_server_packages | customizable("packages")) }}
+-
+ COPY start_sb_db_server.sh /usr/local/bin/start-sb-db-server
+ RUN chmod 755 /usr/local/bin/start-sb-db-server
+ 
