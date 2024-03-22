@@ -46,6 +46,7 @@ if [[ $BUILD_TYPE == "base" ]]; then
     done
 
     kolla-build \
+      --debug \
       --template-override templates/$OPENSTACK_VERSION/template-overrides.j2 \
       --config-file $KOLLA_CONF \
       --pull \
@@ -53,6 +54,7 @@ if [[ $BUILD_TYPE == "base" ]]; then
       $KOLLA_IMAGES_BASE 2>&1 | tee kolla-build-$BUILD_ID.log
 else
     kolla-build \
+      --debug \
       --template-override templates/$OPENSTACK_VERSION/template-overrides.j2 \
       --config-file $KOLLA_CONF \
       --skip-existing \

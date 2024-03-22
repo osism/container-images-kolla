@@ -64,7 +64,7 @@ projects_with_version = [
 template_data = {
     "base": KOLLA_BASE,
     "base_tag": KOLLA_BASE_TAG,
-    "gnocchi_version": versions["openstack_projects"]["gnocchi"],
+    "gnocchi_version": versions["openstack_projects"].get("gnocchi", ""),
     "install_type": KOLLA_INSTALL_TYPE,
     "is_release": IS_RELEASE,
     "namespace": KOLLA_NAMESPACE,
