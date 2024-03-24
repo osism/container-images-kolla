@@ -1,0 +1,181 @@
+From 7bb6096eccc7966bd963a0529dc7b352246dfdbb Mon Sep 17 00:00:00 2001
+From: Gregory Thiemonge <gthiemon@redhat.com>
+Date: Thu, 01 Feb 2024 14:23:01 +0100
+Subject: [PATCH] Fix neutron setting overrides
+
+Since 2023.2, we deprecated some settings in the [neutron] section
+('endpoint', 'endpoint_type' and 'ca_certificates_file'), they are
+respectively replaced by 'endpoint_override', 'valid_interfaces' and
+'cafile'. There's some code in Octavia that automatically sets the new
+settings if the user still has the old settings (it is required because
+keystoneauth uses the CONF objects to establish the sessions).
+But some corner cases were not correctly addressed in that patch.
+
+Now Octavia ensures that the override of the parameters is correctly
+handled.
+
+Change-Id: Ic37e9f699e32431ae1735ddc9642689967ddc696
+Closes-Bug: 2051604
+---
+
+diff --git a/octavia/common/config.py b/octavia/common/config.py
+index c3b6322..7476d22 100644
+--- a/octavia/common/config.py
++++ b/octavia/common/config.py
+@@ -935,24 +935,29 @@ def register_cli_opts():
+ def handle_neutron_deprecations():
+     # Apply neutron deprecated options to their new setting if needed
+
+-    # Basicaly: if the value of the deprecated option is not the default:
++    # Basically: if the new option is not set and the value of the deprecated
++    # option is not the default, it means that the deprecated setting is still
++    # used in the config file:
+     # * convert it to a valid "new" value if needed
+     # * set it as the default for the new option
+     # Thus [neutron].<new_option> has an higher precedence than
+     # [neutron].<deprecated_option>
+     loc = cfg.CONF.get_location('endpoint', 'neutron')
+-    if loc and loc.location != cfg.Locations.opt_default:
++    new_loc = cfg.CONF.get_location('endpoint_override', 'neutron')
++    if not new_loc and loc and loc.location != cfg.Locations.opt_default:
+         cfg.CONF.set_default('endpoint_override', cfg.CONF.neutron.endpoint,
+                              'neutron')
+
+     loc = cfg.CONF.get_location('endpoint_type', 'neutron')
+-    if loc and loc.location != cfg.Locations.opt_default:
++    new_loc = cfg.CONF.get_location('valid_interfaces', 'neutron')
++    if not new_loc and loc and loc.location != cfg.Locations.opt_default:
+         endpoint_type = cfg.CONF.neutron.endpoint_type.replace('URL', '')
+         cfg.CONF.set_default('valid_interfaces', [endpoint_type],
+                              'neutron')
+
+     loc = cfg.CONF.get_location('ca_certificates_file', 'neutron')
+-    if loc and loc.location != cfg.Locations.opt_default:
++    new_loc = cfg.CONF.get_location('cafile', 'neutron')
++    if not new_loc and loc and loc.location != cfg.Locations.opt_default:
+         cfg.CONF.set_default('cafile', cfg.CONF.neutron.ca_certificates_file,
+                              'neutron')
+ 
+diff --git a/octavia/common/keystone.py b/octavia/common/keystone.py
+index 507f33f..2a500d6 100644
+--- a/octavia/common/keystone.py
++++ b/octavia/common/keystone.py
+@@ -80,14 +80,14 @@
+ 
+                 config = getattr(cfg.CONF, self.section)
+                 for opt in config:
+-                    # For each option in the [neutron] section, get its setting
+-                    # location, if the location is 'opt_default' or
+-                    # 'set_default', it means that the option is not configured
+-                    # in the config file, it should be replaced with the one
+-                    # from [service_auth]
++                    # For each option in the [section] section, get its setting
++                    # location, if the location is 'opt_default', it means that
++                    # the option is not configured in the config file.
++                    # if the option is also defined in [service_auth], the
++                    # option of the [section] can be replaced by the one from
++                    # [service_auth]
+                     loc = cfg.CONF.get_location(opt, self.section)
+-                    if not loc or loc.location in (cfg.Locations.opt_default,
+-                                                   cfg.Locations.set_default):
++                    if not loc or loc.location == cfg.Locations.opt_default:
+                         if hasattr(cfg.CONF.service_auth, opt):
+                             cur_value = getattr(config, opt)
+                             value = getattr(cfg.CONF.service_auth, opt)
+diff --git a/octavia/tests/unit/common/test_config.py b/octavia/tests/unit/common/test_config.py
+index 80aaebd..55fddd6 100644
+--- a/octavia/tests/unit/common/test_config.py
++++ b/octavia/tests/unit/common/test_config.py
+@@ -78,3 +78,38 @@
+         self.assertEqual(
+             3,
+             conf.conf.haproxy_amphora.active_connection_retry_interval)
++
++    def test_handle_neutron_deprecations(self):
++        conf = self.useFixture(oslo_fixture.Config(config.cfg.CONF))
++
++        # The deprecated settings are copied to the new settings
++        conf.config(endpoint='my_endpoint',
++                    endpoint_type='internal',
++                    ca_certificates_file='/path/to/certs',
++                    group='neutron')
++
++        config.handle_neutron_deprecations()
++
++        self.assertEqual('my_endpoint', conf.conf.neutron.endpoint_override)
++        self.assertEqual(['internal'], conf.conf.neutron.valid_interfaces)
++        self.assertEqual('/path/to/certs', conf.conf.neutron.cafile)
++
++    # Test case for https://bugs.launchpad.net/octavia/+bug/2051604
++    def test_handle_neutron_deprecations_with_precedence(self):
++        conf = self.useFixture(oslo_fixture.Config(config.cfg.CONF))
++
++        # The deprecated settings should not override the new settings when
++        # they exist
++        conf.config(endpoint='my_old_endpoint',
++                    endpoint_type='old_type',
++                    ca_certificates_file='/path/to/old_certs',
++                    endpoint_override='my_endpoint',
++                    valid_interfaces=['internal'],
++                    cafile='/path/to/certs',
++                    group='neutron')
++
++        config.handle_neutron_deprecations()
++
++        self.assertEqual('my_endpoint', conf.conf.neutron.endpoint_override)
++        self.assertEqual(['internal'], conf.conf.neutron.valid_interfaces)
++        self.assertEqual('/path/to/certs', conf.conf.neutron.cafile)
+diff --git a/octavia/tests/unit/common/test_keystone.py b/octavia/tests/unit/common/test_keystone.py
+index e207522..1677424 100644
+--- a/octavia/tests/unit/common/test_keystone.py
++++ b/octavia/tests/unit/common/test_keystone.py
+@@ -52,3 +52,35 @@
+             [call("Overriding [%s].%s with '%s'", 'neutron', 'cafile',
+                   'bar')]
+         )
++
++    # Test case for https://bugs.launchpad.net/octavia/+bug/2051604
++    @mock.patch("octavia.common.keystone.ks_loading"
++                ".load_auth_from_conf_options")
++    @mock.patch("octavia.common.keystone.LOG")
++    def test_get_auth_neutron_override_endpoint(self,
++                                                mock_log,
++                                                mock_load_auth):
++        opt_mock = mock.MagicMock()
++        opt_mock.dest = "foo"
++        conf = oslo_fixture.Config(cfg.CONF)
++        conf.conf.set_default('endpoint_override', 'default_endpoint',
++                              'service_auth')
++        conf.conf.set_default('endpoint_override', 'new_endpoint',
++                              'neutron')
++
++        mock_load_auth.side_effect = [
++            ks_exceptions.auth_plugins.MissingRequiredOptions(
++                [opt_mock]),
++            None,
++            None
++        ]
++
++        sess = ks.KeystoneSession("neutron")
++        sess.get_auth()
++
++        # [service_auth].endpoint_override should not override
++        # [neutron].endpoint_override
++        self.assertNotIn(
++            call("Overriding [%s].%s with '%s'", 'neutron',
++                 'endpoint_override', 'default_endpoint'),
++            mock_log.debug.mock_calls)
+diff --git a/releasenotes/notes/fix-neutron-overrides-710ed047ebf0c45c.yaml b/releasenotes/notes/fix-neutron-overrides-710ed047ebf0c45c.yaml
+new file mode 100644
+index 0000000..4713173
+--- /dev/null
++++ b/releasenotes/notes/fix-neutron-overrides-710ed047ebf0c45c.yaml
+@@ -0,0 +1,8 @@
++---
++fixes:
++  - |
++    Fixed a bug when the deprecated settings (``endpoint``, ``endpoint_type``,
++    ``ca_certificates_file``) are used in the ``[neutron]`` section of the
++    configuration file. The connection to the neutron service may have used
++    some settings from the ``[service_auth]`` section or used undefined
++    settings.
