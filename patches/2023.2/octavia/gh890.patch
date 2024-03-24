@@ -1,0 +1,39 @@
+--- a/octavia/common/clients.py
++++ b/octavia/common/clients.py
+@@ -81,6 +81,12 @@ class NeutronAuth(object):
+             sess = ksession.get_session()
+
+             kwargs = {}
++
++            if CONF.neutron.ca_certificates_file:
++                kwargs['cacert'] = CONF.neutron.ca_certificates_file
++            elif CONF.keystone_authtoken.cafile:
++                kwargs['cacert'] = CONF.keystone_authtoken.cafile
++
+             if CONF.neutron.endpoint_override:
+                 kwargs['network_endpoint_override'] = (
+                     CONF.neutron.endpoint_override)
+@@ -109,10 +115,21 @@ class NeutronAuth(object):
+             neutron_endpoint = endpoint_data.catalog_url
+
+         user_auth = token_endpoint.Token(neutron_endpoint, context.auth_token)
+-        user_sess = session.Session(auth=user_auth)
++
++        if CONF.keystone_authtoken.cafile:
++            user_sess = session.Session(auth=user_auth, verify=CONF.keystone_authtoken.cafile)
++        else:
++            user_sess = session.Session(auth=user_auth)
++
++        kwargs = {}
++
++        if CONF.neutron.ca_certificates_file:
++            kwargs['cacert'] = CONF.neutron.ca_certificates_file
++        elif CONF.keystone_authtoken.cafile:
++            kwargs['cacert'] = CONF.keystone_authtoken.cafile
+
+         conn = openstack.connection.Connection(
+-            session=user_sess, oslo_conf=CONF)
++            session=user_sess, oslo_conf=CONF, **kwargs)
+         return conn.network
+
+
