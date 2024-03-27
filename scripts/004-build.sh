@@ -4,6 +4,7 @@ set -x
 
 # Available environment variables
 #
+# BASE_ARCH
 # BUILD_ID
 # BUILD_OPTS
 # BUILD_TYPE
@@ -13,6 +14,7 @@ set -x
 
 # Set default values
 
+BASE_ARCH=${BASE_ARCH:-x86_64}
 BUILD_ID=${BUILD_ID:-$(date +%Y%m%d)}
 BUILD_TYPE=${BUILD_TYPE:-all}
 OPENSTACK_VERSION=${OPENSTACK_VERSION:-latest}
@@ -46,6 +48,7 @@ if [[ $BUILD_TYPE == "base" ]]; then
     done
 
     kolla-build \
+      --base-arch $BASE_ARCH \
       --debug \
       --template-override templates/$OPENSTACK_VERSION/template-overrides.j2 \
       --config-file $KOLLA_CONF \
@@ -54,6 +57,7 @@ if [[ $BUILD_TYPE == "base" ]]; then
       $KOLLA_IMAGES_BASE 2>&1 | tee kolla-build-$BUILD_ID.log
 else
     kolla-build \
+      --base-arch $BASE_ARCH \
       --debug \
       --template-override templates/$OPENSTACK_VERSION/template-overrides.j2 \
       --config-file $KOLLA_CONF \
