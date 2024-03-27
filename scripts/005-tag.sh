@@ -43,32 +43,35 @@ docker images
 # change build_id tags to openstack version tags
 docker images -f label="de.osism.release.openstack=${OPENSTACK_VERSION}" | tail -n +2 | awk '{ print $1 }' | while read image; do
     imagename=$(echo $image | awk -F/ '{ print $NF }')
-    new_imagename=${imagename#${KOLLA_TYPE}}
 
-    # http://stackoverflow.com/questions/12766406/how-to-get-the-first-part-of-the-string-in-bash
-    project=${new_imagename%%-*}
+    if [[ $imagename != "<none>" ]]; then
+        new_imagename=${imagename#${KOLLA_TYPE}}
 
-    new_imagename="$DOCKER_NAMESPACE/$new_imagename"
-    if [[ ! -z $DOCKER_REGISTRY ]]; then
-        new_imagename="$DOCKER_REGISTRY/$new_imagename"
-    fi
+        # http://stackoverflow.com/questions/12766406/how-to-get-the-first-part-of-the-string-in-bash
+        project=${new_imagename%%-*}
 
-    if [[ "$OPENSTACK_VERSION" == "latest" ]]; then
-        tag=latest
-        docker tag $image:$SOURCE_DOCKER_TAG $new_imagename:$tag
-        echo "$new_imagename:$tag" >> $LSTFILE
-    else
-        if [[ $VERSION == "latest" ]]; then
-            tag=$OPENSTACK_VERSION
-        else
-            tag=$VERSION
+        new_imagename="$DOCKER_NAMESPACE/$new_imagename"
+        if [[ ! -z $DOCKER_REGISTRY ]]; then
+            new_imagename="$DOCKER_REGISTRY/$new_imagename"
         fi
-        docker tag $image:$SOURCE_DOCKER_TAG $new_imagename:$tag
-        echo "$new_imagename:$tag" >> $LSTFILE
-    fi
 
-    # remove the build_id tag
-    docker rmi $image:$SOURCE_DOCKER_TAG
+        if [[ "$OPENSTACK_VERSION" == "latest" ]]; then
+            tag=latest
+            docker tag $image:$SOURCE_DOCKER_TAG $new_imagename:$tag
+            echo "$new_imagename:$tag" >> $LSTFILE
+        else
+            if [[ $VERSION == "latest" ]]; then
+                tag=$OPENSTACK_VERSION
+            else
+                tag=$VERSION
+            fi
+            docker tag $image:$SOURCE_DOCKER_TAG $new_imagename:$tag
+            echo "$new_imagename:$tag" >> $LSTFILE
+        fi
+
+        # remove the build_id tag
+        docker rmi $image:$SOURCE_DOCKER_TAG
+    fi
 done
 docker images
 
