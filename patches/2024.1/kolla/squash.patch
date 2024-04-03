@@ -1,10 +1,10 @@
 --- a/kolla/image/tasks.py
 +++ b/kolla/image/tasks.py
-@@ -400,6 +400,7 @@ class BuildTask(EngineTask):
+@@ -412,6 +412,7 @@ class BuildTask(EngineTask):
                      network_mode=self.conf.network_mode,
                      pull=pull,
                      forcerm=self.forcerm,
 +                    squash=True,
+                     platform=self.conf.platform,
                      buildargs=buildargs,
                      **kwargs)[1]:
-                 if self.conf.engine == engine.Engine.PODMAN.value:
