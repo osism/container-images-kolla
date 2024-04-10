@@ -22,7 +22,8 @@
       ansible.builtin.copy:
         content: |
           {
-            "experimental": true
+            "experimental": true,
+            "max-concurrent-uploads": 20,
           }
         dest: /etc/docker/daemon.json
         owner: root
