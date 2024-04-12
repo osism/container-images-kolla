@@ -126,6 +126,14 @@
       push_images: false
 
 - job:
+    name: container-images-kolla-build-caracal-aarch64
+    parent: container-images-kolla-build
+    vars:
+      base_arch: aarch64
+      version_openstack: "2024.1"
+      push_images: false
+
+- job:
     name: container-images-kolla-push-antelope
     parent: container-images-kolla-build
     semaphores:
@@ -182,6 +190,7 @@
         - flake8
         - python-black
         - yamllint
+        - container-images-kolla-build-caracal-aarch64
     label:
       jobs:
         - container-images-kolla-build-antelope

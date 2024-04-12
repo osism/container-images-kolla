@@ -22,6 +22,12 @@ VERSION=${VERSION:-latest}
 
 KOLLA_CONF=kolla-build.conf
 
+if [[ $BASE_ARCH == "x86_64" ]]; then
+    PLATFORM="linux/amd64"
+elif [[ $BASE_ARCH == "aarch64" ]]; then
+    PLATFORM="linux/arm64"
+fi
+
 # NOTE: For builds for a specific release, the OpenStack version is taken from the release repository.
 if [[ $VERSION != "latest" ]]; then
     OPENSTACK_VERSION=$(grep "openstack_version:" release/$VERSION/openstack.yml | awk -F': ' '{ print $2 }')
@@ -37,6 +43,11 @@ if [[ -z "$KOLLA_IMAGES" ]]; then
     KOLLA_IMAGES="$(python3 src/get-projects-from-versions-file.py)"
 fi
 
+# For ARM64 we currently only support the images that are required on the compute plane.
+if [[ "$BASE_ARCH" == "aarch64" ]]; then
+    KOLLA_IMAGES="^nova"
+fi
+
 # Build images
 
 if [[ $BUILD_TYPE == "base" ]]; then
@@ -48,6 +59,7 @@ if [[ $BUILD_TYPE == "base" ]]; then
     done
 
     kolla-build \
+      --platform $PLATFORM \
       --base-arch $BASE_ARCH \
       --debug \
       --template-override templates/$OPENSTACK_VERSION/template-overrides.j2 \
@@ -57,6 +69,7 @@ if [[ $BUILD_TYPE == "base" ]]; then
       $KOLLA_IMAGES_BASE 2>&1 | tee kolla-build-$BUILD_ID.log
 else
     kolla-build \
+      --platform $PLATFORM \
       --base-arch $BASE_ARCH \
       --debug \
       --template-override templates/$OPENSTACK_VERSION/template-overrides.j2 \
