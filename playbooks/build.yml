@@ -36,6 +36,7 @@
           bash scripts/005-tag.sh
       changed_when: false
       environment:
+        BASE_ARCH: "{{ base_arch | default('x84_64') }}"
         DOCKER_NAMESPACE: "{{ docker_namespace }}"
         DOCKER_REGISTRY: "{{ docker_registry }}"
         IS_RELEASE: "{{ is_release | default(false) }}"

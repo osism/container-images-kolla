@@ -81,6 +81,7 @@ RUN curl -o /tmp/kolla-operations.tar.gz https://github.com/osism/kolla-operatio
 {% endblock %}
 
 {% block ovs_install %}
+{% if "base_arch" == "amd64" %}
 RUN apt-get update ${"\\"}
     && apt-get -y install --no-install-recommends ${"\\"}
         python3-netifaces ${"\\"}
@@ -92,6 +93,7 @@ RUN apt-get update ${"\\"}
     && rm -f /tmp/openvswitch-switch.deb /tmp/openvswitch-common.deb /tmp/python3-openvswitch.deb ${"\\"}
     && apt-get clean ${"\\"}
     && rm -rf /var/lib/apt/lists/*
+{% endif %}
 {% endblock %}
 
 {% block keystone_footer %}
