@@ -204,6 +204,7 @@
     check:
       jobs:
         - flake8
+        - python-black
         - yamllint
     label:
       jobs:
@@ -214,10 +215,12 @@
     gate:
       jobs:
         - flake8
+        - python-black
         - yamllint
     periodic-daily:
       jobs:
         - flake8
+        - python-black
         - yamllint
     periodic-midnight:
       jobs:

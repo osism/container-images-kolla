@@ -175,7 +175,9 @@ for image in client.images.list(filters=FILTERS):
 
                 # NOTE: We use only the first 3 places of the version. This prevents
                 #       versions like 15.0.0.0.
-                target_version = ".".join([str(x) for x in list(parsed_version.release)[0:3]])
+                target_version = ".".join(
+                    [str(x) for x in list(parsed_version.release)[0:3]]
+                )
 
                 logger.info(
                     f"Found version '{target_version}' with build date '{build_date}' for {tag}"
@@ -194,10 +196,14 @@ for image in client.images.list(filters=FILTERS):
                 if IS_RELEASE == "True":
                     target_tag = target_tag.replace("/kolla/", "/kolla/release/")
 
-                logger.info(f"Adding de.osism.service.version='{target_version}' label to {tag}")
+                logger.info(
+                    f"Adding de.osism.service.version='{target_version}' label to {tag}"
+                )
                 with tempfile.NamedTemporaryFile() as fp:
                     fp.write(f"FROM {tag}\n".encode())
-                    fp.write(f"LABEL de.osism.service.version='{target_version}'\n".encode())
+                    fp.write(
+                        f"LABEL de.osism.service.version='{target_version}'\n".encode()
+                    )
                     fp.seek(0)
 
                     client.images.build(fileobj=fp, tag=target_tag)
