@@ -37,6 +37,11 @@ if [[ -z "$KOLLA_IMAGES" ]]; then
     KOLLA_IMAGES="$(python3 src/get-projects-from-versions-file.py)"
 fi
 
+# For ARM64 we currently only support the images that are required on the compute plane.
+if [[ "$BASE_ARCH" == "aarch64" ]]; then
+    KOLLA_IMAGES="^nova"
+fi
+
 # Build images
 
 if [[ $BUILD_TYPE == "base" ]]; then
