@@ -1,5 +1,5 @@
 diff --git a/kolla/common/sources.py b/kolla/common/sources.py
-index 987703d02..ba18896bb 100644
+index 5ba79d5a3..f086cef10 100644
 --- a/kolla/common/sources.py
 +++ b/kolla/common/sources.py
 @@ -83,14 +83,6 @@ SOURCES = {
@@ -17,7 +17,7 @@ index 987703d02..ba18896bb 100644
      'horizon-plugin-designate-dashboard': {
          'type': 'url',
          'location': ('$tarballs_base/openstack/designate-dashboard/'
-@@ -115,10 +107,6 @@ SOURCES = {
+@@ -119,10 +111,6 @@ SOURCES = {
          'type': 'url',
          'location': ('$tarballs_base/openstack/masakari-dashboard/'
                       'masakari-dashboard-${openstack_branch}.tar.gz')},
@@ -28,7 +28,7 @@ index 987703d02..ba18896bb 100644
      'horizon-plugin-neutron-vpnaas-dashboard': {
          'type': 'url',
          'location': ('$tarballs_base/openstack/neutron-vpnaas-dashboard/'
-@@ -127,26 +115,6 @@ SOURCES = {
+@@ -131,22 +119,6 @@ SOURCES = {
          'type': 'url',
          'location': ('$tarballs_base/openstack/octavia-dashboard/'
                       'octavia-dashboard-${openstack_branch}.tar.gz')},
@@ -44,10 +44,6 @@ index 987703d02..ba18896bb 100644
 -        'type': 'url',
 -        'location': ('$tarballs_base/openstack/venus-dashboard/'
 -                     'venus-dashboard-${openstack_branch}.tar.gz')},
--    'horizon-plugin-vitrage-dashboard': {
--        'type': 'url',
--        'location': ('$tarballs_base/openstack/vitrage-dashboard/'
--                     'vitrage-dashboard-${openstack_branch}.tar.gz')},
 -    'horizon-plugin-watcher-dashboard': {
 -        'type': 'url',
 -        'location': ('$tarballs_base/openstack/watcher-dashboard/'
