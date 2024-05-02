@@ -1,0 +1,46 @@
+From 6c9a41d6f9bd3a6f273eee7d3a361233be903087 Mon Sep 17 00:00:00 2001
+From: Michal Wyszkowski <michal.wyszkowski99@gmail.com>
+Date: Mon, 22 Apr 2024 13:03:38 +0200
+Subject: [PATCH] Nova: fix swtpm and swtpm-tools missing from deb installs
+
+Closes-Bug: 2062572
+Change-Id: I456a5b8f66aa88a82fb54938e8df7195d127d9cd
+(cherry picked from commit abb969502f75517844bd44c25e0484c7495284d2)
+---
+
+diff --git a/docker/nova/nova-compute/Dockerfile.j2 b/docker/nova/nova-compute/Dockerfile.j2
+index 085c5c3..d38d532 100644
+--- a/docker/nova/nova-compute/Dockerfile.j2
++++ b/docker/nova/nova-compute/Dockerfile.j2
+@@ -72,6 +72,8 @@
+         'qemu-utils',
+         'rsync',
+         'sasl2-bin',
++        'swtpm',
++        'swtpm-tools',
+         'sysfsutils',
+         'targetcli-fb',
+         'xfsprogs'
+diff --git a/docker/nova/nova-libvirt/Dockerfile.j2 b/docker/nova/nova-libvirt/Dockerfile.j2
+index 5e9a021..7d3036e 100644
+--- a/docker/nova/nova-libvirt/Dockerfile.j2
++++ b/docker/nova/nova-libvirt/Dockerfile.j2
+@@ -56,6 +56,7 @@
+         'qemu-utils',
+         'sasl2-bin',
+         'swtpm',
++        'swtpm-tools',
+         'trousers'
+     ] %}
+ 
+diff --git a/releasenotes/notes/bug-2062572-c55c71e1045a863f.yaml b/releasenotes/notes/bug-2062572-c55c71e1045a863f.yaml
+new file mode 100644
+index 0000000..81ba6b7
+--- /dev/null
++++ b/releasenotes/notes/bug-2062572-c55c71e1045a863f.yaml
+@@ -0,0 +1,5 @@
++---
++fixes:
++  - |
++    Fixes a bug where swtpm and swtpm-tools deb packages are missing in 'nova-compute' and 'nova-libvirt' containers which keeps 'nova-compute' container from starting when operator enables TPM support in Nova.
++    `LP#2062572 <https://launchpad.net/bugs/2062572>`__
