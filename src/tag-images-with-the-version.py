@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 import os
 from packaging import version as packaging_version
 from re import findall, sub
