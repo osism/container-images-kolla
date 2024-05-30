@@ -13,8 +13,6 @@
         name:
           - jq
           - parallel
-          - python3-docker
-          - python3-requests
           - skopeo
 
     - name: Enable dockerd exerpimental features
