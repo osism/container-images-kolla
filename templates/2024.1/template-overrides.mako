@@ -124,6 +124,5 @@ LABEL "build-date"="{{ build_date }}" ${"\\"}
       "org.opencontainers.image.source"="https://github.com/osism/container-images-kolla" ${"\\"}
       "org.opencontainers.image.title"="{{ image_name }}" ${"\\"}
       "org.opencontainers.image.url"="https://quay.io/organization/osism" ${"\\"}
-      "org.opencontainers.image.vendor"="OSISM GmbH" ${"\\"}
-      "org.opencontainers.image.version"="${version}"
+      "org.opencontainers.image.vendor"="OSISM GmbH"
 {% endblock %}
