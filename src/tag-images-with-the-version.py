@@ -199,12 +199,12 @@ for image in client.images.list(filters=FILTERS):
                     target_tag = target_tag.replace("/kolla/", "/kolla/release/")
 
                 logger.info(
-                    f"Adding de.osism.service.version='{target_version}' label to {tag}"
+                    f"Adding org.opencontainers.image.version='{target_version}' label to {tag}"
                 )
                 with tempfile.NamedTemporaryFile() as fp:
                     fp.write(f"FROM {tag}\n".encode())
                     fp.write(
-                        f"LABEL de.osism.service.version='{target_version}'\n".encode()
+                        f"LABEL org.opencontainers.image.version='{target_version}'\n".encode()
                     )
                     fp.seek(0)
 
