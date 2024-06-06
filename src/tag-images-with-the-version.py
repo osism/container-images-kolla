@@ -3,6 +3,7 @@
 import os
 from packaging import version as packaging_version
 from re import findall, sub
+import subprocess
 import tempfile
 
 from docker import DockerClient
@@ -209,6 +210,12 @@ for image in client.images.list(filters=FILTERS):
                     fp.seek(0)
 
                     client.images.build(fileobj=fp, tag=target_tag)
+
+                logger.info(f"Remove old image {tag}")
+                subprocess.run(["docker", "rmi", "-f", tag])
+
+                logger.info(f"Add new image {tag}")
+                subprocess.run(["docker", "tag", target_tag, tag])
 
                 list_of_images.append([target_tag])
             else:
