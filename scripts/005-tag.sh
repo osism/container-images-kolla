@@ -38,6 +38,7 @@ export VERSION
 rm -f $LSTFILE
 touch $LSTFILE
 
+docker image prune --filter="dangling=true" -f
 docker images
 
 # change build_id tags to openstack version tags
