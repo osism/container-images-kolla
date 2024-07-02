@@ -1,0 +1,435 @@
+From a343ed60a3d813b4c8da42cf70a7c1cfd92e6bec Mon Sep 17 00:00:00 2001
+From: Dan Smith <dansmith@redhat.com>
+Date: Mon, 24 Jun 2024 09:09:36 -0700
+Subject: [PATCH 3/3] Additional qemu safety checking on base images
+
+There is an additional way we can be fooled into using a qcow2 file
+with a data-file, which is uploading it as raw to glance and then
+booting an instance from it. Because when we go to create the
+ephemeral disk from a cached base image, we've lost the information
+about the original source's format, we probe the image's file type
+without a strict format specified. If a qcow2 file is listed in
+glance as a raw, we won't notice it until it is too late.
+
+This brings over another piece of code (proposed against) glance's
+format inspector which provides a safe format detection routine. This
+patch uses that to detect the format of and run a safety check on the
+base image each time we go to use it to create an ephemeral disk
+image from it.
+
+This also detects QED files and always marks them as unsafe as we do
+not support that format at all. Since we could be fooled into
+downloading one and passing it to qemu-img if we don't recognize it,
+we need to detect and reject it as unsafe.
+
+Change-Id: I4881c8cbceb30c1ff2d2b859c554e0d02043f1f5
+(cherry picked from commit 5d85ffded64b194a447b63042f78960b82c544f7)
+---
+ nova/image/format_inspector.py                | 70 ++++++++++++++++---
+ nova/tests/unit/virt/libvirt/test_driver.py   |  7 +-
+ .../unit/virt/libvirt/test_imagebackend.py    | 45 ++++++++++--
+ nova/tests/unit/virt/libvirt/test_utils.py    | 40 ++++++++++-
+ nova/virt/libvirt/imagebackend.py             | 15 ++++
+ nova/virt/libvirt/utils.py                    | 28 ++++++++
+ 6 files changed, 186 insertions(+), 19 deletions(-)
+
+diff --git a/nova/image/format_inspector.py b/nova/image/format_inspector.py
+index 268c98b99c..8e57d7ed2c 100644
+--- a/nova/image/format_inspector.py
++++ b/nova/image/format_inspector.py
+@@ -368,6 +368,23 @@ class QcowInspector(FileInspector):
+                 not self.has_unknown_features)
+ 
+ 
++class QEDInspector(FileInspector):
++    def __init__(self, tracing=False):
++        super().__init__(tracing)
++        self.new_region('header', CaptureRegion(0, 512))
++
++    @property
++    def format_match(self):
++        if not self.region('header').complete:
++            return False
++        return self.region('header').data.startswith(b'QED\x00')
++
++    def safety_check(self):
++        # QED format is not supported by anyone, but we want to detect it
++        # and mark it as just always unsafe.
++        return False
++
++
+ # The VHD (or VPC as QEMU calls it) format consists of a big-endian
+ # 512-byte "footer" at the beginning of the file with various
+ # information, most of which does not matter to us:
+@@ -871,19 +888,52 @@ class InfoWrapper(object):
+             self._source.close()
+ 
+ 
++ALL_FORMATS = {
++    'raw': FileInspector,
++    'qcow2': QcowInspector,
++    'vhd': VHDInspector,
++    'vhdx': VHDXInspector,
++    'vmdk': VMDKInspector,
++    'vdi': VDIInspector,
++    'qed': QEDInspector,
++}
++
++
+ def get_inspector(format_name):
+     """Returns a FormatInspector class based on the given name.
+ 
+     :param format_name: The name of the disk_format (raw, qcow2, etc).
+     :returns: A FormatInspector or None if unsupported.
+     """
+-    formats = {
+-        'raw': FileInspector,
+-        'qcow2': QcowInspector,
+-        'vhd': VHDInspector,
+-        'vhdx': VHDXInspector,
+-        'vmdk': VMDKInspector,
+-        'vdi': VDIInspector,
+-    }
+-
+-    return formats.get(format_name)
++
++    return ALL_FORMATS.get(format_name)
++
++
++def detect_file_format(filename):
++    """Attempts to detect the format of a file.
++
++    This runs through a file one time, running all the known inspectors in
++    parallel. It stops reading the file once one of them matches or all of
++    them are sure they don't match.
++
++    Returns the FileInspector that matched, if any. None if 'raw'.
++    """
++    inspectors = {k: v() for k, v in ALL_FORMATS.items()}
++    with open(filename, 'rb') as f:
++        for chunk in chunked_reader(f):
++            for format, inspector in list(inspectors.items()):
++                try:
++                    inspector.eat_chunk(chunk)
++                except ImageFormatError:
++                    # No match, so stop considering this format
++                    inspectors.pop(format)
++                    continue
++                if (inspector.format_match and inspector.complete and
++                        format != 'raw'):
++                    # First complete match (other than raw) wins
++                    return inspector
++            if all(i.complete for i in inspectors.values()):
++                # If all the inspectors are sure they are not a match, avoid
++                # reading to the end of the file to settle on 'raw'.
++                break
++    return inspectors['raw']
+diff --git a/nova/tests/unit/virt/libvirt/test_driver.py b/nova/tests/unit/virt/libvirt/test_driver.py
+index 163c1db287..fa1b897985 100644
+--- a/nova/tests/unit/virt/libvirt/test_driver.py
++++ b/nova/tests/unit/virt/libvirt/test_driver.py
+@@ -14840,10 +14840,11 @@ class LibvirtConnTestCase(test.NoDBTestCase,
+                                             '/fake/instance/dir', disk_info)
+         self.assertFalse(mock_fetch_image.called)
+ 
++    @mock.patch('nova.image.format_inspector.detect_file_format')
+     @mock.patch('nova.privsep.path.utime')
+     @mock.patch('nova.virt.libvirt.utils.create_image')
+     def test_create_images_and_backing_ephemeral_gets_created(
+-            self, mock_create_cow_image, mock_utime):
++            self, mock_create_cow_image, mock_utime, mock_detect):
+         drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+ 
+         base_dir = os.path.join(CONF.instances_path,
+@@ -16583,11 +16584,13 @@ class LibvirtConnTestCase(test.NoDBTestCase,
+         fake_mkfs.assert_has_calls([mock.call('ext4', '/dev/something',
+                                               'myVol')])
+ 
++    @mock.patch('nova.image.format_inspector.detect_file_format')
+     @mock.patch('nova.privsep.path.utime')
+     @mock.patch('nova.virt.libvirt.utils.fetch_image')
+     @mock.patch('nova.virt.libvirt.utils.create_image')
+     def test_create_ephemeral_specified_fs_not_valid(
+-            self, mock_create_cow_image, mock_fetch_image, mock_utime):
++            self, mock_create_cow_image, mock_fetch_image, mock_utime,
++            mock_detect):
+         CONF.set_override('default_ephemeral_format', 'ext4')
+         ephemerals = [{'device_type': 'disk',
+                        'disk_bus': 'virtio',
+diff --git a/nova/tests/unit/virt/libvirt/test_imagebackend.py b/nova/tests/unit/virt/libvirt/test_imagebackend.py
+index d5966db95c..29e5d55055 100644
+--- a/nova/tests/unit/virt/libvirt/test_imagebackend.py
++++ b/nova/tests/unit/virt/libvirt/test_imagebackend.py
+@@ -562,13 +562,15 @@ class Qcow2TestCase(_ImageTestCase, test.NoDBTestCase):
+ 
+         mock_exists.assert_has_calls(exist_calls)
+ 
++    @mock.patch('nova.image.format_inspector.detect_file_format')
+     @mock.patch.object(imagebackend.utils, 'synchronized')
+     @mock.patch('nova.virt.libvirt.utils.create_image')
+     @mock.patch.object(os.path, 'exists', side_effect=[])
+     @mock.patch.object(imagebackend.Image, 'verify_base_size')
+     @mock.patch('nova.privsep.path.utime')
+     def test_create_image(
+-        self, mock_utime, mock_verify, mock_exist, mock_create, mock_sync
++        self, mock_utime, mock_verify, mock_exist, mock_create, mock_sync,
++        mock_detect_format
+     ):
+         mock_sync.side_effect = lambda *a, **kw: self._fake_deco
+         fn = mock.MagicMock()
+@@ -589,7 +591,10 @@ class Qcow2TestCase(_ImageTestCase, test.NoDBTestCase):
+         mock_exist.assert_has_calls(exist_calls)
+         self.assertTrue(mock_sync.called)
+         mock_utime.assert_called()
++        mock_detect_format.assert_called_once()
++        mock_detect_format.return_value.safety_check.assert_called_once_with()
+ 
++    @mock.patch('nova.image.format_inspector.detect_file_format')
+     @mock.patch.object(imagebackend.utils, 'synchronized')
+     @mock.patch('nova.virt.libvirt.utils.create_image')
+     @mock.patch.object(imagebackend.disk, 'extend')
+@@ -597,7 +602,8 @@ class Qcow2TestCase(_ImageTestCase, test.NoDBTestCase):
+     @mock.patch.object(imagebackend.Qcow2, 'get_disk_size')
+     @mock.patch('nova.privsep.path.utime')
+     def test_create_image_too_small(self, mock_utime, mock_get, mock_exist,
+-                                    mock_extend, mock_create, mock_sync):
++                                    mock_extend, mock_create, mock_sync,
++                                    mock_detect_format):
+         mock_sync.side_effect = lambda *a, **kw: self._fake_deco
+         mock_get.return_value = self.SIZE
+         fn = mock.MagicMock()
+@@ -614,7 +620,9 @@ class Qcow2TestCase(_ImageTestCase, test.NoDBTestCase):
+         self.assertTrue(mock_sync.called)
+         self.assertFalse(mock_create.called)
+         self.assertFalse(mock_extend.called)
++        mock_detect_format.assert_called_once()
+ 
++    @mock.patch('nova.image.format_inspector.detect_file_format')
+     @mock.patch.object(imagebackend.utils, 'synchronized')
+     @mock.patch('nova.virt.libvirt.utils.create_image')
+     @mock.patch('nova.virt.libvirt.utils.get_disk_backing_file')
+@@ -626,7 +634,8 @@ class Qcow2TestCase(_ImageTestCase, test.NoDBTestCase):
+     def test_generate_resized_backing_files(self, mock_utime, mock_copy,
+                                             mock_verify, mock_exist,
+                                             mock_extend, mock_get,
+-                                            mock_create, mock_sync):
++                                            mock_create, mock_sync,
++                                            mock_detect_format):
+         mock_sync.side_effect = lambda *a, **kw: self._fake_deco
+         mock_get.return_value = self.QCOW2_BASE
+         fn = mock.MagicMock()
+@@ -653,7 +662,9 @@ class Qcow2TestCase(_ImageTestCase, test.NoDBTestCase):
+         self.assertTrue(mock_sync.called)
+         self.assertFalse(mock_create.called)
+         mock_utime.assert_called()
++        mock_detect_format.assert_called_once()
+ 
++    @mock.patch('nova.image.format_inspector.detect_file_format')
+     @mock.patch.object(imagebackend.utils, 'synchronized')
+     @mock.patch('nova.virt.libvirt.utils.create_image')
+     @mock.patch('nova.virt.libvirt.utils.get_disk_backing_file')
+@@ -664,7 +675,8 @@ class Qcow2TestCase(_ImageTestCase, test.NoDBTestCase):
+     def test_qcow2_exists_and_has_no_backing_file(self, mock_utime,
+                                                   mock_verify, mock_exist,
+                                                   mock_extend, mock_get,
+-                                                  mock_create, mock_sync):
++                                                  mock_create, mock_sync,
++                                                  mock_detect_format):
+         mock_sync.side_effect = lambda *a, **kw: self._fake_deco
+         mock_get.return_value = None
+         fn = mock.MagicMock()
+@@ -685,6 +697,31 @@ class Qcow2TestCase(_ImageTestCase, test.NoDBTestCase):
+         self.assertTrue(mock_sync.called)
+         self.assertFalse(mock_create.called)
+         self.assertFalse(mock_extend.called)
++        mock_detect_format.assert_called_once()
++
++    @mock.patch('nova.image.format_inspector.detect_file_format')
++    @mock.patch.object(imagebackend.utils, 'synchronized')
++    @mock.patch('nova.virt.libvirt.utils.create_image')
++    @mock.patch('nova.virt.libvirt.utils.get_disk_backing_file')
++    @mock.patch.object(imagebackend.disk, 'extend')
++    @mock.patch.object(os.path, 'exists', side_effect=[])
++    @mock.patch.object(imagebackend.Image, 'verify_base_size')
++    def test_qcow2_exists_and_fails_safety_check(self,
++                                                 mock_verify, mock_exist,
++                                                 mock_extend, mock_get,
++                                                 mock_create, mock_sync,
++                                                 mock_detect_format):
++        mock_detect_format.return_value.safety_check.return_value = False
++        mock_sync.side_effect = lambda *a, **kw: self._fake_deco
++        mock_get.return_value = None
++        fn = mock.MagicMock()
++        mock_exist.side_effect = [False, True, False, True, True]
++        image = self.image_class(self.INSTANCE, self.NAME)
++
++        self.assertRaises(exception.InvalidDiskInfo,
++                          image.create_image, fn, self.TEMPLATE_PATH,
++                          self.SIZE)
++        mock_verify.assert_not_called()
+ 
+     def test_resolve_driver_format(self):
+         image = self.image_class(self.INSTANCE, self.NAME)
+diff --git a/nova/tests/unit/virt/libvirt/test_utils.py b/nova/tests/unit/virt/libvirt/test_utils.py
+index 5469870d74..8ffd161446 100644
+--- a/nova/tests/unit/virt/libvirt/test_utils.py
++++ b/nova/tests/unit/virt/libvirt/test_utils.py
+@@ -107,16 +107,29 @@ class LibvirtUtilsTestCase(test.NoDBTestCase):
+     @mock.patch('tempfile.NamedTemporaryFile')
+     @mock.patch('oslo_concurrency.processutils.execute')
+     @mock.patch('nova.virt.images.qemu_img_info')
++    @mock.patch('nova.image.format_inspector.detect_file_format')
+     def _test_create_image(
+-        self, path, disk_format, disk_size, mock_info, mock_execute,
+-        mock_ntf, backing_file=None, encryption=None
++        self, path, disk_format, disk_size, mock_detect, mock_info,
++        mock_execute, mock_ntf, backing_file=None, encryption=None,
++        safety_check=True
+     ):
++        if isinstance(backing_file, dict):
++            backing_info = backing_file
++            backing_file = backing_info.pop('file', None)
++        else:
++            backing_info = {}
++        backing_backing_file = backing_info.pop('backing_file', None)
++
+         mock_info.return_value = mock.Mock(
+             file_format=mock.sentinel.backing_fmt,
+             cluster_size=mock.sentinel.cluster_size,
++            backing_file=backing_backing_file,
++            format_specific=backing_info,
+         )
+         fh = mock_ntf.return_value.__enter__.return_value
+ 
++        mock_detect.return_value.safety_check.return_value = safety_check
++
+         libvirt_utils.create_image(
+             path, disk_format, disk_size, backing_file=backing_file,
+             encryption=encryption,
+@@ -130,7 +143,7 @@ class LibvirtUtilsTestCase(test.NoDBTestCase):
+             mock_info.assert_called_once_with(backing_file)
+             cow_opts = [
+                 '-o',
+-                f'backing_file={mock.sentinel.backing_file},'
++                f'backing_file={backing_file},'
+                 f'backing_fmt={mock.sentinel.backing_fmt},'
+                 f'cluster_size={mock.sentinel.cluster_size}',
+             ]
+@@ -166,6 +179,8 @@ class LibvirtUtilsTestCase(test.NoDBTestCase):
+             expected_args += (disk_size,)
+ 
+         self.assertEqual([(expected_args,)], mock_execute.call_args_list)
++        if backing_file:
++            mock_detect.return_value.safety_check.assert_called_once_with()
+ 
+     def test_create_image_raw(self):
+         self._test_create_image('/some/path', 'raw', '10G')
+@@ -181,6 +196,25 @@ class LibvirtUtilsTestCase(test.NoDBTestCase):
+             backing_file=mock.sentinel.backing_file,
+         )
+ 
++    def test_create_image_base_has_backing_file(self):
++        self.assertRaises(
++            exception.InvalidDiskInfo,
++            self._test_create_image,
++            '/some/stuff', 'qcow2', '1234567891234',
++            backing_file={'file': mock.sentinel.backing_file,
++                          'backing_file': mock.sentinel.backing_backing_file},
++        )
++
++    def test_create_image_base_has_data_file(self):
++        self.assertRaises(
++            exception.InvalidDiskInfo,
++            self._test_create_image,
++            '/some/stuff', 'qcow2', '1234567891234',
++            backing_file={'file': mock.sentinel.backing_file,
++                          'backing_file': mock.sentinel.backing_backing_file,
++                          'data': {'data-file': mock.sentinel.data_file}},
++        )
++
+     def test_create_image_size_none(self):
+         self._test_create_image(
+             '/some/stuff', 'qcow2', None,
+diff --git a/nova/virt/libvirt/imagebackend.py b/nova/virt/libvirt/imagebackend.py
+index c08390175f..b1cfabf59b 100644
+--- a/nova/virt/libvirt/imagebackend.py
++++ b/nova/virt/libvirt/imagebackend.py
+@@ -34,6 +34,7 @@ from oslo_utils import units
+ import nova.conf
+ from nova import exception
+ from nova.i18n import _
++from nova.image import format_inspector
+ from nova.image import glance
+ import nova.privsep.libvirt
+ import nova.privsep.path
+@@ -674,6 +675,20 @@ class Qcow2(Image):
+         if not os.path.exists(base):
+             prepare_template(target=base, *args, **kwargs)
+ 
++        # NOTE(danms): We need to perform safety checks on the base image
++        # before we inspect it for other attributes. We do this each time
++        # because additional safety checks could have been added since we
++        # downloaded the image.
++        if not CONF.workarounds.disable_deep_image_inspection:
++            inspector = format_inspector.detect_file_format(base)
++            if not inspector.safety_check():
++                LOG.warning('Base image %s failed safety check', base)
++                # NOTE(danms): This is the same exception as would be raised
++                # by qemu_img_info() if the disk format was unreadable or
++                # otherwise unsuitable.
++                raise exception.InvalidDiskInfo(
++                    reason=_('Base image failed safety check'))
++
+         # NOTE(ankit): Update the mtime of the base file so the image
+         # cache manager knows it is in use.
+         _update_utime_ignore_eacces(base)
+diff --git a/nova/virt/libvirt/utils.py b/nova/virt/libvirt/utils.py
+index d2c8f4944f..38ad0fd94a 100644
+--- a/nova/virt/libvirt/utils.py
++++ b/nova/virt/libvirt/utils.py
+@@ -35,6 +35,7 @@ import nova.conf
+ from nova import context as nova_context
+ from nova import exception
+ from nova.i18n import _
++from nova.image import format_inspector
+ from nova import objects
+ from nova.objects import fields as obj_fields
+ import nova.privsep.fs
+@@ -152,7 +153,34 @@ def create_image(
+     ]
+ 
+     if backing_file:
++        # NOTE(danms): We need to perform safety checks on the base image
++        # before we inspect it for other attributes. We do this each time
++        # because additional safety checks could have been added since we
++        # downloaded the image.
++        if not CONF.workarounds.disable_deep_image_inspection:
++            inspector = format_inspector.detect_file_format(backing_file)
++            if not inspector.safety_check():
++                LOG.warning('Base image %s failed safety check', backing_file)
++                # NOTE(danms): This is the same exception as would be raised
++                # by qemu_img_info() if the disk format was unreadable or
++                # otherwise unsuitable.
++                raise exception.InvalidDiskInfo(
++                    reason=_('Base image failed safety check'))
++
+         base_details = images.qemu_img_info(backing_file)
++        if base_details.backing_file is not None:
++            LOG.warning('Base image %s failed safety check', backing_file)
++            raise exception.InvalidDiskInfo(
++                reason=_('Base image failed safety check'))
++        try:
++            data_file = base_details.format_specific['data']['data-file']
++        except (KeyError, TypeError, AttributeError):
++            data_file = None
++        if data_file is not None:
++            LOG.warning('Base image %s failed safety check', backing_file)
++            raise exception.InvalidDiskInfo(
++                reason=_('Base image failed safety check'))
++
+         cow_opts = [
+             f'backing_file={backing_file}',
+             f'backing_fmt={base_details.file_format}'
+-- 
+2.41.0
+
