@@ -1,0 +1,132 @@
+From 65c8646a6c6ec2978ded469aef666da214445f10 Mon Sep 17 00:00:00 2001
+From: Dan Smith <dansmith@redhat.com>
+Date: Mon, 1 Apr 2024 08:06:31 -0700
+Subject: [PATCH 1/7] Reject qcow files with data-file attributes
+
+Change-Id: I6326a3e85c1ba4cb1da944a4323769f2399ed2c1
+Closes-Bug: #2059809
+(cherry picked from commit fedf8514cdec1b0c529eba6a6d6821f629f6c89c)
+(cherry picked from commit 7e44a3ac4c65390e571ba59a81ec7e5288821068)
+(cherry picked from commit 5e700f0d63aca7cda83f0ad6574176f545211b1b)
+---
+ glance/async_/flows/base_import.py            | 10 ++++++
+ .../async_/flows/plugins/image_conversion.py  |  8 +++++
+ .../flows/plugins/test_image_conversion.py    | 16 +++++++++
+ glance/tests/unit/async_/flows/test_import.py | 33 +++++++++++++++++++
+ 4 files changed, 67 insertions(+)
+
+diff --git a/glance/async_/flows/base_import.py b/glance/async_/flows/base_import.py
+index e6bb526b4..c0e2b7283 100644
+--- a/glance/async_/flows/base_import.py
++++ b/glance/async_/flows/base_import.py
+@@ -181,6 +181,16 @@ class _ImportToFS(task.Task):
+                                                'bfile': backing_file}
+             raise RuntimeError(msg)
+ 
++        try:
++            data_file = metadata['format-specific']['data']['data-file']
++        except KeyError:
++            data_file = None
++        if data_file is not None:
++            msg = _("File %(path)s has invalid data-file "
++                    "%(dfile)s, aborting.") % {"path": path,
++                                               "dfile": data_file}
++            raise RuntimeError(msg)
++
+         return path
+ 
+     def revert(self, image_id, result, **kwargs):
+diff --git a/glance/async_/flows/plugins/image_conversion.py b/glance/async_/flows/plugins/image_conversion.py
+index e977764fa..4a9f754dc 100644
+--- a/glance/async_/flows/plugins/image_conversion.py
++++ b/glance/async_/flows/plugins/image_conversion.py
+@@ -121,6 +121,14 @@ class _ConvertImage(task.Task):
+             raise RuntimeError(
+                 'QCOW images with backing files are not allowed')
+ 
++        try:
++            data_file = metadata['format-specific']['data']['data-file']
++        except KeyError:
++            data_file = None
++        if data_file is not None:
++            raise RuntimeError(
++                'QCOW images with data-file set are not allowed')
++
+         if metadata.get('format') == 'vmdk':
+             create_type = metadata.get(
+                 'format-specific', {}).get(
+diff --git a/glance/tests/unit/async_/flows/plugins/test_image_conversion.py b/glance/tests/unit/async_/flows/plugins/test_image_conversion.py
+index a60e2e1a5..bf8ca007d 100644
+--- a/glance/tests/unit/async_/flows/plugins/test_image_conversion.py
++++ b/glance/tests/unit/async_/flows/plugins/test_image_conversion.py
+@@ -184,6 +184,22 @@ class TestConvertImageTask(test_utils.BaseTestCase):
+             self.assertEqual('QCOW images with backing files are not allowed',
+                              str(e))
+ 
++    def test_image_convert_invalid_qcow_data_file(self):
++        data = {'format': 'qcow2',
++                'format-specific': {
++                    'data': {
++                        'data-file': '/etc/hosts',
++                    },
++                }}
++
++        convert = self._setup_image_convert_info_fail()
++        with mock.patch.object(processutils, 'execute') as exc_mock:
++            exc_mock.return_value = json.dumps(data), ''
++            e = self.assertRaises(RuntimeError,
++                                  convert.execute, 'file:///test/path.qcow')
++            self.assertEqual('QCOW images with data-file set are not allowed',
++                             str(e))
++
+     def _test_image_convert_invalid_vmdk(self):
+         data = {'format': 'vmdk',
+                 'format-specific': {
+diff --git a/glance/tests/unit/async_/flows/test_import.py b/glance/tests/unit/async_/flows/test_import.py
+index 79f6b6de5..55d6f0928 100644
+--- a/glance/tests/unit/async_/flows/test_import.py
++++ b/glance/tests/unit/async_/flows/test_import.py
+@@ -178,6 +178,39 @@ class TestImportTask(test_utils.BaseTestCase):
+                 self.assertFalse(os.path.exists(tmp_image_path))
+                 self.assertTrue(os.path.exists(image_path))
+ 
++    def test_import_flow_invalid_data_file(self):
++        self.config(engine_mode='serial',
++                    group='taskflow_executor')
++
++        img_factory = mock.MagicMock()
++
++        executor = taskflow_executor.TaskExecutor(
++            self.context,
++            self.task_repo,
++            self.img_repo,
++            img_factory)
++
++        self.task_repo.get.return_value = self.task
++
++        def create_image(*args, **kwargs):
++            kwargs['image_id'] = UUID1
++            return self.img_factory.new_image(*args, **kwargs)
++
++        self.img_repo.get.return_value = self.image
++        img_factory.new_image.side_effect = create_image
++
++        with mock.patch.object(script_utils, 'get_image_data_iter') as dmock:
++            dmock.return_value = io.BytesIO(b"TEST_IMAGE")
++
++            with mock.patch.object(putils, 'trycmd') as tmock:
++                out = json.dumps({'format-specific':
++                                  {'data': {'data-file': 'somefile'}}})
++                tmock.return_value = (out, '')
++                e = self.assertRaises(RuntimeError,
++                                      executor.begin_processing,
++                                      self.task.task_id)
++                self.assertIn('somefile', str(e))
++
+     def test_import_flow_revert_import_to_fs(self):
+         self.config(engine_mode='serial', group='taskflow_executor')
+ 
+-- 
+2.34.1
+
+
