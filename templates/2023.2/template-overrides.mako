@@ -1,5 +1,12 @@
 {% extends parent_template %}
 
+{% set fluentd_plugins = [
+    'fluent-plugin-grok-parser',
+    'fluent-plugin-prometheus',
+    'fluent-plugin-rewrite-tag-filter',
+    'fluent-plugin-grafana-loki',
+] %}
+
 {% set openstack_base_pip_packages_append = ['pip', 'git+https://github.com/sapcc/openstack-audit-middleware.git'] %}
 
 {% set glance_base_pip_packages_append = ['boto3'] %}
