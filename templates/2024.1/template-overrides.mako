@@ -53,12 +53,10 @@ RUN {{ macros.install_pip(cinder_volume_pip_packages | customizable("pip_package
 RUN {{ macros.install_pip(manila_base_additional_pip_packages | customizable("pip_packages")) }}
 {% endblock %}
 
-{% set magnum_base_additional_pip_packages = [ 'magnum-cluster-api' ] %}
+{% set magnum_base_additional_pip_packages = [ 'magnum-cluster-api', 'magnum-capi-helm' ] %}
 {% block magnum_base_footer %}
 RUN {{ macros.install_pip(magnum_base_additional_pip_packages | customizable("pip_packages")) }}
-RUN git clone https://github.com/stackhpc/magnum-capi-helm.git /magnum-capi-helm ${"\\"}
-    && pip install -e /magnum-capi-helm
-RUN curl -o /tmp/helm.tar.gz https://get.helm.sh/helm-v3.14.1-linux-amd64.tar.gz ${"\\"}
+RUN curl -o /tmp/helm.tar.gz https://get.helm.sh/helm-v3.15.2-linux-amd64.tar.gz ${"\\"}
     && tar --strip-components=1 -xvzf /tmp/helm.tar.gz -C /usr/local/bin linux-amd64/helm
 {% endblock %}
 
