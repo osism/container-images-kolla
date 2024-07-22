@@ -38,6 +38,7 @@ RUN apt-get update ${"\\"}
 {% endblock %}
 
 {% block openstack_base_header %}
+ENV PYTHONWARNINGS="ignore::DeprecationWarning"
 RUN apt-get update ${"\\"}
     && apt-get -y install --no-install-recommends python3-setuptools ${"\\"}
     && apt-get clean ${"\\"}
