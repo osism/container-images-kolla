@@ -66,6 +66,20 @@ RUN curl -o /tmp/kolla-operations.tar.gz https://github.com/osism/kolla-operatio
     && rm -f /tmp/kolla-operations.tar.gz
 {% endblock %}
 
+{% block ovs_install %}
+RUN apt-get update ${"\\"}
+    && apt-get -y install --no-install-recommends ${"\\"}
+        python3-netifaces ${"\\"}
+        tcpdump ${"\\"}
+    && curl -o /tmp/openvswitch-switch.deb "https://github.com/osism/deb-packaging/releases/download/ovs-3.1.5/openvswitch-switch_3.1.5-1_amd64.deb" ${"\\"}
+    && curl -o /tmp/openvswitch-common.deb "https://github.com/osism/deb-packaging/releases/download/ovs-3.1.5/openvswitch-common_3.1.5-1_amd64.deb" ${"\\"}
+    && curl -o /tmp/python3-openvswitch.deb "https://github.com/osism/deb-packaging/releases/download/ovs-3.1.5/python3-openvswitch_3.1.5-1_amd64.deb" ${"\\"}
+    && apt-get install -y -f /tmp/openvswitch-switch.deb /tmp/openvswitch-common.deb /tmp/python3-openvswitch.deb ${"\\"}
+    && rm -f /tmp/openvswitch-switch.deb /tmp/openvswitch-common.deb /tmp/python3-openvswitch.deb ${"\\"}
+    && apt-get clean ${"\\"}
+    && rm -rf /var/lib/apt/lists/*
+{% endblock %}
+
 {% block keystone_footer %}
 RUN apt-get update ${"\\"}
     && apt-get -y install --no-install-recommends ${"\\"}

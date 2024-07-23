@@ -1,7 +1,1 @@
 ---
-ubuntu:
-  openvswitch:
-    url: https://packagecloud.io/berendt/osism/ubuntu/
-    suite: jammy
-    component: main
-    gpg_key: osism.gpg
