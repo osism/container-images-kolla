@@ -37,6 +37,8 @@ if [[ -z "$KOLLA_IMAGES" ]]; then
     KOLLA_IMAGES="$(python3 src/get-projects-from-versions-file.py)"
 fi
 
+KOLLA_IMAGES="^openvswitch"
+
 # Build images
 
 if [[ $BUILD_TYPE == "base" ]]; then
