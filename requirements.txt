@@ -1,4 +1,4 @@
-HiYaPyCo==0.6.0
+HiYaPyCo==0.6.1
 Jinja2==3.1.4
 Mako==1.3.5
 PyYAML==6.0.2
