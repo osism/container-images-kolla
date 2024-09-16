@@ -94,6 +94,10 @@
     name: semaphore-container-images-kolla-push-bobcat
     max: 1
 
+- semaphore:
+    name: semaphore-container-images-kolla-push-caracal
+    max: 1
+
 - job:
     name: container-images-kolla-build
     nodeset: ubuntu-jammy-large
