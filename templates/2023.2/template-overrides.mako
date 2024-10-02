@@ -11,6 +11,11 @@
 
 {% set glance_base_pip_packages_append = ['boto3'] %}
 
+{% block nova_libvirt_footer %}
+RUN chgrp tss /var/lib/swtpm-localca ${"\\"}
+    && chmod g+w /var/lib/swtpm-localca
+{% endblock %}
+
 {% block horizon_header %}
 RUN apt-get update ${"\\"}
     && apt-get -y install --no-install-recommends build-essential libmariadb-dev-compat ${"\\"}
