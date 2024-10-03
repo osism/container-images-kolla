@@ -44,7 +44,7 @@ elif [[ -z "$KOLLA_IMAGES" ]]; then
 fi
 
 if [[ "$OPENSTACK_VERSION" == "2024.1" ]]; then
-    $PLATFORM_OPTS="--platform $PLATFORM"
+    PLATFORM_OPTS="--platform $PLATFORM"
 fi
 
 # Build images
