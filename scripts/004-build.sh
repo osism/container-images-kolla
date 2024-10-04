@@ -35,7 +35,7 @@ export OPENSTACK_VERSION
 
 # For ARM64 we currently only support the images that are required on the compute plane.
 if [[ "$BASE_ARCH" == "aarch64" ]]; then
-    KOLLA_IMAGES="^fluentd ^cron ^nova-libvirt ^nova-ssh ^nova-compute ^neutron-metadata-agent ^ceilometer-compute ^ovn-controller ^openvswitch-vswitchd ^openvswitch-db-server ^kolla-toolbox"
+    KOLLA_IMAGES="^fluentd ^cron ^nova-libvirt ^nova-ssh ^nova-compute ^neutron-metadata-agent ^ceilometer-compute ^ovn-controller ^openvswitch-vswitchd ^openvswitch-db-server ^kolla-toolbox ^nova-conductor"
     PLATFORM="linux/arm64"
     docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 elif [[ -z "$KOLLA_IMAGES" ]]; then
