@@ -1,4 +1,0 @@
----
-features:
-  - |
-    Helm is required by the Magnum Cluster API plugin and is now installed in all Magnum container images.

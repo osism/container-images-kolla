@@ -53,12 +53,7 @@ setini DEFAULT tag $DOCKER_TAG
 setini DEFAULT base $KOLLA_BASE
 setini DEFAULT base_tag $KOLLA_BASE_TAG
 setini DEFAULT install_type $KOLLA_INSTALL_TYPE
-
-if [[ "$OPENSTACK_VERSION" == "latest" ]]; then
-    setini openstack-base location https://tarballs.opendev.org/openstack/requirements/requirements-master.tar.gz
-else
-    setini openstack-base location https://tarballs.opendev.org/openstack/requirements/requirements-stable-$OPENSTACK_VERSION.tar.gz
-fi
+setini openstack-base location https://tarballs.opendev.org/openstack/requirements/requirements-stable-$OPENSTACK_VERSION.tar.gz
 
 if [[ -n $DOCKER_REGISTRY ]]; then
     setini DEFAULT registry $DOCKER_REGISTRY

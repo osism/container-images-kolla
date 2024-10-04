@@ -1,0 +1,31 @@
+FROM {{ namespace }}/{{ image_prefix }}nova-base:{{ tag }}
+{% block labels %}
+LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build_date }}"
+{% endblock %}
+
+{% block nova_spicehtml5proxy_header %}{% endblock %}
+
+{% import "macros.j2" as macros with context %}
+
+{% set nova_spicehtml5proxy_packages = [
+    'websockify'
+] %}
+
+RUN git clone https://gitlab.freedesktop.org/spice/spice-html5.git/ /usr/share/spice-html5 \
+    && rm -rf \
+        /usr/share/spice-html5/.git \
+        /usr/share/spice-html5/COPYING \
+        /usr/share/spice-html5/COPYING.LESSER \
+        /usr/share/spice-html5/Makefile \
+        /usr/share/spice-html5/README \
+        /usr/share/spice-html5/TODO \
+        /usr/share/spice-html5/apache.conf.sample \
+        /usr/share/spice-html5/package.json.in \
+        /usr/share/spice-html5/spice-html5.spec.in
+
+{{ macros.install_packages(nova_spicehtml5proxy_packages | customizable("packages")) }}
+
+{% block nova_spicehtml5proxy_footer %}{% endblock %}
+{% block footer %}{% endblock %}
+
+USER nova

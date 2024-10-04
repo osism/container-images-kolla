@@ -1,5 +1,12 @@
 {% extends parent_template %}
 
+{% set fluentd_plugins = [
+    'fluent-plugin-grok-parser',
+    'fluent-plugin-prometheus',
+    'fluent-plugin-rewrite-tag-filter',
+    'fluent-plugin-grafana-loki',
+] %}
+
 {% set openstack_base_pip_packages_append = ['pip', 'git+https://github.com/sapcc/openstack-audit-middleware.git'] %}
 
 {% set glance_base_pip_packages_append = ['boto3'] %}
@@ -58,6 +65,13 @@ RUN {{ macros.install_pip(cinder_volume_pip_packages | customizable("pip_package
 RUN {{ macros.install_pip(manila_base_additional_pip_packages | customizable("pip_packages")) }}
 {% endblock %}
 
+{% set magnum_base_additional_pip_packages = [ 'magnum-cluster-api' ] %}
+{% block magnum_base_footer %}
+RUN {{ macros.install_pip(magnum_base_additional_pip_packages | customizable("pip_packages")) }}
+RUN curl -o /tmp/helm.tar.gz https://get.helm.sh/helm-v3.15.2-linux-amd64.tar.gz ${"\\"}
+    && tar --strip-components=1 -xvzf /tmp/helm.tar.gz -C /usr/local/bin linux-amd64/helm
+{% endblock %}
+
 {% set gnocchi_base_packages_append = ['python3-rados'] %}
 {% block gnocchi_base_footer %}
 RUN mkdir -p /var/lib/gnocchi/tmp ${"\\"}
@@ -71,21 +85,8 @@ RUN curl -o /tmp/kolla-operations.tar.gz https://github.com/osism/kolla-operatio
     && rm -f /tmp/kolla-operations.tar.gz
 {% endblock %}
 
-{% block ovs_install %}
-RUN apt-get update ${"\\"}
-    && apt-get -y install --no-install-recommends ${"\\"}
-        python3-netifaces ${"\\"}
-        tcpdump ${"\\"}
-    && curl -o /tmp/openvswitch-switch.deb "https://github.com/osism/deb-packaging/releases/download/ovs-3.1.5/openvswitch-switch_3.1.5-1_amd64.deb" ${"\\"}
-    && curl -o /tmp/openvswitch-common.deb "https://github.com/osism/deb-packaging/releases/download/ovs-3.1.5/openvswitch-common_3.1.5-1_amd64.deb" ${"\\"}
-    && curl -o /tmp/python3-openvswitch.deb "https://github.com/osism/deb-packaging/releases/download/ovs-3.1.5/python3-openvswitch_3.1.5-1_amd64.deb" ${"\\"}
-    && apt-get install -y -f /tmp/openvswitch-switch.deb /tmp/openvswitch-common.deb /tmp/python3-openvswitch.deb ${"\\"}
-    && rm -f /tmp/openvswitch-switch.deb /tmp/openvswitch-common.deb /tmp/python3-openvswitch.deb ${"\\"}
-    && apt-get clean ${"\\"}
-    && rm -rf /var/lib/apt/lists/*
-{% endblock %}
-
 {% block keystone_footer %}
+RUN python3 -m pip --no-cache-dir install keystone-keycloak-backend
 RUN apt-get update ${"\\"}
     && apt-get -y install --no-install-recommends ${"\\"}
            libapache2-mod-auth-openidc ${"\\"}
@@ -112,6 +113,10 @@ RUN rm -rf /usr/share/doc/* ${"\\"}
 
 RUN apt-get remove -y build-essential ${"\\"}
     && apt-get autoremove -y
+{% endblock %}
+
+{% block fluentd_footer %}
+LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build_date }}" fluentd_binary="fluentd" fluentd_user="{{ fluentd_user }}"
 {% endblock %}
 
 {% block labels %}

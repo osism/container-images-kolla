@@ -4,6 +4,7 @@ set -x
 
 # Available environment variables
 #
+# BASE_ARCH
 # BUILD_ID
 # BUILD_OPTS
 # BUILD_TYPE
@@ -13,6 +14,7 @@ set -x
 
 # Set default values
 
+BASE_ARCH=${BASE_ARCH:-x86_64}
 BUILD_ID=${BUILD_ID:-$(date +%Y%m%d)}
 BUILD_TYPE=${BUILD_TYPE:-all}
 OPENSTACK_VERSION=${OPENSTACK_VERSION:-latest}
@@ -31,8 +33,18 @@ fi
 export VERSION
 export OPENSTACK_VERSION
 
-if [[ -z "$KOLLA_IMAGES" ]]; then
+# For ARM64 we currently only support the images that are required on the compute plane.
+if [[ "$BASE_ARCH" == "aarch64" ]]; then
+    KOLLA_IMAGES="^fluentd ^cron ^nova-libvirt ^nova-ssh ^nova-compute ^neutron-metadata-agent ^ceilometer-compute ^ovn-controller ^openvswitch-vswitchd ^openvswitch-db-server ^kolla-toolbox ^nova-conductor"
+    PLATFORM="linux/arm64"
+    docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+elif [[ -z "$KOLLA_IMAGES" ]]; then
     KOLLA_IMAGES="$(python3 src/get-projects-from-versions-file.py)"
+    PLATFORM="linux/amd64"
+fi
+
+if [[ "$OPENSTACK_VERSION" == "2024.1" ]]; then
+    PLATFORM_OPTS="--platform $PLATFORM"
 fi
 
 # Build images
@@ -49,9 +61,12 @@ if [[ $BUILD_TYPE == "base" ]]; then
     KOLLA_IMAGES_BASE=^keystone-base
 
     kolla-build \
+      --base-arch $BASE_ARCH \
+      --debug \
       --template-override templates/$OPENSTACK_VERSION/template-overrides.j2 \
       --config-file $KOLLA_CONF \
       --pull \
+      $PLATFORM_OPTS \
       $BUILD_OPTS \
       $KOLLA_IMAGES_BASE 2>&1 | tee kolla-build-$BUILD_ID.log
 else
@@ -59,9 +74,12 @@ else
     KOLLA_IMAGES=^keystone
 
     kolla-build \
+      --base-arch $BASE_ARCH \
+      --debug \
       --template-override templates/$OPENSTACK_VERSION/template-overrides.j2 \
       --config-file $KOLLA_CONF \
       --skip-existing \
+      $PLATFORM_OPTS \
       $BUILD_OPTS \
       $KOLLA_IMAGES 2>&1 | tee kolla-build-$BUILD_ID.log
 fi

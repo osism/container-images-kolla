@@ -87,10 +87,6 @@
           RwuErxyB0erVvm076vn7Dx8NT9T58s08hNS0HFLG7aOpwV2nHECCHYDWO0yWXI=
 
 - semaphore:
-    name: semaphore-container-images-kolla-push-zed
-    max: 1
-
-- semaphore:
     name: semaphore-container-images-kolla-push-antelope
     max: 1
 
@@ -98,22 +94,34 @@
     name: semaphore-container-images-kolla-push-bobcat
     max: 1
 
-- job:
-     name: container-images-kolla-build
-     nodeset: ubuntu-jammy-large
-     pre-run: playbooks/pre.yml
-     run: playbooks/build.yml
-     timeout: 10800
-     vars:
-       docker_namespace: kolla
-       docker_registry: osism.harbor.regio.digital
+- semaphore:
+    name: semaphore-container-images-kolla-push-caracal
+    max: 1
+
+- semaphore:
+    name: semaphore-container-images-kolla-push-caracal-aarch64
+    max: 1
 
 - job:
-    name: container-images-kolla-build-zed
-    parent: container-images-kolla-build
+    name: container-images-kolla-build
+    nodeset: ubuntu-jammy-large
+    pre-run: playbooks/pre.yml
+    run: playbooks/build.yml
+    timeout: 10800
     vars:
-      version_openstack: zed
-      push_images: false
+      docker_namespace: kolla
+      docker_registry: osism.harbor.regio.digital
+
+- job:
+    name: container-images-kolla-build-aarch64
+    nodeset: ubuntu-jammy-large
+    pre-run: playbooks/pre.yml
+    run: playbooks/build.yml
+    timeout: 10800
+    vars:
+      base_arch: aarch64
+      docker_namespace: kolla/aarch64
+      docker_registry: osism.harbor.regio.digital
 
 - job:
     name: container-images-kolla-build-antelope
@@ -130,17 +138,18 @@
       push_images: false
 
 - job:
-    name: container-images-kolla-push-zed
+    name: container-images-kolla-build-caracal
     parent: container-images-kolla-build
-    semaphores:
-      - name: semaphore-container-images-kolla-push-zed
     vars:
-      version_openstack: zed
-      push_images: true
-    secrets:
-      - name: secret
-        secret: SECRET_CONTAINER_IMAGES_KOLLA
-        pass-to-parent: true
+      version_openstack: "2024.1"
+      push_images: false
+
+- job:
+    name: container-images-kolla-build-caracal-aarch64
+    parent: container-images-kolla-build-aarch64
+    vars:
+      version_openstack: "2024.1"
+      push_images: false
 
 - job:
     name: container-images-kolla-push-antelope
@@ -169,6 +178,32 @@
         pass-to-parent: true
 
 - job:
+    name: container-images-kolla-push-caracal
+    parent: container-images-kolla-build
+    semaphores:
+      - name: semaphore-container-images-kolla-push-caracal
+    vars:
+      version_openstack: "2024.1"
+      push_images: true
+    secrets:
+      - name: secret
+        secret: SECRET_CONTAINER_IMAGES_KOLLA
+        pass-to-parent: true
+
+- job:
+    name: container-images-kolla-push-caracal-aarch64
+    parent: container-images-kolla-build-aarch64
+    semaphores:
+      - name: semaphore-container-images-kolla-push-caracal-aarch64
+    vars:
+      version_openstack: "2024.1"
+      push_images: true
+    secrets:
+      - name: secret
+        secret: SECRET_CONTAINER_IMAGES_KOLLA
+        pass-to-parent: true
+
+- job:
     name: container-images-kolla-release
     parent: container-images-kolla-build
     vars:
@@ -184,30 +219,39 @@
     check:
       jobs:
         - flake8
+        - python-black
         - yamllint
     label:
       jobs:
-        - container-images-kolla-build-zed
         - container-images-kolla-build-antelope
         - container-images-kolla-build-bobcat
+        - container-images-kolla-build-caracal
+        - container-images-kolla-build-caracal-aarch64
     gate:
       jobs:
         - flake8
+        - python-black
         - yamllint
     periodic-daily:
       jobs:
         - flake8
+        - python-black
         - yamllint
-        - container-images-kolla-push-zed
+    periodic-midnight:
+      jobs:
         - container-images-kolla-push-antelope
         - container-images-kolla-push-bobcat
+        - container-images-kolla-push-caracal
+        - container-images-kolla-push-caracal-aarch64
     post:
       jobs:
-        - container-images-kolla-push-zed:
-            branches: main
         - container-images-kolla-push-antelope:
             branches: main
         - container-images-kolla-push-bobcat:
+            branches: main
+        - container-images-kolla-push-caracal:
+            branches: main
+        - container-images-kolla-push-caracal-aarch64:
             branches: main
     tag:
       jobs:

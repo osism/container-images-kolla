@@ -1,6 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+
 import os
 from packaging import version as packaging_version
 from re import findall, sub
+import subprocess
 import tempfile
 
 from docker import DockerClient
@@ -85,6 +88,9 @@ for image in client.images.list(filters=FILTERS):
             continue
 
         command = configuration[best_key]
+        if best_key == "fluentd" and VERSION in ["zed", "2023.1"]:
+            command = "dpkg -s td-agent"
+
         logger.info(
             f"Best match in configuration for {tag} is {best_key}, using {command}"
         )
@@ -172,7 +178,9 @@ for image in client.images.list(filters=FILTERS):
 
                 # NOTE: We use only the first 3 places of the version. This prevents
                 #       versions like 15.0.0.0.
-                target_version = ".".join([str(x) for x in list(parsed_version.release)[0:3]])
+                target_version = ".".join(
+                    [str(x) for x in list(parsed_version.release)[0:3]]
+                )
 
                 logger.info(
                     f"Found version '{target_version}' with build date '{build_date}' for {tag}"
@@ -191,13 +199,23 @@ for image in client.images.list(filters=FILTERS):
                 if IS_RELEASE == "True":
                     target_tag = target_tag.replace("/kolla/", "/kolla/release/")
 
-                logger.info(f"Adding de.osism.service.version='{target_version}' label to {tag}")
+                logger.info(
+                    f"Adding org.opencontainers.image.version='{target_version}' label to {tag}"
+                )
                 with tempfile.NamedTemporaryFile() as fp:
                     fp.write(f"FROM {tag}\n".encode())
-                    fp.write(f"LABEL de.osism.service.version='{target_version}'\n".encode())
+                    fp.write(
+                        f"LABEL org.opencontainers.image.version='{target_version}'\n".encode()
+                    )
                     fp.seek(0)
 
                     client.images.build(fileobj=fp, tag=target_tag)
+
+                logger.info(f"Remove old image {tag}")
+                subprocess.run(["docker", "rmi", "-f", tag])
+
+                logger.info(f"Add new image {tag}")
+                subprocess.run(["docker", "tag", target_tag, tag])
 
                 list_of_images.append([target_tag])
             else:
@@ -257,7 +275,7 @@ SBOM_IMAGE_TO_VERSION = {
     "nova_libvirt": "nova-libvirt",
     "octavia": "octavia-api",
     "opensearch": "opensearch",
-    "opensearch_dashboards": "opensearch_dashboards",
+    "opensearch_dashboards": "opensearch-dashboards",
     "openvswitch": "openvswitch-vswitchd",
     "ovn": "ovn-controller",
     "placement": "placement-api",
@@ -280,6 +298,7 @@ SBOM_IMAGE_TO_VERSION = {
     "redis": "redis",
     "senlin": "senlin-api",
     "skyline": "skyline-apiserver",
+    "skyline_console": "skyline-console",
     "storm": "storm",
     "swift": "swift-object",
     "tgtd": "tgtd",
