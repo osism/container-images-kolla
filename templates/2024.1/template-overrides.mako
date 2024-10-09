@@ -7,7 +7,7 @@
     'fluent-plugin-grafana-loki',
 ] %}
 
-{% set openstack_base_pip_packages_append = ['pip', 'git+https://github.com/sapcc/openstack-audit-middleware.git'] %}
+{% set openstack_base_pip_packages_append = ['pip', 'git+https://github.com/sapcc/openstack-audit-middleware.git', 'systemd-python' ] %}
 
 {% set glance_base_pip_packages_append = ['boto3'] %}
 
