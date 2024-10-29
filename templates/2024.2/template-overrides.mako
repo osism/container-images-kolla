@@ -19,7 +19,7 @@ RUN chgrp tss /var/lib/swtpm-localca ${"\\"}
 {% block horizon_header %}
 RUN apt-get update ${"\\"}
     && apt-get -y install --no-install-recommends build-essential libmariadb-dev-compat ${"\\"}
-    && SETUPTOOLS_USE_DISTUTILS=stdlib python3 -m pip --no-cache-dir install --upgrade mysqlclient ${"\\"}
+    && python3 -m pip --no-cache-dir install --upgrade setuptools mysqlclient ${"\\"}
     && apt-get remove -y build-essential ${"\\"}
     && apt-get clean ${"\\"}
     && rm -rf /var/lib/apt/lists/*
