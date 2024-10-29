@@ -7,7 +7,7 @@ index b1e7ac943..639d729a8 100644
                        'tag': self.tag,
                        'maintainer': self.maintainer,
 -                      'kolla_version': kolla_version,
-+                      'kolla_version': '2024.1',
++                      'kolla_version': '2024.2',
                        'image_name': image_name,
                        'users': self.get_users(),
                        'distro_python_version': self.distro_python_version,
