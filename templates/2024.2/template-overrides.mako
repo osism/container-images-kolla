@@ -27,7 +27,7 @@ RUN apt-get update ${"\\"}
 
 {% block horizon_footer %}
 RUN curl -q -L -o /tmp/openstack-themes.tar.gz https://github.com/osism/openstack-themes/archive/main.tar.gz ${"\\"}
-    && tar xzvf /tmp/openstack-themes.tar.gz --directory=/var/lib/kolla/venv/lib/python3.10/site-packages/openstack_dashboard/themes --strip-components 2 openstack-themes-main/horizon ${"\\"}
+    && tar xzvf /tmp/openstack-themes.tar.gz --directory=/var/lib/kolla/venv/lib/python3/site-packages/openstack_dashboard/themes --strip-components 2 openstack-themes-main/horizon ${"\\"}
     && rm /tmp/openstack-themes.tar.gz
 {% endblock %}
 
