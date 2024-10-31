@@ -1,0 +1,53 @@
+diff --git a/kolla/common/sources.py b/kolla/common/sources.py
+index 5ba79d5a3..f086cef10 100644
+--- a/kolla/common/sources.py
++++ b/kolla/common/sources.py
+@@ -83,14 +83,6 @@ SOURCES = {
+         'type': 'url',
+         'location': ('$tarballs_base/openstack/horizon/'
+                      'horizon-${openstack_branch}.tar.gz')},
+-    'horizon-plugin-blazar-dashboard': {
+-        'type': 'url',
+-        'location': ('$tarballs_base/openstack/blazar-dashboard/'
+-                     'blazar-dashboard-${openstack_branch}.tar.gz')},
+-    'horizon-plugin-cloudkitty-dashboard': {
+-        'type': 'url',
+-        'location': ('$tarballs_base/openstack/cloudkitty-dashboard/'
+-                     'cloudkitty-dashboard-${openstack_branch}.tar.gz')},
+     'horizon-plugin-designate-dashboard': {
+         'type': 'url',
+         'location': ('$tarballs_base/openstack/designate-dashboard/'
+@@ -119,10 +111,6 @@ SOURCES = {
+         'type': 'url',
+         'location': ('$tarballs_base/openstack/masakari-dashboard/'
+                      'masakari-dashboard-${openstack_branch}.tar.gz')},
+-    'horizon-plugin-mistral-dashboard': {
+-        'type': 'url',
+-        'location': ('$tarballs_base/openstack/mistral-dashboard/'
+-                     'mistral-dashboard-${openstack_branch}.tar.gz')},
+     'horizon-plugin-neutron-vpnaas-dashboard': {
+         'type': 'url',
+         'location': ('$tarballs_base/openstack/neutron-vpnaas-dashboard/'
+@@ -131,22 +119,6 @@ SOURCES = {
+         'type': 'url',
+         'location': ('$tarballs_base/openstack/octavia-dashboard/'
+                      'octavia-dashboard-${openstack_branch}.tar.gz')},
+-    'horizon-plugin-tacker-dashboard': {
+-        'type': 'url',
+-        'location': ('$tarballs_base/openstack/tacker-horizon/'
+-                     'tacker-horizon-${openstack_branch}.tar.gz')},
+-    'horizon-plugin-trove-dashboard': {
+-        'type': 'url',
+-        'location': ('$tarballs_base/openstack/trove-dashboard/'
+-                     'trove-dashboard-${openstack_branch}.tar.gz')},
+-    'horizon-plugin-venus-dashboard': {
+-        'type': 'url',
+-        'location': ('$tarballs_base/openstack/venus-dashboard/'
+-                     'venus-dashboard-${openstack_branch}.tar.gz')},
+-    'horizon-plugin-watcher-dashboard': {
+-        'type': 'url',
+-        'location': ('$tarballs_base/openstack/watcher-dashboard/'
+-                     'watcher-dashboard-${openstack_branch}.tar.gz')},
+     'horizon-plugin-zun-ui': {
+         'type': 'url',
+         'location': ('$tarballs_base/openstack/zun-ui/'

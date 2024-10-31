@@ -102,6 +102,14 @@
     name: semaphore-container-images-kolla-push-caracal-aarch64
     max: 1
 
+- semaphore:
+    name: semaphore-container-images-kolla-push-dalmatian
+    max: 1
+
+- semaphore:
+    name: semaphore-container-images-kolla-push-dalmatian-aarch64
+    max: 1
+
 - job:
     name: container-images-kolla-build
     nodeset: ubuntu-jammy-large
@@ -149,6 +157,20 @@
     parent: container-images-kolla-build-aarch64
     vars:
       version_openstack: "2024.1"
+      push_images: false
+
+- job:
+    name: container-images-kolla-build-dalmatian
+    parent: container-images-kolla-build
+    vars:
+      version_openstack: "2024.2"
+      push_images: false
+
+- job:
+    name: container-images-kolla-build-dalmatian-aarch64
+    parent: container-images-kolla-build-aarch64
+    vars:
+      version_openstack: "2024.2"
       push_images: false
 
 - job:
@@ -204,6 +226,32 @@
         pass-to-parent: true
 
 - job:
+    name: container-images-kolla-push-dalmatian
+    parent: container-images-kolla-build
+    semaphores:
+      - name: semaphore-container-images-kolla-push-dalmatian
+    vars:
+      version_openstack: "2024.2"
+      push_images: true
+    secrets:
+      - name: secret
+        secret: SECRET_CONTAINER_IMAGES_KOLLA
+        pass-to-parent: true
+
+- job:
+    name: container-images-kolla-push-dalmatian-aarch64
+    parent: container-images-kolla-build-aarch64
+    semaphores:
+      - name: semaphore-container-images-kolla-push-dalmatian-aarch64
+    vars:
+      version_openstack: "2024.2"
+      push_images: true
+    secrets:
+      - name: secret
+        secret: SECRET_CONTAINER_IMAGES_KOLLA
+        pass-to-parent: true
+
+- job:
     name: container-images-kolla-release
     parent: container-images-kolla-build
     vars:
@@ -227,6 +275,7 @@
         - container-images-kolla-build-bobcat
         - container-images-kolla-build-caracal
         - container-images-kolla-build-caracal-aarch64
+        - container-images-kolla-build-dalmatian
     gate:
       jobs:
         - flake8
@@ -243,6 +292,7 @@
         - container-images-kolla-push-bobcat
         - container-images-kolla-push-caracal
         - container-images-kolla-push-caracal-aarch64
+        - container-images-kolla-push-dalmatian
     post:
       jobs:
         - container-images-kolla-push-antelope:
@@ -252,6 +302,8 @@
         - container-images-kolla-push-caracal:
             branches: main
         - container-images-kolla-push-caracal-aarch64:
+            branches: main
+        - container-images-kolla-push-dalmatian:
             branches: main
     tag:
       jobs:
