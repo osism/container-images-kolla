@@ -276,7 +276,6 @@
         - container-images-kolla-build-caracal
         - container-images-kolla-build-caracal-aarch64
         - container-images-kolla-build-dalmatian
-        - container-images-kolla-build-dalmatian-aarch64
     gate:
       jobs:
         - flake8
@@ -294,7 +293,6 @@
         - container-images-kolla-push-caracal
         - container-images-kolla-push-caracal-aarch64
         - container-images-kolla-push-dalmatian
-        - container-images-kolla-push-dalmatian-aarch64
     post:
       jobs:
         - container-images-kolla-push-antelope:
@@ -306,8 +304,6 @@
         - container-images-kolla-push-caracal-aarch64:
             branches: main
         - container-images-kolla-push-dalmatian:
-            branches: main
-        - container-images-kolla-push-dalmatian-aarch64:
             branches: main
     tag:
       jobs:
