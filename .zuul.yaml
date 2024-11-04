@@ -271,11 +271,7 @@
         - yamllint
     label:
       jobs:
-        - container-images-kolla-build-antelope
-        - container-images-kolla-build-bobcat
-        - container-images-kolla-build-caracal
-        - container-images-kolla-build-caracal-aarch64
-        - container-images-kolla-build-dalmatian
+        - container-images-kolla-build-dalmatian-aarch64
     gate:
       jobs:
         - flake8
