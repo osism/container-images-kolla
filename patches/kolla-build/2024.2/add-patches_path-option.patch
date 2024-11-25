@@ -1,0 +1,2967 @@
+commit 38fbf7dd065b5f6ef5538ec9c2bc59d26fb776d2
+Author: Michal Arbet <michal.arbet@ultimum.io>
+Date:   Tue Feb 15 13:50:59 2022 +0100
+
+    Add mechanism for patching files in containers
+    
+    This patch adds a way to patch files in a Docker
+    image built by Kolla. This is very useful for several
+    reasons, specifically:
+    
+    - Custom modifications
+    - The stable branch of some library has a fix but no pip
+      package has been released
+    - Eliminates the need to package your own pip packages
+    - Eliminates the need to invent your own versioning to prevent
+      upstream versioning
+    - Eliminates the need to manage a pip server
+    - In other words, it eliminates the need to get a wheel into
+      the image and install it manually using any method not
+      previously mentioned
+    
+    It is also highly desirable because, although Kolla can replace
+    the source for a service with a custom URL for a tarball or its
+    own Git repo, it cannot do this for dependencies pulled from pip.
+    
+    I would also like to point out that this is a feature with its own
+    code path and works only if the user "inserts" a patch into the folder
+    patches/docker-image/something.patch and creates an analogous series
+    file for patch source code.
+    
+    Simply said, this code will never interfere with the upstream build process
+    since this feature is not intended for use in upstream.
+    It is rather meant for downstream users who know what they are doing.
+    Now they just have an option to patch their images.
+    
+    Everything works on all layers of the Docker image and stores a report
+    of applied patches which can then be seen in /etc.
+    
+    This mechanism is similar as debian patch quilt.
+    
+    Change-Id: I61d0790c5d4d070b7ea9e8c99c0a76ff5d22bf9d
+    (cherry picked from commit 11f65c6c1d3bfd6a12f8e71d778d46d635010449)
+
+diff --git a/doc/source/admin/image-building.rst b/doc/source/admin/image-building.rst
+index aad3c33a3..3f7de30e7 100644
+--- a/doc/source/admin/image-building.rst
++++ b/doc/source/admin/image-building.rst
+@@ -301,6 +301,59 @@ To remove a package from that list, say ``locales``, one would do:
+ An example of this is the Grafana plugins, which are mentioned in the next
+ section.
+ 
++Patching customization
++----------------------
++
++Kolla provides functionality to apply patches to Docker images during the build
++process. This allows users to modify existing files or add new ones as part of
++the image creation.
++
++You need to define a ``patches_path`` in the ``[DEFAULT]`` section of
++the ``/etc/kolla/kolla-build.conf`` file. This directory will be used to store
++patches for the images.
++
++.. path etc/kolla/kolla-build.conf
++.. code-block:: ini
++
++  [DEFAULT]
++  patches_path = /path/to/your/patches
++
++Create a directory for each image you want to patch, following a directory
++structure similar to the Debian patch quilt format. Refer to
++`quilt documentation <https://linux.die.net/man/1/quilt>`_. for more details.
++
++- ``<patches_path>/image_name/`` : The directory for the specific image.
++- ``<patches_path>/image_name/some-patch`` : Contains the patch content.
++- ``<patches_path>/image_name/another-patch`` : Contains the patch content.
++- ``<patches_path>/image_name/series`` : Lists the order in which the patches
++  will be applied.
++
++For example, if you want to patch the ``nova-api`` image, the structure would
++look like this:
++
++.. code-block:: console
++
++   /path/to/your/patches/nova-api/some-patch
++   /path/to/your/patches/nova-api/another-patch
++   /path/to/your/patches/nova-api/series
++
++The ``series`` file should list the patches in the order they should be
++applied:
++
++.. code-block:: console
++
++   some-patch
++   another-patch
++
++When the images are built using ``kolla-build``, the patches defined in the
++``patches_path`` will automatically be applied to the corresponding images.
++
++After the patches are applied, Kolla stores information about the applied
++patches in ``/etc/kolla/patched``. The patch files themselves are stored
++in the ``/patches`` directory within the image. This allows you to track
++which patches have been applied to each image for debugging or
++verification purposes.
++
+ Grafana plugins
+ ^^^^^^^^^^^^^^^
+ 
+diff --git a/docker/aodh/aodh-api/Dockerfile.j2 b/docker/aodh/aodh-api/Dockerfile.j2
+index e93cebda5..7332862ca 100644
+--- a/docker/aodh/aodh-api/Dockerfile.j2
++++ b/docker/aodh/aodh-api/Dockerfile.j2
+@@ -10,5 +10,7 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_aodh_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_aodh_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block aodh_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/aodh/aodh-base/Dockerfile.j2 b/docker/aodh/aodh-base/Dockerfile.j2
+index f223ab347..db9d507f4 100644
+--- a/docker/aodh/aodh-base/Dockerfile.j2
++++ b/docker/aodh/aodh-base/Dockerfile.j2
+@@ -34,4 +34,6 @@ RUN ln -s aodh-base-source/* aodh \
+     && touch /usr/local/bin/kolla_aodh_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_aodh_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block aodh_base_footer %}{% endblock %}
+diff --git a/docker/aodh/aodh-evaluator/Dockerfile.j2 b/docker/aodh/aodh-evaluator/Dockerfile.j2
+index dc8fa55a9..f5e9bc7ba 100644
+--- a/docker/aodh/aodh-evaluator/Dockerfile.j2
++++ b/docker/aodh/aodh-evaluator/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block aodh_evaluator_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/aodh/aodh-expirer/Dockerfile.j2 b/docker/aodh/aodh-expirer/Dockerfile.j2
+index 7de6cc3f6..47b1169da 100644
+--- a/docker/aodh/aodh-expirer/Dockerfile.j2
++++ b/docker/aodh/aodh-expirer/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block aodh_expirer_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/aodh/aodh-listener/Dockerfile.j2 b/docker/aodh/aodh-listener/Dockerfile.j2
+index c6890177d..83e010e99 100644
+--- a/docker/aodh/aodh-listener/Dockerfile.j2
++++ b/docker/aodh/aodh-listener/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block aodh_listener_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/aodh/aodh-notifier/Dockerfile.j2 b/docker/aodh/aodh-notifier/Dockerfile.j2
+index a7777aaaa..176c09cee 100644
+--- a/docker/aodh/aodh-notifier/Dockerfile.j2
++++ b/docker/aodh/aodh-notifier/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block aodh_notifier_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/barbican/barbican-api/Dockerfile.j2 b/docker/barbican/barbican-api/Dockerfile.j2
+index 7f4653921..2871b994c 100644
+--- a/docker/barbican/barbican-api/Dockerfile.j2
++++ b/docker/barbican/barbican-api/Dockerfile.j2
+@@ -11,6 +11,8 @@ COPY extend_start.sh /usr/local/bin/kolla_barbican_extend_start
+ 
+ RUN chmod 644 /usr/local/bin/kolla_barbican_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block barbican_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/barbican/barbican-base/Dockerfile.j2 b/docker/barbican/barbican-base/Dockerfile.j2
+index 5e46a9777..6632433cc 100644
+--- a/docker/barbican/barbican-base/Dockerfile.j2
++++ b/docker/barbican/barbican-base/Dockerfile.j2
+@@ -38,4 +38,6 @@ RUN ln -s barbican-base-source/* barbican \
+     && touch /usr/local/bin/kolla_barbican_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_barbican_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block barbican_base_footer %}{% endblock %}
+diff --git a/docker/barbican/barbican-keystone-listener/Dockerfile.j2 b/docker/barbican/barbican-keystone-listener/Dockerfile.j2
+index e3cfd2e57..018b6d18d 100644
+--- a/docker/barbican/barbican-keystone-listener/Dockerfile.j2
++++ b/docker/barbican/barbican-keystone-listener/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block barbican_keystone_listener_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/barbican/barbican-worker/Dockerfile.j2 b/docker/barbican/barbican-worker/Dockerfile.j2
+index 8e40f6e28..63503f05d 100644
+--- a/docker/barbican/barbican-worker/Dockerfile.j2
++++ b/docker/barbican/barbican-worker/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block barbican_worker_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/base/Dockerfile.j2 b/docker/base/Dockerfile.j2
+index bb61c8307..8b31e196a 100644
+--- a/docker/base/Dockerfile.j2
++++ b/docker/base/Dockerfile.j2
+@@ -25,7 +25,6 @@ LABEL kolla_version="{{ kolla_version }}"
+ ENV KOLLA_BASE_DISTRO={{ base_distro }} \
+     KOLLA_BASE_ARCH={{ base_arch }}
+ 
+-
+ #### Customize PS1 to be used with bash shell
+ COPY kolla_bashrc /tmp/
+ RUN cat /tmp/kolla_bashrc >> /etc/skel/.bashrc \
+@@ -192,7 +191,8 @@ RUN {{ macros.install_packages(base_centos_yum_repo_packages | customizable("cen
+         'tar',
+         'util-linux',
+         'util-linux-user',
+-        'which'
++        'which',
++        'patch'
+ ] %}
+ 
+ # Install base packages
+@@ -279,7 +279,8 @@ COPY apt_preferences /etc/apt/preferences.d/kolla-custom
+    'python3-pip',
+    'socat',
+    'sudo',
+-   'tgt'
++   'tgt',
++   'patch'
+ ] %}
+ 
+ {% set base_apt_keys = [
+@@ -348,6 +349,7 @@ COPY start.sh /usr/local/bin/kolla_start
+ COPY copy_cacerts.sh /usr/local/bin/kolla_copy_cacerts
+ COPY install_projects.sh /usr/local/bin/kolla_install_projects
+ COPY httpd_setup.sh /usr/local/bin/kolla_httpd_setup
++COPY kolla_patch.sh /usr/local/bin/kolla_patch
+ COPY sudoers /etc/sudoers
+ 
+ {% if use_dumb_init %}
+@@ -368,6 +370,7 @@ RUN touch /usr/local/bin/kolla_extend_start \
+                  /usr/local/bin/kolla_set_configs \
+                  /usr/local/bin/kolla_copy_cacerts \
+                  /usr/local/bin/kolla_install_projects \
++                 /usr/local/bin/kolla_patch \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_httpd_setup \
+     && chmod 440 /etc/sudoers \
+     && mkdir -p /var/log/kolla \
+@@ -382,5 +385,7 @@ RUN touch /usr/local/bin/kolla_extend_start \
+ # ENV UPPER_CONSTRAINTS_FILE=https://releases.openstack.org/constraints/upper/{{ openstack_release }}
+ {% endblock %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block base_footer %}{% endblock %}
+ CMD ["kolla_start"]
+diff --git a/docker/base/kolla_patch.sh b/docker/base/kolla_patch.sh
+new file mode 100755
+index 000000000..b17a5b61d
+--- /dev/null
++++ b/docker/base/kolla_patch.sh
+@@ -0,0 +1,55 @@
++#!/bin/bash
++
++# This script works as debian quilt patch.
++# So, patch files included in /patches/series
++# are applied and information what was applied
++# is stored in /etc/kolla/patched.
++#
++# No more, no less :)
++
++cd /
++
++# If exist /patches/series
++# let's try to apply patches
++if [ -e "/patches/series" ]; then
++    # If there is /patches/series.applied
++    # then it means previous run already applied
++    # some patches - from another intermediate container
++    #
++    # So, let's add patches again to /patches/series
++    # and let's script to handle it
++    if [ -e "/patches/series.applied" ]; then
++        grep -v '^#' /patches/series.applied > /tmp/series.tmp
++        grep -v '^#' /patches/series >> /tmp/series.tmp
++        rm -f /patches/series
++        mv /tmp/series.tmp /patches/series
++    fi
++    touch /etc/kolla/patched
++    for patchfile in $(grep -v '^#' /patches/series); do
++        # If patch is not applied, try to apply it, otherwise
++        # inform user that patchfile is already applied
++        if ! grep -q "$patchfile" /etc/kolla/patched; then
++            echo "[i] Applying /patches/${patchfile}"
++            patch -p0 --fuzz=0 --ignore-whitespace < /patches/${i}/${patchfile}
++            # If apply patch was successful inform user,
++            # otherwise fail build process and inform user
++            # to check/fix patch
++            if [ $? -eq 0 ]; then
++                echo "[i] Applied /patches/${patchfile}" >> /etc/kolla/patched
++            else
++                echo "[i] Patch /patches/${patchfile} failed, please fix your patchfiles."
++                exit 1
++            fi
++        else
++            echo "[i] /patches/${patchfile} already applied."
++        fi
++    done
++    # Ignore files which are commented and move
++    # to /patches/series.applied as /patch/series
++    # can be potentially replaced by another files
++    # from different intermediate container
++    grep -v '^#' /patches/series > /patches/series.applied
++    rm -f /patches/series
++else
++    echo "[i] No series file found, nothing to patch."
++fi
+diff --git a/docker/bifrost/bifrost-base/Dockerfile.j2 b/docker/bifrost/bifrost-base/Dockerfile.j2
+index 3d0fe726f..a1306728c 100644
+--- a/docker/bifrost/bifrost-base/Dockerfile.j2
++++ b/docker/bifrost/bifrost-base/Dockerfile.j2
+@@ -62,4 +62,6 @@ RUN chmod 750 /etc/sudoers.d \
+     && chmod 440 /etc/sudoers.d/kolla_bifrost_sudoers \
+     && chown -R bifrost:bifrost /bifrost
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block bifrost_base_footer %}{% endblock %}
+diff --git a/docker/bifrost/bifrost-deploy/Dockerfile.j2 b/docker/bifrost/bifrost-deploy/Dockerfile.j2
+index 9b0b818d6..bea702f5e 100644
+--- a/docker/bifrost/bifrost-deploy/Dockerfile.j2
++++ b/docker/bifrost/bifrost-deploy/Dockerfile.j2
+@@ -29,5 +29,7 @@ RUN rm -f $(find /lib/systemd/system/sysinit.target.wants/ ! -name systemd-tmpfi
+ ENTRYPOINT []
+ CMD [ "/sbin/init" ]
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block bifrost_deploy_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/blazar/blazar-api/Dockerfile.j2 b/docker/blazar/blazar-api/Dockerfile.j2
+index c3713dafa..db472a61e 100644
+--- a/docker/blazar/blazar-api/Dockerfile.j2
++++ b/docker/blazar/blazar-api/Dockerfile.j2
+@@ -5,9 +5,13 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block blazar_api_header %}{% endblock %}
+ 
++{% import "macros.j2" as macros with context %}
++
+ COPY extend_start.sh /usr/local/bin/kolla_blazar_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_blazar_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block blazar_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/blazar/blazar-base/Dockerfile.j2 b/docker/blazar/blazar-base/Dockerfile.j2
+index 12f9a6bc4..98bb0d5ac 100644
+--- a/docker/blazar/blazar-base/Dockerfile.j2
++++ b/docker/blazar/blazar-base/Dockerfile.j2
+@@ -24,4 +24,6 @@ RUN ln -s blazar-base-source/* blazar \
+     && touch /usr/local/bin/kolla_blazar_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_blazar_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block blazar_base_footer %}{% endblock %}
+diff --git a/docker/blazar/blazar-manager/Dockerfile.j2 b/docker/blazar/blazar-manager/Dockerfile.j2
+index ea7b728be..6d0251f38 100644
+--- a/docker/blazar/blazar-manager/Dockerfile.j2
++++ b/docker/blazar/blazar-manager/Dockerfile.j2
+@@ -5,6 +5,10 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block blazar_manager_header %}{% endblock %}
+ 
++{% import "macros.j2" as macros with context %}
++
++{{ macros.kolla_patch_sources() }}
++
+ {% block blazar_manager_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/ceilometer/ceilometer-base/Dockerfile.j2 b/docker/ceilometer/ceilometer-base/Dockerfile.j2
+index d18d995b7..a4be45737 100644
+--- a/docker/ceilometer/ceilometer-base/Dockerfile.j2
++++ b/docker/ceilometer/ceilometer-base/Dockerfile.j2
+@@ -39,4 +39,6 @@ RUN ln -s ceilometer-base-source/* ceilometer \
+     && touch /usr/local/bin/kolla_ceilometer_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_ceilometer_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block ceilometer_base_footer %}{% endblock %}
+diff --git a/docker/ceilometer/ceilometer-central/Dockerfile.j2 b/docker/ceilometer/ceilometer-central/Dockerfile.j2
+index cfc120e28..f702ee647 100644
+--- a/docker/ceilometer/ceilometer-central/Dockerfile.j2
++++ b/docker/ceilometer/ceilometer-central/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block ceilometer_central_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/ceilometer/ceilometer-compute/Dockerfile.j2 b/docker/ceilometer/ceilometer-compute/Dockerfile.j2
+index 6387850c5..48b0ae288 100644
+--- a/docker/ceilometer/ceilometer-compute/Dockerfile.j2
++++ b/docker/ceilometer/ceilometer-compute/Dockerfile.j2
+@@ -24,6 +24,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ RUN {{ macros.install_pip(ceilometer_compute_pip_packages | customizable("pip_packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block ceilometer_compute_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/ceilometer/ceilometer-ipmi/Dockerfile.j2 b/docker/ceilometer/ceilometer-ipmi/Dockerfile.j2
+index 0bcfba43b..d4aef5b7b 100644
+--- a/docker/ceilometer/ceilometer-ipmi/Dockerfile.j2
++++ b/docker/ceilometer/ceilometer-ipmi/Dockerfile.j2
+@@ -19,6 +19,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {{ macros.install_packages(ceilometer_ipmi_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block ceilometer_ipmi_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/ceilometer/ceilometer-notification/Dockerfile.j2 b/docker/ceilometer/ceilometer-notification/Dockerfile.j2
+index 140c30b67..daf50d8e5 100644
+--- a/docker/ceilometer/ceilometer-notification/Dockerfile.j2
++++ b/docker/ceilometer/ceilometer-notification/Dockerfile.j2
+@@ -10,6 +10,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_ceilometer_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_ceilometer_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block ceilometer_notification_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/cinder/cinder-api/Dockerfile.j2 b/docker/cinder/cinder-api/Dockerfile.j2
+index 34f684a80..b26bbf6e5 100644
+--- a/docker/cinder/cinder-api/Dockerfile.j2
++++ b/docker/cinder/cinder-api/Dockerfile.j2
+@@ -19,5 +19,7 @@ RUN mkdir -p /var/www/cgi-bin/cinder \
+     && chmod 644 /usr/local/bin/kolla_cinder_extend_start \
+     && chmod 755 /var/www/cgi-bin/cinder/cinder-wsgi
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block cinder_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/cinder/cinder-backup/Dockerfile.j2 b/docker/cinder/cinder-backup/Dockerfile.j2
+index 2c6314bdd..aaa8a344f 100644
+--- a/docker/cinder/cinder-backup/Dockerfile.j2
++++ b/docker/cinder/cinder-backup/Dockerfile.j2
+@@ -25,6 +25,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {{ macros.install_packages(cinder_backup_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block cinder_backup_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/cinder/cinder-base/Dockerfile.j2 b/docker/cinder/cinder-base/Dockerfile.j2
+index 4446dcf0e..d7ba7612a 100644
+--- a/docker/cinder/cinder-base/Dockerfile.j2
++++ b/docker/cinder/cinder-base/Dockerfile.j2
+@@ -51,4 +51,6 @@ RUN ln -s cinder-base-source/* cinder \
+     && touch /usr/local/bin/kolla_cinder_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_cinder_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block cinder_base_footer %}{% endblock %}
+diff --git a/docker/cinder/cinder-scheduler/Dockerfile.j2 b/docker/cinder/cinder-scheduler/Dockerfile.j2
+index 15e7bc8f4..d1835092e 100644
+--- a/docker/cinder/cinder-scheduler/Dockerfile.j2
++++ b/docker/cinder/cinder-scheduler/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block cinder_scheduler_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/cinder/cinder-volume/Dockerfile.j2 b/docker/cinder/cinder-volume/Dockerfile.j2
+index 9954e92ed..5b36b6503 100644
+--- a/docker/cinder/cinder-volume/Dockerfile.j2
++++ b/docker/cinder/cinder-volume/Dockerfile.j2
+@@ -52,6 +52,8 @@ RUN chmod 750 /etc/sudoers.d \
+     && chmod 440 /etc/sudoers.d/kolla_cinder_volume_sudoers \
+     && chmod 644 /usr/local/bin/kolla_cinder_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block cinder_volume_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/cloudkitty/cloudkitty-api/Dockerfile.j2 b/docker/cloudkitty/cloudkitty-api/Dockerfile.j2
+index 836ca2db4..9d9709bb8 100644
+--- a/docker/cloudkitty/cloudkitty-api/Dockerfile.j2
++++ b/docker/cloudkitty/cloudkitty-api/Dockerfile.j2
+@@ -15,5 +15,7 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_cloudkitty_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_cloudkitty_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block cloudkitty_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/cloudkitty/cloudkitty-base/Dockerfile.j2 b/docker/cloudkitty/cloudkitty-base/Dockerfile.j2
+index 8ac498233..a56370936 100644
+--- a/docker/cloudkitty/cloudkitty-base/Dockerfile.j2
++++ b/docker/cloudkitty/cloudkitty-base/Dockerfile.j2
+@@ -24,4 +24,6 @@ RUN ln -s cloudkitty-base-source/* cloudkitty \
+     && touch /usr/local/bin/kolla_cloudkitty_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_cloudkitty_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block cloudkitty_base_footer %}{% endblock %}
+diff --git a/docker/cloudkitty/cloudkitty-processor/Dockerfile.j2 b/docker/cloudkitty/cloudkitty-processor/Dockerfile.j2
+index 2a128c4e0..c2a9d1246 100644
+--- a/docker/cloudkitty/cloudkitty-processor/Dockerfile.j2
++++ b/docker/cloudkitty/cloudkitty-processor/Dockerfile.j2
+@@ -12,6 +12,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {{ macros.install_packages(cloudkitty_processor_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block cloudkitty_processor_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/collectd/Dockerfile.j2 b/docker/collectd/Dockerfile.j2
+index e1cead25b..0633a94da 100644
+--- a/docker/collectd/Dockerfile.j2
++++ b/docker/collectd/Dockerfile.j2
+@@ -72,6 +72,8 @@ RUN chmod 644 /usr/local/bin/kolla_extend_start \
+     && chown -R collectd /var/lib/collectd \
+     && chown -R collectd /var/run/
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block collectd_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/cron/Dockerfile.j2 b/docker/cron/Dockerfile.j2
+index 860fae576..029b65779 100644
+--- a/docker/cron/Dockerfile.j2
++++ b/docker/cron/Dockerfile.j2
+@@ -29,5 +29,7 @@ COPY logrotate /etc/cron.daily/logrotate
+ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block cron_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/cyborg/cyborg-agent/Dockerfile.j2 b/docker/cyborg/cyborg-agent/Dockerfile.j2
+index 8d26fbcb7..222be13dc 100644
+--- a/docker/cyborg/cyborg-agent/Dockerfile.j2
++++ b/docker/cyborg/cyborg-agent/Dockerfile.j2
+@@ -16,5 +16,7 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ RUN {{ macros.install_pip(cyborg_agent_pip_packages | customizable("pip_packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block cyborg_agent_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/cyborg/cyborg-api/Dockerfile.j2 b/docker/cyborg/cyborg-api/Dockerfile.j2
+index 235bdb47a..f087e572d 100644
+--- a/docker/cyborg/cyborg-api/Dockerfile.j2
++++ b/docker/cyborg/cyborg-api/Dockerfile.j2
+@@ -13,5 +13,7 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_cyborg_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_cyborg_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block cyborg_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/cyborg/cyborg-base/Dockerfile.j2 b/docker/cyborg/cyborg-base/Dockerfile.j2
+index 4b6af0811..a0b3a4566 100644
+--- a/docker/cyborg/cyborg-base/Dockerfile.j2
++++ b/docker/cyborg/cyborg-base/Dockerfile.j2
+@@ -26,4 +26,6 @@ RUN ln -s cyborg-base-source/* cyborg \
+     && touch /usr/local/bin/kolla_cyborg_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_cyborg_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block cyborg_footer %}{% endblock %}
+diff --git a/docker/cyborg/cyborg-conductor/Dockerfile.j2 b/docker/cyborg/cyborg-conductor/Dockerfile.j2
+index 51e562ca0..aeff1c7ed 100644
+--- a/docker/cyborg/cyborg-conductor/Dockerfile.j2
++++ b/docker/cyborg/cyborg-conductor/Dockerfile.j2
+@@ -5,5 +5,9 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block cyborg_conductor_header %}{% endblock %}
+ 
++{% import "macros.j2" as macros with context %}
++
++{{ macros.kolla_patch_sources() }}
++
+ {% block cyborg_conductor_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/designate/designate-api/Dockerfile.j2 b/docker/designate/designate-api/Dockerfile.j2
+index 085fbd64c..c4596b230 100644
+--- a/docker/designate/designate-api/Dockerfile.j2
++++ b/docker/designate/designate-api/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block designate_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/designate/designate-backend-bind9/Dockerfile.j2 b/docker/designate/designate-backend-bind9/Dockerfile.j2
+index 6f4362ecb..dbf153b53 100644
+--- a/docker/designate/designate-backend-bind9/Dockerfile.j2
++++ b/docker/designate/designate-backend-bind9/Dockerfile.j2
+@@ -25,5 +25,7 @@ RUN mkdir -p /var/lib/kolla/ /var/lib/{{ designate_backend_bind_name }}/ /run/{{
+      && chown -R root: /var/lib/{{ designate_backend_bind_name }} /run/{{ designate_backend_bind_name }} \
+      && chmod 755 /run/{{ designate_backend_bind_name }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block designate_backend_bind9_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/designate/designate-base/Dockerfile.j2 b/docker/designate/designate-base/Dockerfile.j2
+index fd70264da..d909e0e80 100644
+--- a/docker/designate/designate-base/Dockerfile.j2
++++ b/docker/designate/designate-base/Dockerfile.j2
+@@ -29,4 +29,6 @@ RUN ln -s designate-base-source/* designate \
+     && touch /usr/local/bin/kolla_designate_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_designate_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block designate_base_footer %}{% endblock %}
+diff --git a/docker/designate/designate-central/Dockerfile.j2 b/docker/designate/designate-central/Dockerfile.j2
+index 5ccd775b2..229e8336f 100644
+--- a/docker/designate/designate-central/Dockerfile.j2
++++ b/docker/designate/designate-central/Dockerfile.j2
+@@ -10,6 +10,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_designate_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_designate_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block designate_central_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/designate/designate-mdns/Dockerfile.j2 b/docker/designate/designate-mdns/Dockerfile.j2
+index 6ad442bb3..c3b4f5b42 100644
+--- a/docker/designate/designate-mdns/Dockerfile.j2
++++ b/docker/designate/designate-mdns/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block designate_mdns_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/designate/designate-producer/Dockerfile.j2 b/docker/designate/designate-producer/Dockerfile.j2
+index 3a2701931..f21388a05 100644
+--- a/docker/designate/designate-producer/Dockerfile.j2
++++ b/docker/designate/designate-producer/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block designate_producer_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/designate/designate-sink/Dockerfile.j2 b/docker/designate/designate-sink/Dockerfile.j2
+index aa2a25942..5ddbf9600 100644
+--- a/docker/designate/designate-sink/Dockerfile.j2
++++ b/docker/designate/designate-sink/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block designate_sink_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/designate/designate-worker/Dockerfile.j2 b/docker/designate/designate-worker/Dockerfile.j2
+index b050f87d0..6aa1cdf7a 100644
+--- a/docker/designate/designate-worker/Dockerfile.j2
++++ b/docker/designate/designate-worker/Dockerfile.j2
+@@ -19,6 +19,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ {% endif %}
+ {{ macros.install_packages(designate_worker_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block designate_worker_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/dnsmasq/Dockerfile.j2 b/docker/dnsmasq/Dockerfile.j2
+index d7de0680f..a86ad0cbc 100644
+--- a/docker/dnsmasq/Dockerfile.j2
++++ b/docker/dnsmasq/Dockerfile.j2
+@@ -10,5 +10,7 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ {% set dnsmasq_packages = ['dnsmasq'] %}
+ {{ macros.install_packages(dnsmasq_packages| customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block dnsmasq_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/etcd/Dockerfile.j2 b/docker/etcd/Dockerfile.j2
+index c75c861f0..f9d0c50f4 100644
+--- a/docker/etcd/Dockerfile.j2
++++ b/docker/etcd/Dockerfile.j2
+@@ -23,6 +23,8 @@ RUN chmod 644 /usr/local/bin/kolla_extend_start \
+     && chmod 750 /etc/sudoers.d \
+     && chmod 440 /etc/sudoers.d/kolla_etcd_sudoers
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block etcd_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/fluentd/Dockerfile.j2 b/docker/fluentd/Dockerfile.j2
+index a992384f4..899b4b6d1 100644
+--- a/docker/fluentd/Dockerfile.j2
++++ b/docker/fluentd/Dockerfile.j2
+@@ -54,6 +54,8 @@ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ 
+ {% endblock %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block fluentd_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/glance/glance-api/Dockerfile.j2 b/docker/glance/glance-api/Dockerfile.j2
+index 1def8cde1..b839c1dfe 100644
+--- a/docker/glance/glance-api/Dockerfile.j2
++++ b/docker/glance/glance-api/Dockerfile.j2
+@@ -25,6 +25,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_glance_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_glance_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block glance_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/glance/glance-base/Dockerfile.j2 b/docker/glance/glance-base/Dockerfile.j2
+index 785380e39..19c8f58d3 100644
+--- a/docker/glance/glance-base/Dockerfile.j2
++++ b/docker/glance/glance-base/Dockerfile.j2
+@@ -48,4 +48,6 @@ RUN ln -s glance-base-source/* glance \
+     && touch /usr/local/bin/kolla_glance_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_glance_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block glance_base_footer %}{% endblock %}
+diff --git a/docker/gnocchi/gnocchi-api/Dockerfile.j2 b/docker/gnocchi/gnocchi-api/Dockerfile.j2
+index a2c206499..53710e078 100644
+--- a/docker/gnocchi/gnocchi-api/Dockerfile.j2
++++ b/docker/gnocchi/gnocchi-api/Dockerfile.j2
+@@ -10,5 +10,7 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_gnocchi_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_gnocchi_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block gnocchi_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/gnocchi/gnocchi-base/Dockerfile.j2 b/docker/gnocchi/gnocchi-base/Dockerfile.j2
+index 22b40b21d..00d1abad9 100644
+--- a/docker/gnocchi/gnocchi-base/Dockerfile.j2
++++ b/docker/gnocchi/gnocchi-base/Dockerfile.j2
+@@ -52,4 +52,6 @@ RUN ln -s gnocchi-base-source/* gnocchi \
+     && touch /usr/local/bin/kolla_gnocchi_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_gnocchi_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block gnocchi_base_footer %}{% endblock %}
+diff --git a/docker/gnocchi/gnocchi-metricd/Dockerfile.j2 b/docker/gnocchi/gnocchi-metricd/Dockerfile.j2
+index 26a29cab0..1c0870084 100644
+--- a/docker/gnocchi/gnocchi-metricd/Dockerfile.j2
++++ b/docker/gnocchi/gnocchi-metricd/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block gnocchi_metricd_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/gnocchi/gnocchi-statsd/Dockerfile.j2 b/docker/gnocchi/gnocchi-statsd/Dockerfile.j2
+index d0c09e081..73e6dc0c2 100644
+--- a/docker/gnocchi/gnocchi-statsd/Dockerfile.j2
++++ b/docker/gnocchi/gnocchi-statsd/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block gnocchi_statsd_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/grafana/Dockerfile.j2 b/docker/grafana/Dockerfile.j2
+index a769945e4..a74567a9e 100644
+--- a/docker/grafana/Dockerfile.j2
++++ b/docker/grafana/Dockerfile.j2
+@@ -34,6 +34,8 @@ RUN chmod 750 /etc/sudoers.d \
+     && chmod 440 /etc/sudoers.d/kolla_grafana_sudoers \
+     && chmod 644 /usr/local/bin/kolla_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block grafana_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/hacluster/hacluster-base/Dockerfile.j2 b/docker/hacluster/hacluster-base/Dockerfile.j2
+index b85d5f824..7eb7a5965 100644
+--- a/docker/hacluster/hacluster-base/Dockerfile.j2
++++ b/docker/hacluster/hacluster-base/Dockerfile.j2
+@@ -13,4 +13,6 @@ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ 
+ RUN chmod 644 /usr/local/bin/kolla_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block hacluster_base_footer %}{% endblock %}
+diff --git a/docker/hacluster/hacluster-corosync/Dockerfile.j2 b/docker/hacluster/hacluster-corosync/Dockerfile.j2
+index 0544fb370..8e8562913 100644
+--- a/docker/hacluster/hacluster-corosync/Dockerfile.j2
++++ b/docker/hacluster/hacluster-corosync/Dockerfile.j2
+@@ -10,4 +10,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ {% set hacluster_corosync_packages = ['corosync'] %}
+ {{ macros.install_packages(hacluster_corosync_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block hacluster_corosync_footer %}{% endblock %}
+diff --git a/docker/hacluster/hacluster-pacemaker-remote/Dockerfile.j2 b/docker/hacluster/hacluster-pacemaker-remote/Dockerfile.j2
+index e778ed530..da4337a24 100644
+--- a/docker/hacluster/hacluster-pacemaker-remote/Dockerfile.j2
++++ b/docker/hacluster/hacluster-pacemaker-remote/Dockerfile.j2
+@@ -16,4 +16,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {{ macros.install_packages(hacluster_pacemaker_remote_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block hacluster_pacemaker_remote_footer %}{% endblock %}
+diff --git a/docker/hacluster/hacluster-pacemaker/Dockerfile.j2 b/docker/hacluster/hacluster-pacemaker/Dockerfile.j2
+index 054b8d742..def59ce84 100644
+--- a/docker/hacluster/hacluster-pacemaker/Dockerfile.j2
++++ b/docker/hacluster/hacluster-pacemaker/Dockerfile.j2
+@@ -16,4 +16,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {{ macros.install_packages(hacluster_pacemaker_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block hacluster_pacemaker_footer %}{% endblock %}
+diff --git a/docker/hacluster/hacluster-pcs/Dockerfile.j2 b/docker/hacluster/hacluster-pcs/Dockerfile.j2
+index 4486fa72f..8a57babd3 100644
+--- a/docker/hacluster/hacluster-pcs/Dockerfile.j2
++++ b/docker/hacluster/hacluster-pcs/Dockerfile.j2
+@@ -10,4 +10,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ {% set hacluster_pcs_packages = ['pcs','crmsh'] %}
+ {{ macros.install_packages(hacluster_pcs_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block hacluster_pcs_footer %}{% endblock %}
+diff --git a/docker/haproxy/haproxy-ssh/Dockerfile.j2 b/docker/haproxy/haproxy-ssh/Dockerfile.j2
+index 98a083f5a..b875875f8 100644
+--- a/docker/haproxy/haproxy-ssh/Dockerfile.j2
++++ b/docker/haproxy/haproxy-ssh/Dockerfile.j2
+@@ -36,5 +36,7 @@ RUN chmod 644 /usr/local/bin/kolla_extend_start \
+ 
+ COPY update-haproxy-cert.sh /usr/bin/update-haproxy-cert
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block haproxy_ssh_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/haproxy/haproxy/Dockerfile.j2 b/docker/haproxy/haproxy/Dockerfile.j2
+index 3d3614fba..24567679f 100644
+--- a/docker/haproxy/haproxy/Dockerfile.j2
++++ b/docker/haproxy/haproxy/Dockerfile.j2
+@@ -20,5 +20,7 @@ RUN mkdir -p /var/lib/kolla/haproxy \
+     && chown -R haproxy: /var/lib /run \
+     && chmod 755 /usr/local/bin/kolla_ensure_haproxy_latest_config
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block haproxy_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/heat/heat-api-cfn/Dockerfile.j2 b/docker/heat/heat-api-cfn/Dockerfile.j2
+index b98adc4c0..0384b7a56 100644
+--- a/docker/heat/heat-api-cfn/Dockerfile.j2
++++ b/docker/heat/heat-api-cfn/Dockerfile.j2
+@@ -10,5 +10,7 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_heat_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_heat_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block heat_api_cfn_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/heat/heat-api/Dockerfile.j2 b/docker/heat/heat-api/Dockerfile.j2
+index bcb985255..82c0d1e86 100644
+--- a/docker/heat/heat-api/Dockerfile.j2
++++ b/docker/heat/heat-api/Dockerfile.j2
+@@ -10,5 +10,7 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_heat_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_heat_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block heat_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/heat/heat-base/Dockerfile.j2 b/docker/heat/heat-base/Dockerfile.j2
+index db2d3b268..e3737f618 100644
+--- a/docker/heat/heat-base/Dockerfile.j2
++++ b/docker/heat/heat-base/Dockerfile.j2
+@@ -31,4 +31,6 @@ RUN ln -s heat-base-source/* heat \
+     && touch /usr/local/bin/kolla_heat_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_heat_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block heat_base_footer %}{% endblock %}
+diff --git a/docker/heat/heat-engine/Dockerfile.j2 b/docker/heat/heat-engine/Dockerfile.j2
+index 513021301..87a7c8c91 100644
+--- a/docker/heat/heat-engine/Dockerfile.j2
++++ b/docker/heat/heat-engine/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block heat_engine_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/horizon/Dockerfile.j2 b/docker/horizon/Dockerfile.j2
+index d9d6b32a5..f12676be4 100644
+--- a/docker/horizon/Dockerfile.j2
++++ b/docker/horizon/Dockerfile.j2
+@@ -71,5 +71,7 @@ RUN ln -s horizon-source/* horizon \
+        done \
+     && chmod 644 /usr/local/bin/kolla_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block horizon_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/influxdb/Dockerfile.j2 b/docker/influxdb/Dockerfile.j2
+index b5028feee..060973dd6 100644
+--- a/docker/influxdb/Dockerfile.j2
++++ b/docker/influxdb/Dockerfile.j2
+@@ -21,6 +21,8 @@ RUN chmod 750 /etc/sudoers.d \
+     && chmod 440 /etc/sudoers.d/kolla_influxdb_sudoers \
+     && chmod 644 /usr/local/bin/kolla_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block influxdb_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/ironic-inspector/Dockerfile.j2 b/docker/ironic-inspector/Dockerfile.j2
+index 123acefaa..29f0dbb67 100644
+--- a/docker/ironic-inspector/Dockerfile.j2
++++ b/docker/ironic-inspector/Dockerfile.j2
+@@ -38,6 +38,8 @@ RUN ln -s ironic-inspector-source/* ironic-inspector \
+     && mkdir -p /var/lib/ironic-inspector/dhcp-hostsdir \
+     && chown -R ironic-inspector: /var/lib/ironic-inspector
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block ironic_inspector_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/ironic/ironic-api/Dockerfile.j2 b/docker/ironic/ironic-api/Dockerfile.j2
+index b88d579b3..a2406fb83 100644
+--- a/docker/ironic/ironic-api/Dockerfile.j2
++++ b/docker/ironic/ironic-api/Dockerfile.j2
+@@ -14,5 +14,7 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_ironic_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_ironic_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block ironic_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/ironic/ironic-base/Dockerfile.j2 b/docker/ironic/ironic-base/Dockerfile.j2
+index 4b4681b67..a468a2b32 100644
+--- a/docker/ironic/ironic-base/Dockerfile.j2
++++ b/docker/ironic/ironic-base/Dockerfile.j2
+@@ -29,4 +29,6 @@ RUN ln -s ironic-base-source/* ironic \
+     && touch /usr/local/bin/kolla_ironic_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_ironic_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block ironic_base_footer %}{% endblock %}
+diff --git a/docker/ironic/ironic-conductor/Dockerfile.j2 b/docker/ironic/ironic-conductor/Dockerfile.j2
+index 8d3d3c7af..0309a9dd4 100644
+--- a/docker/ironic/ironic-conductor/Dockerfile.j2
++++ b/docker/ironic/ironic-conductor/Dockerfile.j2
+@@ -66,6 +66,8 @@ RUN {{ macros.install_pip(ironic_conductor_pip_packages | customizable("pip_pack
+ 
+ {{ macros.install_packages(ironic_conductor_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block ironic_conductor_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/ironic/ironic-prometheus-exporter/Dockerfile.j2 b/docker/ironic/ironic-prometheus-exporter/Dockerfile.j2
+index dab4b397c..7f3a1cd9d 100644
+--- a/docker/ironic/ironic-prometheus-exporter/Dockerfile.j2
++++ b/docker/ironic/ironic-prometheus-exporter/Dockerfile.j2
+@@ -37,5 +37,7 @@ ENV IRONIC_CONFIG /etc/ironic/ironic.conf
+ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ RUN chmod 755 /usr/local/bin/kolla_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block ironic_prometheus_exporter_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/ironic/ironic-pxe/Dockerfile.j2 b/docker/ironic/ironic-pxe/Dockerfile.j2
+index d122e1b11..51588ac61 100644
+--- a/docker/ironic/ironic-pxe/Dockerfile.j2
++++ b/docker/ironic/ironic-pxe/Dockerfile.j2
+@@ -49,5 +49,7 @@ COPY tftp-map-file-template /map-file-template
+ COPY extend_start.sh /usr/local/bin/kolla_ironic_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_ironic_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block ironic_pxe_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/iscsid/Dockerfile.j2 b/docker/iscsid/Dockerfile.j2
+index 091666b5f..869b832fa 100644
+--- a/docker/iscsid/Dockerfile.j2
++++ b/docker/iscsid/Dockerfile.j2
+@@ -30,5 +30,7 @@ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_extend_start \
+     && rm -f /etc/iscsi/initiatorname.iscsi
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block iscsid_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/keepalived/Dockerfile.j2 b/docker/keepalived/Dockerfile.j2
+index 3a3d5a08b..006ac9d85 100644
+--- a/docker/keepalived/Dockerfile.j2
++++ b/docker/keepalived/Dockerfile.j2
+@@ -24,5 +24,7 @@ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_extend_start \
+     && chmod 755 /check_alive.sh
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block keepalived_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/keystone/keystone-base/Dockerfile.j2 b/docker/keystone/keystone-base/Dockerfile.j2
+index 069bf1a6e..7764accbd 100644
+--- a/docker/keystone/keystone-base/Dockerfile.j2
++++ b/docker/keystone/keystone-base/Dockerfile.j2
+@@ -45,4 +45,6 @@ RUN ln -s keystone-base-source/* keystone \
+ 
+ RUN chmod 755 /var/www/cgi-bin/keystone/*
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block keystone_base_footer %}{% endblock %}
+diff --git a/docker/keystone/keystone-fernet/Dockerfile.j2 b/docker/keystone/keystone-fernet/Dockerfile.j2
+index edc2f8d1a..588b41023 100644
+--- a/docker/keystone/keystone-fernet/Dockerfile.j2
++++ b/docker/keystone/keystone-fernet/Dockerfile.j2
+@@ -28,5 +28,7 @@ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_extend_start \
+     && chmod 755 /usr/local/bin/kolla_keystone_bootstrap /usr/bin/fetch_fernet_tokens.py
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block keystone_fernet_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/keystone/keystone-ssh/Dockerfile.j2 b/docker/keystone/keystone-ssh/Dockerfile.j2
+index 6e59d8fa8..9cf977ca0 100644
+--- a/docker/keystone/keystone-ssh/Dockerfile.j2
++++ b/docker/keystone/keystone-ssh/Dockerfile.j2
+@@ -32,5 +32,7 @@ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ RUN sed -ri 's/session(\s+)required(\s+)pam_loginuid.so/session\1optional\2pam_loginuid.so/' /etc/pam.d/sshd \
+     && chmod 644 /usr/local/bin/kolla_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block keystone_ssh_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/keystone/keystone/Dockerfile.j2 b/docker/keystone/keystone/Dockerfile.j2
+index 97393fef8..26af6932e 100644
+--- a/docker/keystone/keystone/Dockerfile.j2
++++ b/docker/keystone/keystone/Dockerfile.j2
+@@ -41,5 +41,7 @@ RUN chmod 644 /usr/local/bin/kolla_extend_start \
+         {{ macros.install_pip(keystone_plugins_pip_packages) }}; \
+     fi
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block keystone_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/kolla-toolbox/Dockerfile.j2 b/docker/kolla-toolbox/Dockerfile.j2
+index 7a60674af..e9b38fc80 100644
+--- a/docker/kolla-toolbox/Dockerfile.j2
++++ b/docker/kolla-toolbox/Dockerfile.j2
+@@ -132,6 +132,8 @@ RUN chmod 644 /usr/share/ansible/find_disks.py \
+     && chmod 755 /usr/local/bin/kolla_toolbox \
+     && chmod 440 /etc/sudoers.d/kolla_ansible_sudoers
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block kolla_toolbox_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/kuryr/kuryr-base/Dockerfile.j2 b/docker/kuryr/kuryr-base/Dockerfile.j2
+index 71ae72fc9..025e0cdf6 100644
+--- a/docker/kuryr/kuryr-base/Dockerfile.j2
++++ b/docker/kuryr/kuryr-base/Dockerfile.j2
+@@ -25,4 +25,6 @@ RUN ln -s kuryr-base-source/* kuryr-base \
+     && mkdir -p /etc/kuryr \
+     && chmod 644 /usr/local/bin/kolla_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block kuryr_base_footer %}{% endblock %}
+diff --git a/docker/kuryr/kuryr-libnetwork/Dockerfile.j2 b/docker/kuryr/kuryr-libnetwork/Dockerfile.j2
+index fe69b9f25..6d0bed487 100644
+--- a/docker/kuryr/kuryr-libnetwork/Dockerfile.j2
++++ b/docker/kuryr/kuryr-libnetwork/Dockerfile.j2
+@@ -34,5 +34,7 @@ ADD kuryr-libnetwork-archive /kuryr-libnetwork-source
+ RUN ln -s kuryr-libnetwork-source/* kuryr-libnetwork \
+     && {{ macros.install_pip(kuryr_libnetwork_pip_packages | customizable("pip_packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block kuryr_libnetwork_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/letsencrypt/letsencrypt-base/Dockerfile.j2 b/docker/letsencrypt/letsencrypt-base/Dockerfile.j2
+index 70efa8908..aa18e482a 100644
+--- a/docker/letsencrypt/letsencrypt-base/Dockerfile.j2
++++ b/docker/letsencrypt/letsencrypt-base/Dockerfile.j2
+@@ -9,4 +9,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block letsencrypt_base_footer %}{% endblock %}
+diff --git a/docker/letsencrypt/letsencrypt-lego/Dockerfile.j2 b/docker/letsencrypt/letsencrypt-lego/Dockerfile.j2
+index 4313c5e32..2d7604bdf 100755
+--- a/docker/letsencrypt/letsencrypt-lego/Dockerfile.j2
++++ b/docker/letsencrypt/letsencrypt-lego/Dockerfile.j2
+@@ -35,5 +35,7 @@ COPY sync-and-update-certificate.sh /usr/bin/sync-and-update-certificate
+ 
+ RUN chmod +x /usr/bin/letsencrypt-certificates /usr/bin/sync-and-update-certificate
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block letsencrypt_lego_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/letsencrypt/letsencrypt-webserver/Dockerfile.j2 b/docker/letsencrypt/letsencrypt-webserver/Dockerfile.j2
+index d97af8f9c..d4be0153f 100644
+--- a/docker/letsencrypt/letsencrypt-webserver/Dockerfile.j2
++++ b/docker/letsencrypt/letsencrypt-webserver/Dockerfile.j2
+@@ -28,5 +28,7 @@ RUN echo > /etc/apache2/ports.conf
+ 
+ COPY extend_start.sh /usr/local/bin/kolla_letsencrypt_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block letsencrypt_webserver_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/macros.j2 b/docker/macros.j2
+index 2f1aaf81e..48c56208c 100644
+--- a/docker/macros.j2
++++ b/docker/macros.j2
+@@ -85,3 +85,10 @@ sed -e "/^{{ package_name }}===/d" -i requirements/upper-constraints.txt
+ {% macro upper_constraints_version_change(package_name, from, to) -%}
+ sed -e "s/^{{package_name}}==={{ from }}/{{package_name}}=={{ to }}/g" -i requirements/upper-constraints.txt
+ {%- endmacro %}
++
++{% macro kolla_patch_sources() -%}
++{% if patches_path %}
++    COPY patches /patches
++    RUN kolla_patch
++{% endif %}
++{%- endmacro %}
+diff --git a/docker/magnum/magnum-api/Dockerfile.j2 b/docker/magnum/magnum-api/Dockerfile.j2
+index 279242990..dc99b1806 100644
+--- a/docker/magnum/magnum-api/Dockerfile.j2
++++ b/docker/magnum/magnum-api/Dockerfile.j2
+@@ -10,6 +10,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_magnum_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_magnum_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block magnum_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/magnum/magnum-base/Dockerfile.j2 b/docker/magnum/magnum-base/Dockerfile.j2
+index a79690351..8afb51a21 100644
+--- a/docker/magnum/magnum-base/Dockerfile.j2
++++ b/docker/magnum/magnum-base/Dockerfile.j2
+@@ -26,4 +26,6 @@ RUN ln -s magnum-base-source/* magnum \
+     && touch /usr/local/bin/kolla_magnum_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_magnum_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block magnum_base_footer %}{% endblock %}
+diff --git a/docker/magnum/magnum-conductor/Dockerfile.j2 b/docker/magnum/magnum-conductor/Dockerfile.j2
+index df266ad5e..1cec96d27 100644
+--- a/docker/magnum/magnum-conductor/Dockerfile.j2
++++ b/docker/magnum/magnum-conductor/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block magnum_conductor_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/manila/manila-api/Dockerfile.j2 b/docker/manila/manila-api/Dockerfile.j2
+index 0e6d9e252..817933cfc 100644
+--- a/docker/manila/manila-api/Dockerfile.j2
++++ b/docker/manila/manila-api/Dockerfile.j2
+@@ -18,6 +18,8 @@ RUN mkdir -p /var/www/cgi-bin/manila \
+     && chmod 644 /usr/local/bin/kolla_manila_extend_start \
+     && chmod 755 /var/www/cgi-bin/manila/manila-wsgi
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block manila_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/manila/manila-base/Dockerfile.j2 b/docker/manila/manila-base/Dockerfile.j2
+index 727996073..0580cccbc 100644
+--- a/docker/manila/manila-base/Dockerfile.j2
++++ b/docker/manila/manila-base/Dockerfile.j2
+@@ -42,4 +42,6 @@ RUN ln -s manila-base-source/* manila \
+     && touch /usr/local/bin/kolla_manila_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_manila_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block manila_base_footer %}{% endblock %}
+diff --git a/docker/manila/manila-data/Dockerfile.j2 b/docker/manila/manila-data/Dockerfile.j2
+index 391ad2d52..d2d413d94 100644
+--- a/docker/manila/manila-data/Dockerfile.j2
++++ b/docker/manila/manila-data/Dockerfile.j2
+@@ -23,6 +23,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {{ macros.install_packages(manila_data_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block manila_data_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/manila/manila-scheduler/Dockerfile.j2 b/docker/manila/manila-scheduler/Dockerfile.j2
+index 1af471946..cafe36f27 100644
+--- a/docker/manila/manila-scheduler/Dockerfile.j2
++++ b/docker/manila/manila-scheduler/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block manila_scheduler_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/manila/manila-share/Dockerfile.j2 b/docker/manila/manila-share/Dockerfile.j2
+index c87e602e8..22dceb342 100644
+--- a/docker/manila/manila-share/Dockerfile.j2
++++ b/docker/manila/manila-share/Dockerfile.j2
+@@ -29,6 +29,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {{ macros.install_packages(manila_share_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block manila_share_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/mariadb/mariadb-base/Dockerfile.j2 b/docker/mariadb/mariadb-base/Dockerfile.j2
+index 620211197..e4e17a8bf 100644
+--- a/docker/mariadb/mariadb-base/Dockerfile.j2
++++ b/docker/mariadb/mariadb-base/Dockerfile.j2
+@@ -33,4 +33,6 @@ ARG mariadb_clustercheck_url=https://src.fedoraproject.org/rpms/mariadb/raw/${ma
+ RUN curl -o /usr/bin/clustercheck ${mariadb_clustercheck_url} \
+     && chmod 755 /usr/bin/clustercheck
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block mariadb_base_footer %}{% endblock %}
+diff --git a/docker/mariadb/mariadb-clustercheck/Dockerfile.j2 b/docker/mariadb/mariadb-clustercheck/Dockerfile.j2
+index 8068186db..7aee4ef05 100644
+--- a/docker/mariadb/mariadb-clustercheck/Dockerfile.j2
++++ b/docker/mariadb/mariadb-clustercheck/Dockerfile.j2
+@@ -5,11 +5,15 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block mariadb_clustercheck_header %}{% endblock %}
+ 
++{% import "macros.j2" as macros with context %}
++
+ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ COPY socat_wrapper.sh /usr/local/bin/socat_wrapper
+ 
+ RUN chmod 644 /usr/local/bin/kolla_extend_start && \
+     chmod 755 /usr/local/bin/socat_wrapper
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block mariadb_clustercheck_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/mariadb/mariadb-server/Dockerfile.j2 b/docker/mariadb/mariadb-server/Dockerfile.j2
+index b0f49ac09..ec17a5055 100644
+--- a/docker/mariadb/mariadb-server/Dockerfile.j2
++++ b/docker/mariadb/mariadb-server/Dockerfile.j2
+@@ -75,6 +75,8 @@ CMD ["kolla_start"]
+ {% endblock %}
+ {% endif %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block mariadb_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/masakari/masakari-api/Dockerfile.j2 b/docker/masakari/masakari-api/Dockerfile.j2
+index 0d5ef8cfe..ed8c336fc 100644
+--- a/docker/masakari/masakari-api/Dockerfile.j2
++++ b/docker/masakari/masakari-api/Dockerfile.j2
+@@ -10,5 +10,7 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_masakari_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_masakari_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block masakari_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/masakari/masakari-base/Dockerfile.j2 b/docker/masakari/masakari-base/Dockerfile.j2
+index 63e18e443..9b5e117bc 100644
+--- a/docker/masakari/masakari-base/Dockerfile.j2
++++ b/docker/masakari/masakari-base/Dockerfile.j2
+@@ -39,4 +39,6 @@ RUN ln -s masakari-base-source/* masakari \
+     && touch /usr/local/bin/kolla_masakari_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_masakari_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block masakari_base_footer %}{% endblock %}
+diff --git a/docker/masakari/masakari-engine/Dockerfile.j2 b/docker/masakari/masakari-engine/Dockerfile.j2
+index 1d1119cd7..4ff38b526 100644
+--- a/docker/masakari/masakari-engine/Dockerfile.j2
++++ b/docker/masakari/masakari-engine/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block masakari_engine_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/masakari/masakari-monitors/Dockerfile.j2 b/docker/masakari/masakari-monitors/Dockerfile.j2
+index f2c86edc9..b7c847e1e 100644
+--- a/docker/masakari/masakari-monitors/Dockerfile.j2
++++ b/docker/masakari/masakari-monitors/Dockerfile.j2
+@@ -47,6 +47,8 @@ RUN ln -s masakari-monitors-source/* masakari-monitors \
+     && chmod 750 /etc/sudoers.d \
+     && chmod 640 /etc/sudoers.d/kolla_masakari_monitors_sudoers
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block masakari_monitors_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/memcached/Dockerfile.j2 b/docker/memcached/Dockerfile.j2
+index 2995fecd5..eea5c5935 100644
+--- a/docker/memcached/Dockerfile.j2
++++ b/docker/memcached/Dockerfile.j2
+@@ -12,6 +12,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ {% set memcached_packages = ['memcached'] %}
+ {{ macros.install_packages(memcached_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block memcached_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/mistral/mistral-api/Dockerfile.j2 b/docker/mistral/mistral-api/Dockerfile.j2
+index 19fe4210d..4c6416c82 100644
+--- a/docker/mistral/mistral-api/Dockerfile.j2
++++ b/docker/mistral/mistral-api/Dockerfile.j2
+@@ -14,5 +14,7 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_mistral_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_mistral_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block mistral_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/mistral/mistral-base/Dockerfile.j2 b/docker/mistral/mistral-base/Dockerfile.j2
+index 0a1fb1e3c..f7fb3f416 100644
+--- a/docker/mistral/mistral-base/Dockerfile.j2
++++ b/docker/mistral/mistral-base/Dockerfile.j2
+@@ -33,4 +33,6 @@ RUN ln -s mistral-base-source/* mistral \
+     && touch /usr/local/bin/kolla_mistral_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_mistral_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block mistral_base_footer %}{% endblock %}
+diff --git a/docker/mistral/mistral-engine/Dockerfile.j2 b/docker/mistral/mistral-engine/Dockerfile.j2
+index a761f2993..1ccc79d1f 100644
+--- a/docker/mistral/mistral-engine/Dockerfile.j2
++++ b/docker/mistral/mistral-engine/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block mistral_engine_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/mistral/mistral-event-engine/Dockerfile.j2 b/docker/mistral/mistral-event-engine/Dockerfile.j2
+index e44562e09..c04e1abb8 100644
+--- a/docker/mistral/mistral-event-engine/Dockerfile.j2
++++ b/docker/mistral/mistral-event-engine/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block mistral_event_engine_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/mistral/mistral-executor/Dockerfile.j2 b/docker/mistral/mistral-executor/Dockerfile.j2
+index 0b5eb35c2..297ed011e 100644
+--- a/docker/mistral/mistral-executor/Dockerfile.j2
++++ b/docker/mistral/mistral-executor/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block mistral_executor_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/multipathd/Dockerfile.j2 b/docker/multipathd/Dockerfile.j2
+index 0b0baf21a..e5e2443ce 100644
+--- a/docker/multipathd/Dockerfile.j2
++++ b/docker/multipathd/Dockerfile.j2
+@@ -15,5 +15,7 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {{ macros.install_packages(multipathd_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block multipathd_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/networking-baremetal/ironic-neutron-agent/Dockerfile.j2 b/docker/networking-baremetal/ironic-neutron-agent/Dockerfile.j2
+index 4261e4d2e..45b9d2b7f 100644
+--- a/docker/networking-baremetal/ironic-neutron-agent/Dockerfile.j2
++++ b/docker/networking-baremetal/ironic-neutron-agent/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block ironic_neutron_agent_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/neutron/neutron-base/Dockerfile.j2 b/docker/neutron/neutron-base/Dockerfile.j2
+index 3d0b74869..d437a8349 100644
+--- a/docker/neutron/neutron-base/Dockerfile.j2
++++ b/docker/neutron/neutron-base/Dockerfile.j2
+@@ -90,4 +90,6 @@ RUN ln -s neutron-base-source/* neutron \
+     && touch /usr/local/bin/kolla_neutron_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_neutron_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block neutron_base_footer %}{% endblock %}
+diff --git a/docker/neutron/neutron-bgp-dragent/Dockerfile.j2 b/docker/neutron/neutron-bgp-dragent/Dockerfile.j2
+index 76e7a5fea..794804483 100644
+--- a/docker/neutron/neutron-bgp-dragent/Dockerfile.j2
++++ b/docker/neutron/neutron-bgp-dragent/Dockerfile.j2
+@@ -16,6 +16,8 @@ ADD neutron-bgp-dragent-archive /neutron-bgp-dragent-source
+ RUN ln -s neutron-bgp-dragent-source/* neutron_dynamic_routing \
+     && {{ macros.install_pip(neutron_bgp_dragent_pip_packages | customizable("pip_packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block neutron_bgp_dragent_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/neutron/neutron-dhcp-agent/Dockerfile.j2 b/docker/neutron/neutron-dhcp-agent/Dockerfile.j2
+index 11bcb432e..34816335d 100644
+--- a/docker/neutron/neutron-dhcp-agent/Dockerfile.j2
++++ b/docker/neutron/neutron-dhcp-agent/Dockerfile.j2
+@@ -12,6 +12,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {{ macros.install_packages(neutron_dhcp_agent_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block neutron_dhcp_agent_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/neutron/neutron-infoblox-ipam-agent/Dockerfile.j2 b/docker/neutron/neutron-infoblox-ipam-agent/Dockerfile.j2
+index f0a6b30ea..a27b7cdd0 100644
+--- a/docker/neutron/neutron-infoblox-ipam-agent/Dockerfile.j2
++++ b/docker/neutron/neutron-infoblox-ipam-agent/Dockerfile.j2
+@@ -12,6 +12,8 @@ USER root
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block neutron_infoblox_ipam_agent_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/neutron/neutron-l3-agent/Dockerfile.j2 b/docker/neutron/neutron-l3-agent/Dockerfile.j2
+index 7aed7e2f6..83a159873 100644
+--- a/docker/neutron/neutron-l3-agent/Dockerfile.j2
++++ b/docker/neutron/neutron-l3-agent/Dockerfile.j2
+@@ -23,6 +23,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {{ macros.install_packages(neutron_l3_agent_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block neutron_l3_agent_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/neutron/neutron-linuxbridge-agent/Dockerfile.j2 b/docker/neutron/neutron-linuxbridge-agent/Dockerfile.j2
+index ae37ac6e3..471325548 100644
+--- a/docker/neutron/neutron-linuxbridge-agent/Dockerfile.j2
++++ b/docker/neutron/neutron-linuxbridge-agent/Dockerfile.j2
+@@ -13,6 +13,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {{ macros.install_packages(neutron_linuxbridge_agent_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block neutron_linuxbridge_agent_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/neutron/neutron-metadata-agent/Dockerfile.j2 b/docker/neutron/neutron-metadata-agent/Dockerfile.j2
+index 625636b7d..676ee1a85 100644
+--- a/docker/neutron/neutron-metadata-agent/Dockerfile.j2
++++ b/docker/neutron/neutron-metadata-agent/Dockerfile.j2
+@@ -12,6 +12,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {{ macros.install_packages(neutron_metadata_agent_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block neutron_metadata_agent_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/neutron/neutron-metering-agent/Dockerfile.j2 b/docker/neutron/neutron-metering-agent/Dockerfile.j2
+index 1a4eda537..a921d8430 100644
+--- a/docker/neutron/neutron-metering-agent/Dockerfile.j2
++++ b/docker/neutron/neutron-metering-agent/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block neutron_metering_agent_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/neutron/neutron-mlnx-agent/Dockerfile.j2 b/docker/neutron/neutron-mlnx-agent/Dockerfile.j2
+index d79be89af..6e2252ac3 100644
+--- a/docker/neutron/neutron-mlnx-agent/Dockerfile.j2
++++ b/docker/neutron/neutron-mlnx-agent/Dockerfile.j2
+@@ -20,6 +20,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ RUN {{ macros.install_pip(neutron_mlnx_agent_pip_packages | customizable("pip_packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block neutron_mlnx_agent_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/neutron/neutron-openvswitch-agent/Dockerfile.j2 b/docker/neutron/neutron-openvswitch-agent/Dockerfile.j2
+index 82f02aeb2..4a4cc26a8 100644
+--- a/docker/neutron/neutron-openvswitch-agent/Dockerfile.j2
++++ b/docker/neutron/neutron-openvswitch-agent/Dockerfile.j2
+@@ -9,6 +9,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {{ macros.install_packages(neutron_openvswitch_agent_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block neutron_openvswitch_agent_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/neutron/neutron-ovn-agent/Dockerfile.j2 b/docker/neutron/neutron-ovn-agent/Dockerfile.j2
+index f42c2235c..da750fd78 100644
+--- a/docker/neutron/neutron-ovn-agent/Dockerfile.j2
++++ b/docker/neutron/neutron-ovn-agent/Dockerfile.j2
+@@ -12,6 +12,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {{ macros.install_packages(neutron_ovn_agent_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block neutron_ovn_agent_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/neutron/neutron-server/Dockerfile.j2 b/docker/neutron/neutron-server/Dockerfile.j2
+index da81e67d0..73399eb19 100644
+--- a/docker/neutron/neutron-server/Dockerfile.j2
++++ b/docker/neutron/neutron-server/Dockerfile.j2
+@@ -25,6 +25,8 @@ RUN {{ macros.install_pip(neutron_server_pip_packages | customizable("pip_packag
+        fi \
+     && chmod 644 /usr/local/bin/kolla_neutron_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block neutron_server_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/neutron/neutron-sriov-agent/Dockerfile.j2 b/docker/neutron/neutron-sriov-agent/Dockerfile.j2
+index 6f43080a0..92108fa37 100644
+--- a/docker/neutron/neutron-sriov-agent/Dockerfile.j2
++++ b/docker/neutron/neutron-sriov-agent/Dockerfile.j2
+@@ -9,6 +9,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {{ macros.install_packages(neutron_sriov_agent_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block neutron_sriov_agent_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/nova/nova-api/Dockerfile.j2 b/docker/nova/nova-api/Dockerfile.j2
+index 395555564..01399edca 100644
+--- a/docker/nova/nova-api/Dockerfile.j2
++++ b/docker/nova/nova-api/Dockerfile.j2
+@@ -14,5 +14,7 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_nova_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_nova_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block nova_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/nova/nova-base/Dockerfile.j2 b/docker/nova/nova-base/Dockerfile.j2
+index f6556045d..8f42da4e7 100644
+--- a/docker/nova/nova-base/Dockerfile.j2
++++ b/docker/nova/nova-base/Dockerfile.j2
+@@ -80,4 +80,6 @@ RUN ln -s nova-base-source/* nova \
+     && touch /usr/local/bin/kolla_nova_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_nova_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block nova_base_footer %}{% endblock %}
+diff --git a/docker/nova/nova-compute-ironic/Dockerfile.j2 b/docker/nova/nova-compute-ironic/Dockerfile.j2
+index e5d42e4e6..56d1f0abd 100644
+--- a/docker/nova/nova-compute-ironic/Dockerfile.j2
++++ b/docker/nova/nova-compute-ironic/Dockerfile.j2
+@@ -11,6 +11,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {{ macros.install_packages(nova_compute_ironic_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block nova_compute_ironic_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/nova/nova-compute/Dockerfile.j2 b/docker/nova/nova-compute/Dockerfile.j2
+index b3ea61ffd..4a50e8a83 100644
+--- a/docker/nova/nova-compute/Dockerfile.j2
++++ b/docker/nova/nova-compute/Dockerfile.j2
+@@ -110,6 +110,8 @@ RUN {{ macros.install_pip(nova_compute_pip_packages | customizable("pip_packages
+     && chmod 644 /usr/local/bin/kolla_nova_extend_start \
+     && rm -f /etc/machine-id
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block nova_compute_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/nova/nova-conductor/Dockerfile.j2 b/docker/nova/nova-conductor/Dockerfile.j2
+index 1b297a9cd..f91cc76c6 100644
+--- a/docker/nova/nova-conductor/Dockerfile.j2
++++ b/docker/nova/nova-conductor/Dockerfile.j2
+@@ -10,6 +10,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_nova_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_nova_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block nova_conductor_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/nova/nova-libvirt/Dockerfile.j2 b/docker/nova/nova-libvirt/Dockerfile.j2
+index 811916191..2cd88f0a7 100644
+--- a/docker/nova/nova-libvirt/Dockerfile.j2
++++ b/docker/nova/nova-libvirt/Dockerfile.j2
+@@ -89,5 +89,7 @@ RUN rm -f /etc/libvirt/qemu/networks/default.xml /etc/libvirt/qemu/networks/auto
+ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block nova_libvirt_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/nova/nova-novncproxy/Dockerfile.j2 b/docker/nova/nova-novncproxy/Dockerfile.j2
+index 3fc35e71f..208637b9a 100644
+--- a/docker/nova/nova-novncproxy/Dockerfile.j2
++++ b/docker/nova/nova-novncproxy/Dockerfile.j2
+@@ -13,6 +13,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {{ macros.install_packages(nova_novncproxy_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block nova_novncproxy_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/nova/nova-scheduler/Dockerfile.j2 b/docker/nova/nova-scheduler/Dockerfile.j2
+index 765dc3840..16d8aba10 100644
+--- a/docker/nova/nova-scheduler/Dockerfile.j2
++++ b/docker/nova/nova-scheduler/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block nova_scheduler_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/nova/nova-serialproxy/Dockerfile.j2 b/docker/nova/nova-serialproxy/Dockerfile.j2
+index 2c20ffdb8..62e859efa 100644
+--- a/docker/nova/nova-serialproxy/Dockerfile.j2
++++ b/docker/nova/nova-serialproxy/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block nova_serialproxy_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/nova/nova-spicehtml5proxy/Dockerfile.j2 b/docker/nova/nova-spicehtml5proxy/Dockerfile.j2
+index e37af27df..fe7a671b4 100644
+--- a/docker/nova/nova-spicehtml5proxy/Dockerfile.j2
++++ b/docker/nova/nova-spicehtml5proxy/Dockerfile.j2
+@@ -25,6 +25,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {{ macros.install_packages(nova_spicehtml5proxy_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block nova_spicehtml5proxy_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/nova/nova-ssh/Dockerfile.j2 b/docker/nova/nova-ssh/Dockerfile.j2
+index 605fa9883..c1ee000cb 100644
+--- a/docker/nova/nova-ssh/Dockerfile.j2
++++ b/docker/nova/nova-ssh/Dockerfile.j2
+@@ -27,5 +27,7 @@ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ RUN sed -ri 's/session(\s+)required(\s+)pam_loginuid.so/session\1optional\2pam_loginuid.so/' /etc/pam.d/sshd \
+     && chmod 644 /usr/local/bin/kolla_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block nova_ssh_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/octavia/octavia-api/Dockerfile.j2 b/docker/octavia/octavia-api/Dockerfile.j2
+index e84064ed7..64e03e01d 100644
+--- a/docker/octavia/octavia-api/Dockerfile.j2
++++ b/docker/octavia/octavia-api/Dockerfile.j2
+@@ -25,5 +25,7 @@ RUN if [ "$(ls /plugins)" ]; then \
+ 
+ {{ macros.install_packages(octavia_api_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block octavia_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/octavia/octavia-base/Dockerfile.j2 b/docker/octavia/octavia-base/Dockerfile.j2
+index d225aa747..e036a4af7 100644
+--- a/docker/octavia/octavia-base/Dockerfile.j2
++++ b/docker/octavia/octavia-base/Dockerfile.j2
+@@ -32,4 +32,6 @@ RUN ln -s /octavia-base-source/* octavia \
+     && touch /usr/local/bin/kolla_octavia_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_octavia_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block octavia_base_footer %}{% endblock %}
+diff --git a/docker/octavia/octavia-driver-agent/Dockerfile.j2 b/docker/octavia/octavia-driver-agent/Dockerfile.j2
+index cafbe97a2..02f778034 100644
+--- a/docker/octavia/octavia-driver-agent/Dockerfile.j2
++++ b/docker/octavia/octavia-driver-agent/Dockerfile.j2
+@@ -21,6 +21,8 @@ RUN if [ "$(ls /plugins)" ]; then \
+         {{ macros.install_pip(octavia_driver_agent_plugins_pip_packages) }} ; \
+     fi
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block octavia_driver_agent_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/octavia/octavia-health-manager/Dockerfile.j2 b/docker/octavia/octavia-health-manager/Dockerfile.j2
+index ec797f12c..d45b2340b 100644
+--- a/docker/octavia/octavia-health-manager/Dockerfile.j2
++++ b/docker/octavia/octavia-health-manager/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block octavia_health_manager_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/octavia/octavia-housekeeping/Dockerfile.j2 b/docker/octavia/octavia-housekeeping/Dockerfile.j2
+index 001b73c3a..3602e1830 100644
+--- a/docker/octavia/octavia-housekeeping/Dockerfile.j2
++++ b/docker/octavia/octavia-housekeeping/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block octavia_housekeeping_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/octavia/octavia-worker/Dockerfile.j2 b/docker/octavia/octavia-worker/Dockerfile.j2
+index 8287c9375..4545d7c34 100644
+--- a/docker/octavia/octavia-worker/Dockerfile.j2
++++ b/docker/octavia/octavia-worker/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block octavia_worker_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/opensearch/opensearch-dashboards/Dockerfile.j2 b/docker/opensearch/opensearch-dashboards/Dockerfile.j2
+index a4bbd29f4..4459ec3e6 100644
+--- a/docker/opensearch/opensearch-dashboards/Dockerfile.j2
++++ b/docker/opensearch/opensearch-dashboards/Dockerfile.j2
+@@ -19,6 +19,8 @@ RUN chown -R opensearch-dashboards:opensearch-dashboards /usr/share/opensearch-d
+ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ RUN chmod 755 /usr/local/bin/kolla_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block opensearch_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/opensearch/opensearch/Dockerfile.j2 b/docker/opensearch/opensearch/Dockerfile.j2
+index 196cf675b..32d928a21 100644
+--- a/docker/opensearch/opensearch/Dockerfile.j2
++++ b/docker/opensearch/opensearch/Dockerfile.j2
+@@ -23,6 +23,8 @@ RUN chown -R opensearch:opensearch /usr/share/opensearch
+ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ RUN chmod 755 /usr/local/bin/kolla_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block opensearch_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/openstack-base/Dockerfile.j2 b/docker/openstack-base/Dockerfile.j2
+index 87c5e41d7..46af0aecd 100644
+--- a/docker/openstack-base/Dockerfile.j2
++++ b/docker/openstack-base/Dockerfile.j2
+@@ -218,4 +218,6 @@ RUN sed -i -r 's,^(Listen 80),#\1,' /etc/httpd/conf/httpd.conf \
+ RUN echo > /etc/apache2/ports.conf
+ {% endif %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block openstack_base_footer %}{% endblock %}
+diff --git a/docker/openvswitch/openvswitch-base/Dockerfile.j2 b/docker/openvswitch/openvswitch-base/Dockerfile.j2
+index 52ee47a44..7f79cb818 100644
+--- a/docker/openvswitch/openvswitch-base/Dockerfile.j2
++++ b/docker/openvswitch/openvswitch-base/Dockerfile.j2
+@@ -26,8 +26,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+         'python3-netifaces',
+         'tcpdump'
+     ] %}
+-
+ {% endif %}
++
+ {{ macros.install_packages(openvswitch_base_packages | customizable("packages")) }}
+ 
+ {% endblock %}
+@@ -41,4 +41,6 @@ RUN if [ -e /usr/sbin/tcpdump ]; then mv /usr/sbin/tcpdump /usr/bin/tcpdump; fi
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_openvswitch_extend_start \
+     && chmod 755 /usr/local/bin/ovs_wrapper
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block openvswitch_base_footer %}{% endblock %}
+diff --git a/docker/openvswitch/openvswitch-db-server/Dockerfile.j2 b/docker/openvswitch/openvswitch-db-server/Dockerfile.j2
+index f04cd71ec..59d701dfb 100644
+--- a/docker/openvswitch/openvswitch-db-server/Dockerfile.j2
++++ b/docker/openvswitch/openvswitch-db-server/Dockerfile.j2
+@@ -5,8 +5,12 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block openvswitch_db_server_header %}{% endblock %}
+ 
++{% import "macros.j2" as macros with context %}
++
+ COPY extend_start.sh /usr/local/bin/kolla_openvswitch_extend_start
+ RUN chmod 755 /usr/local/bin/kolla_openvswitch_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block openvswitch_db_server_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/openvswitch/openvswitch-vswitchd/Dockerfile.j2 b/docker/openvswitch/openvswitch-vswitchd/Dockerfile.j2
+index 1e1b8d054..a0f761a83 100644
+--- a/docker/openvswitch/openvswitch-vswitchd/Dockerfile.j2
++++ b/docker/openvswitch/openvswitch-vswitchd/Dockerfile.j2
+@@ -5,8 +5,12 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block openvswitch_vswitchd_header %}{% endblock %}
+ 
++{% import "macros.j2" as macros with context %}
++
+ COPY extend_start.sh /usr/local/bin/kolla_openvswitch_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_openvswitch_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block openvswitch_vswitchd_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/ovn/ovn-base/Dockerfile.j2 b/docker/ovn/ovn-base/Dockerfile.j2
+index 247eab83a..83e1c8dc8 100644
+--- a/docker/ovn/ovn-base/Dockerfile.j2
++++ b/docker/ovn/ovn-base/Dockerfile.j2
+@@ -24,4 +24,6 @@ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ 
+ RUN chmod 644 /usr/local/bin/kolla_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block ovn_base_footer %}{% endblock %}
+diff --git a/docker/ovn/ovn-controller/Dockerfile.j2 b/docker/ovn/ovn-controller/Dockerfile.j2
+index ef4d05ddc..4674d9f73 100644
+--- a/docker/ovn/ovn-controller/Dockerfile.j2
++++ b/docker/ovn/ovn-controller/Dockerfile.j2
+@@ -20,5 +20,7 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ {% endif %}
+ {{ macros.install_packages(ovn_controller_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block ovn_controller_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/ovn/ovn-nb-db-server/Dockerfile.j2 b/docker/ovn/ovn-nb-db-server/Dockerfile.j2
+index ecc94651b..dc8e3e53d 100644
+--- a/docker/ovn/ovn-nb-db-server/Dockerfile.j2
++++ b/docker/ovn/ovn-nb-db-server/Dockerfile.j2
+@@ -23,5 +23,7 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY start_nb_db_server.sh /usr/local/bin/start-nb-db-server
+ RUN chmod 755 /usr/local/bin/start-nb-db-server
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block ovn_nb_db_server_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/ovn/ovn-northd/Dockerfile.j2 b/docker/ovn/ovn-northd/Dockerfile.j2
+index 2c94f2f20..744495a82 100644
+--- a/docker/ovn/ovn-northd/Dockerfile.j2
++++ b/docker/ovn/ovn-northd/Dockerfile.j2
+@@ -20,5 +20,7 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ {% endif %}
+ {{ macros.install_packages(ovn_northd_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block ovn_northd_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/ovn/ovn-sb-db-server/Dockerfile.j2 b/docker/ovn/ovn-sb-db-server/Dockerfile.j2
+index 9acd01fa3..2e1da4eb8 100644
+--- a/docker/ovn/ovn-sb-db-server/Dockerfile.j2
++++ b/docker/ovn/ovn-sb-db-server/Dockerfile.j2
+@@ -23,5 +23,7 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY start_sb_db_server.sh /usr/local/bin/start-sb-db-server
+ RUN chmod 755 /usr/local/bin/start-sb-db-server
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block ovn_sb_db_server_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/ovsdpdk/ovsdpdk-db/Dockerfile.j2 b/docker/ovsdpdk/ovsdpdk-db/Dockerfile.j2
+index d38580207..3b2e99854 100644
+--- a/docker/ovsdpdk/ovsdpdk-db/Dockerfile.j2
++++ b/docker/ovsdpdk/ovsdpdk-db/Dockerfile.j2
+@@ -5,10 +5,14 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block ovsdpdk_db_header %}{% endblock %}
+ 
++{% import "macros.j2" as macros with context %}
++
+ COPY extend_start.sh /usr/local/bin/kolla_ovsdpdk_extend_start
+ COPY start_ovsdb_server.sh /usr/local/bin/start-ovsdb-server
+ RUN chmod 644 /usr/local/bin/kolla_ovsdpdk_extend_start && \
+     chmod 755 /usr/local/bin/start-ovsdb-server
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block ovsdpdk_db_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/ovsdpdk/ovsdpdk-vswitchd/Dockerfile.j2 b/docker/ovsdpdk/ovsdpdk-vswitchd/Dockerfile.j2
+index fb0673e22..378103b9c 100644
+--- a/docker/ovsdpdk/ovsdpdk-vswitchd/Dockerfile.j2
++++ b/docker/ovsdpdk/ovsdpdk-vswitchd/Dockerfile.j2
+@@ -5,8 +5,12 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block ovsdpdk_vswitchd_header %}{% endblock %}
+ 
++{% import "macros.j2" as macros with context %}
++
+ COPY extend_start.sh /usr/local/bin/kolla_ovsdpdk_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_ovsdpdk_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block ovsdpdk_vswitchd_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/ovsdpdk/ovsdpdk/Dockerfile.j2 b/docker/ovsdpdk/ovsdpdk/Dockerfile.j2
+index 794f17aa8..47a6d3473 100644
+--- a/docker/ovsdpdk/ovsdpdk/Dockerfile.j2
++++ b/docker/ovsdpdk/ovsdpdk/Dockerfile.j2
+@@ -35,4 +35,6 @@ RUN update-alternatives --set ovs-vswitchd /usr/lib/openvswitch-switch-dpdk/ovs-
+ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block ovsdpdk_footer %}{% endblock %}
+diff --git a/docker/placement/placement-api/Dockerfile.j2 b/docker/placement/placement-api/Dockerfile.j2
+index 76e1459be..13654f520 100644
+--- a/docker/placement/placement-api/Dockerfile.j2
++++ b/docker/placement/placement-api/Dockerfile.j2
+@@ -13,5 +13,7 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ COPY extend_start.sh /usr/local/bin/kolla_placement_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block placement_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/placement/placement-base/Dockerfile.j2 b/docker/placement/placement-base/Dockerfile.j2
+index 17a4d4267..b4d7519db 100644
+--- a/docker/placement/placement-base/Dockerfile.j2
++++ b/docker/placement/placement-base/Dockerfile.j2
+@@ -39,4 +39,6 @@ RUN ln -s placement-base-source/* placement \
+     && touch /usr/local/bin/kolla_placement_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_placement_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block placement_base_footer %}{% endblock %}
+diff --git a/docker/prometheus/prometheus-alertmanager/Dockerfile.j2 b/docker/prometheus/prometheus-alertmanager/Dockerfile.j2
+index babcac1d4..d06f47dde 100644
+--- a/docker/prometheus/prometheus-alertmanager/Dockerfile.j2
++++ b/docker/prometheus/prometheus-alertmanager/Dockerfile.j2
+@@ -5,12 +5,16 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block prometheus_alertmanager_header %}{% endblock %}
+ 
++{% import "macros.j2" as macros with context %}
++
+ {% block prometheus_alertmanager_install %}
+ ADD prometheus-alertmanager-archive /prometheus-alertmanager-source
+ RUN cp -r /prometheus-alertmanager-source/* /opt/ \
+     && ln -s /opt/alertmanager* /opt/prometheus_alertmanager
+ {% endblock %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block prometheus_alertmanager_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/prometheus/prometheus-base/Dockerfile.j2 b/docker/prometheus/prometheus-base/Dockerfile.j2
+index 3db16cbfd..a8032920c 100644
+--- a/docker/prometheus/prometheus-base/Dockerfile.j2
++++ b/docker/prometheus/prometheus-base/Dockerfile.j2
+@@ -12,4 +12,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block prometheus_base_footer %}{% endblock %}
+diff --git a/docker/prometheus/prometheus-blackbox-exporter/Dockerfile.j2 b/docker/prometheus/prometheus-blackbox-exporter/Dockerfile.j2
+index 4b45bef8b..cb0b52f62 100644
+--- a/docker/prometheus/prometheus-blackbox-exporter/Dockerfile.j2
++++ b/docker/prometheus/prometheus-blackbox-exporter/Dockerfile.j2
+@@ -28,6 +28,8 @@ RUN ln -s /prometheus-blackbox-exporter-source/* prometheus-blackbox-exporter \
+     && setcap cap_net_raw+ep /opt/blackbox_exporter/blackbox_exporter
+ {% endblock %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block prometheus_blackbox_exporter_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/prometheus/prometheus-cadvisor/Dockerfile.j2 b/docker/prometheus/prometheus-cadvisor/Dockerfile.j2
+index f70de27f2..a86183d4b 100644
+--- a/docker/prometheus/prometheus-cadvisor/Dockerfile.j2
++++ b/docker/prometheus/prometheus-cadvisor/Dockerfile.j2
+@@ -14,6 +14,7 @@ RUN cp /prometheus-cadvisor-source /opt/cadvisor \
+     && chmod 0755 /opt/cadvisor
+ {% endblock %}
+ 
++{{ macros.kolla_patch_sources() }}
+ 
+ {% block prometheus_cadvisor_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/prometheus/prometheus-elasticsearch-exporter/Dockerfile.j2 b/docker/prometheus/prometheus-elasticsearch-exporter/Dockerfile.j2
+index 8721b5c23..e9dd84f7b 100644
+--- a/docker/prometheus/prometheus-elasticsearch-exporter/Dockerfile.j2
++++ b/docker/prometheus/prometheus-elasticsearch-exporter/Dockerfile.j2
+@@ -5,6 +5,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block prometheus_elasticsearch_exporter_header %}{% endblock %}
+ 
++{% import "macros.j2" as macros with context %}
++
+ {% block prometheus_elasticsearch_exporter_install %}
+ ADD prometheus-elasticsearch-exporter-archive /prometheus-elasticsearch-exporter-source
+ 
+@@ -13,6 +15,8 @@ RUN ln -s /prometheus-elasticsearch-exporter-source/* prometheus-elasticsearch-e
+     && cp /prometheus-elasticsearch-exporter/elasticsearch_exporter /opt/elasticsearch_exporter/
+ {% endblock %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block prometheus_elasticsearch_exporter_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/prometheus/prometheus-libvirt-exporter/Dockerfile.j2 b/docker/prometheus/prometheus-libvirt-exporter/Dockerfile.j2
+index 390241b9f..57330f58b 100644
+--- a/docker/prometheus/prometheus-libvirt-exporter/Dockerfile.j2
++++ b/docker/prometheus/prometheus-libvirt-exporter/Dockerfile.j2
+@@ -17,6 +17,8 @@ RUN ln -s /prometheus-libvirt-exporter-source/* prometheus-libvirt-exporter \
+ 
+ {% endblock %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block prometheus_libvirt_exporter_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/prometheus/prometheus-memcached-exporter/Dockerfile.j2 b/docker/prometheus/prometheus-memcached-exporter/Dockerfile.j2
+index d288cce98..a4924ec64 100644
+--- a/docker/prometheus/prometheus-memcached-exporter/Dockerfile.j2
++++ b/docker/prometheus/prometheus-memcached-exporter/Dockerfile.j2
+@@ -5,6 +5,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block prometheus_memcached_exporter_header %}{% endblock %}
+ 
++{% import "macros.j2" as macros with context %}
++
+ {% block prometheus_memcached_exporter_install %}
+ ADD prometheus-memcached-exporter-archive /prometheus-memcached-exporter-source
+ 
+@@ -13,6 +15,8 @@ RUN ln -s /prometheus-memcached-exporter-source/* prometheus-memcached-exporter
+     && cp /prometheus-memcached-exporter/memcached_exporter /opt/memcached_exporter/
+ {% endblock %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block prometheus_memcached_exporter_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/prometheus/prometheus-mtail/Dockerfile.j2 b/docker/prometheus/prometheus-mtail/Dockerfile.j2
+index 6966ffed8..a071bf2a2 100644
+--- a/docker/prometheus/prometheus-mtail/Dockerfile.j2
++++ b/docker/prometheus/prometheus-mtail/Dockerfile.j2
+@@ -5,12 +5,16 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block prometheus_mtail_header %}{% endblock %}
+ 
++{% import "macros.j2" as macros with context %}
++
+ {% block prometheus_mtail_install %}
+ ADD prometheus-mtail-archive /prometheus-mtail-source
+ 
+ RUN cp /prometheus-mtail-source/* /opt/
+ {% endblock %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block prometheus_mtail_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/prometheus/prometheus-mysqld-exporter/Dockerfile.j2 b/docker/prometheus/prometheus-mysqld-exporter/Dockerfile.j2
+index c1054dc5e..5965a6c77 100644
+--- a/docker/prometheus/prometheus-mysqld-exporter/Dockerfile.j2
++++ b/docker/prometheus/prometheus-mysqld-exporter/Dockerfile.j2
+@@ -5,6 +5,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block mysqld_exporter_header %}{% endblock %}
+ 
++{% import "macros.j2" as macros with context %}
++
+ {% block mysqld_exporter_install %}
+ ADD prometheus-mysqld-exporter-archive /prometheus-mysqld-exporter-source
+ 
+@@ -13,6 +15,8 @@ RUN ln -s /prometheus-mysqld-exporter-source/* prometheus-mysqld-exporter \
+     && cp /prometheus-mysqld-exporter/mysqld_exporter /opt/mysqld_exporter/
+ {% endblock %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block mysqld_exporter_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/prometheus/prometheus-node-exporter/Dockerfile.j2 b/docker/prometheus/prometheus-node-exporter/Dockerfile.j2
+index 5e8cd361d..7a7eaad67 100644
+--- a/docker/prometheus/prometheus-node-exporter/Dockerfile.j2
++++ b/docker/prometheus/prometheus-node-exporter/Dockerfile.j2
+@@ -5,6 +5,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block node_exporter_header %}{% endblock %}
+ 
++{% import "macros.j2" as macros with context %}
++
+ {% block node_exporter_install %}
+ ADD prometheus-node-exporter-archive /prometheus-node-exporter-source
+ 
+@@ -13,6 +15,8 @@ RUN ln -s /prometheus-node-exporter-source/* prometheus-node-exporter \
+     && cp /prometheus-node-exporter/node_exporter /opt/node_exporter/
+ {% endblock %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block node_exporter_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/prometheus/prometheus-openstack-exporter/Dockerfile.j2 b/docker/prometheus/prometheus-openstack-exporter/Dockerfile.j2
+index d5066973d..547363d30 100644
+--- a/docker/prometheus/prometheus-openstack-exporter/Dockerfile.j2
++++ b/docker/prometheus/prometheus-openstack-exporter/Dockerfile.j2
+@@ -5,6 +5,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block prometheus_openstack_exporter_header %}{% endblock %}
+ 
++{% import "macros.j2" as macros with context %}
++
+ {% block prometheus_openstack_exporter_install %}
+ ADD prometheus-openstack-exporter-archive /prometheus-openstack-exporter-source
+ 
+@@ -12,6 +14,8 @@ RUN mkdir /opt/openstack-exporter \
+     && cp /prometheus-openstack-exporter-source/openstack-exporter /opt/openstack-exporter/
+ {% endblock %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block prometheus_openstack_exporter_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/prometheus/prometheus-ovn-exporter/Dockerfile.j2 b/docker/prometheus/prometheus-ovn-exporter/Dockerfile.j2
+index dada0e550..f7c9c6041 100644
+--- a/docker/prometheus/prometheus-ovn-exporter/Dockerfile.j2
++++ b/docker/prometheus/prometheus-ovn-exporter/Dockerfile.j2
+@@ -5,6 +5,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block prometheus_ovn_exporter_header %}{% endblock %}
+ 
++{% import "macros.j2" as macros with context %}
++
+ {% block prometheus_ovn_exporter_install %}
+ 
+ ADD prometheus-ovn-exporter-archive /prometheus-ovn-exporter-source
+@@ -12,6 +14,8 @@ ADD prometheus-ovn-exporter-archive /prometheus-ovn-exporter-source
+ RUN cp /prometheus-ovn-exporter-source/* /opt/
+ {% endblock %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block prometheus_ovn_exporter_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/prometheus/prometheus-v2-server/Dockerfile.j2 b/docker/prometheus/prometheus-v2-server/Dockerfile.j2
+index f77fb158f..e9f47f5c1 100644
+--- a/docker/prometheus/prometheus-v2-server/Dockerfile.j2
++++ b/docker/prometheus/prometheus-v2-server/Dockerfile.j2
+@@ -5,6 +5,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block prometheus_v2_server_header %}{% endblock %}
+ 
++{% import "macros.j2" as macros with context %}
++
+ {% block prometheus_v2_server_install %}
+ ADD prometheus-v2-server-archive /prometheus-server-source
+ 
+@@ -14,6 +16,8 @@ RUN ln -s /prometheus-server-source/* prometheus-server \
+     && mkdir -p /etc/prometheus /data
+ {% endblock %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block prometheus_v2_server_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/proxysql/Dockerfile.j2 b/docker/proxysql/Dockerfile.j2
+index 8e87a3c31..41df913f9 100644
+--- a/docker/proxysql/Dockerfile.j2
++++ b/docker/proxysql/Dockerfile.j2
+@@ -35,6 +35,8 @@ RUN install -g proxysql -o proxysql -m 770 -d /var/lib/kolla/proxysql \
+     && chown proxysql:proxysql /etc/proxysql.cnf \
+     && chmod 600 /etc/proxysql.cnf
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block proxysql_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/rabbitmq/Dockerfile.j2 b/docker/rabbitmq/Dockerfile.j2
+index 266b99db1..c37c7bf47 100644
+--- a/docker/rabbitmq/Dockerfile.j2
++++ b/docker/rabbitmq/Dockerfile.j2
+@@ -59,6 +59,8 @@ RUN chmod 755 /usr/local/bin/healthcheck_rabbitmq
+ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block rabbitmq_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/redis/redis-base/Dockerfile.j2 b/docker/redis/redis-base/Dockerfile.j2
+index 0ec30e27e..89dccd258 100644
+--- a/docker/redis/redis-base/Dockerfile.j2
++++ b/docker/redis/redis-base/Dockerfile.j2
+@@ -12,4 +12,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block redis_base_footer %}{% endblock %}
+diff --git a/docker/redis/redis-sentinel/Dockerfile.j2 b/docker/redis/redis-sentinel/Dockerfile.j2
+index 40ec887f2..83fc60df0 100644
+--- a/docker/redis/redis-sentinel/Dockerfile.j2
++++ b/docker/redis/redis-sentinel/Dockerfile.j2
+@@ -17,6 +17,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block redis_sentinel_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/redis/redis/Dockerfile.j2 b/docker/redis/redis/Dockerfile.j2
+index 6843a8d55..7e5ce923b 100644
+--- a/docker/redis/redis/Dockerfile.j2
++++ b/docker/redis/redis/Dockerfile.j2
+@@ -14,6 +14,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ {% endif %}
+ {{ macros.install_packages(redis_packages | customizable("packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block redis_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/skyline/skyline-apiserver/Dockerfile.j2 b/docker/skyline/skyline-apiserver/Dockerfile.j2
+index eb59d59de..00c871165 100644
+--- a/docker/skyline/skyline-apiserver/Dockerfile.j2
++++ b/docker/skyline/skyline-apiserver/Dockerfile.j2
+@@ -19,6 +19,8 @@ RUN ln -s skyline-apiserver-source/* skyline-apiserver \
+     && {{ macros.install_pip(skyline_apiserver_pip_packages | customizable("pip_packages")) }} \
+     && chmod 644 /usr/local/bin/kolla_skyline_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block skyline_apiserver_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/skyline/skyline-base/Dockerfile.j2 b/docker/skyline/skyline-base/Dockerfile.j2
+index 23ae13223..0af501e55 100644
+--- a/docker/skyline/skyline-base/Dockerfile.j2
++++ b/docker/skyline/skyline-base/Dockerfile.j2
+@@ -14,4 +14,6 @@ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ RUN touch /usr/local/bin/kolla_skyline_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_skyline_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block skyline_base_footer %}{% endblock %}
+diff --git a/docker/skyline/skyline-console/Dockerfile.j2 b/docker/skyline/skyline-console/Dockerfile.j2
+index 0af0f4b24..fea06a7b6 100644
+--- a/docker/skyline/skyline-console/Dockerfile.j2
++++ b/docker/skyline/skyline-console/Dockerfile.j2
+@@ -22,6 +22,8 @@ ADD skyline-console-archive /skyline-console-source
+ RUN ln -s skyline-console-source/* skyline-console \
+     && {{ macros.install_pip(skyline_console_pip_packages | customizable("pip_packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block skyline_console_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/swift/swift-account/Dockerfile.j2 b/docker/swift/swift-account/Dockerfile.j2
+index 592fdb672..26a6b1aa8 100644
+--- a/docker/swift/swift-account/Dockerfile.j2
++++ b/docker/swift/swift-account/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block swift_account_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/swift/swift-base/Dockerfile.j2 b/docker/swift/swift-base/Dockerfile.j2
+index a156a14cb..975eed9c6 100644
+--- a/docker/swift/swift-base/Dockerfile.j2
++++ b/docker/swift/swift-base/Dockerfile.j2
+@@ -43,4 +43,6 @@ RUN ln -s swift-base-source/* swift \
+     && chmod 440 /etc/sudoers.d/kolla_swift_sudoers \
+     && mkdir -p /opt/swift
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block swift_base_footer %}{% endblock %}
+diff --git a/docker/swift/swift-container/Dockerfile.j2 b/docker/swift/swift-container/Dockerfile.j2
+index efeef1a65..74fba6c4e 100644
+--- a/docker/swift/swift-container/Dockerfile.j2
++++ b/docker/swift/swift-container/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block swift_container_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/swift/swift-object-expirer/Dockerfile.j2 b/docker/swift/swift-object-expirer/Dockerfile.j2
+index 7b2d9efd5..17a04f0fd 100644
+--- a/docker/swift/swift-object-expirer/Dockerfile.j2
++++ b/docker/swift/swift-object-expirer/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block swift_object_expirer_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/swift/swift-object/Dockerfile.j2 b/docker/swift/swift-object/Dockerfile.j2
+index ef32e6879..3abfd1989 100644
+--- a/docker/swift/swift-object/Dockerfile.j2
++++ b/docker/swift/swift-object/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block swift_object_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/swift/swift-proxy-server/Dockerfile.j2 b/docker/swift/swift-proxy-server/Dockerfile.j2
+index a73dd61e5..49f115c5d 100644
+--- a/docker/swift/swift-proxy-server/Dockerfile.j2
++++ b/docker/swift/swift-proxy-server/Dockerfile.j2
+@@ -13,6 +13,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ RUN {{ macros.install_pip(swift_proxy_server_pip_packages | customizable("pip_packages")) }}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block swift_proxy_server_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/swift/swift-rsyncd/Dockerfile.j2 b/docker/swift/swift-rsyncd/Dockerfile.j2
+index 854c99cd4..66a2f8dba 100644
+--- a/docker/swift/swift-rsyncd/Dockerfile.j2
++++ b/docker/swift/swift-rsyncd/Dockerfile.j2
+@@ -17,6 +17,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block swift_rsyncd_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/tacker/tacker-base/Dockerfile.j2 b/docker/tacker/tacker-base/Dockerfile.j2
+index 7b57a4ebd..51459eae0 100644
+--- a/docker/tacker/tacker-base/Dockerfile.j2
++++ b/docker/tacker/tacker-base/Dockerfile.j2
+@@ -33,4 +33,6 @@ RUN ln -s tacker-base-source/* tacker \
+     && touch /usr/local/bin/kolla_tacker_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_tacker_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block tacker_base_footer %}{% endblock %}
+diff --git a/docker/tacker/tacker-conductor/Dockerfile.j2 b/docker/tacker/tacker-conductor/Dockerfile.j2
+index 48e3cd38c..bbabddbe6 100644
+--- a/docker/tacker/tacker-conductor/Dockerfile.j2
++++ b/docker/tacker/tacker-conductor/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block tacker_conductor_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/tacker/tacker-server/Dockerfile.j2 b/docker/tacker/tacker-server/Dockerfile.j2
+index ff20d791e..584a23839 100644
+--- a/docker/tacker/tacker-server/Dockerfile.j2
++++ b/docker/tacker/tacker-server/Dockerfile.j2
+@@ -10,6 +10,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_tacker_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_tacker_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block tacker_server_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/telegraf/Dockerfile.j2 b/docker/telegraf/Dockerfile.j2
+index dd5fd2d8b..20764b127 100644
+--- a/docker/telegraf/Dockerfile.j2
++++ b/docker/telegraf/Dockerfile.j2
+@@ -36,6 +36,8 @@ RUN chmod 750 /etc/sudoers.d \
+     && chmod 440 /etc/sudoers.d/kolla_telegraf_sudoers \
+     && chmod 644 /usr/local/bin/kolla_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block telegraf_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/tgtd/Dockerfile.j2 b/docker/tgtd/Dockerfile.j2
+index 5b9348e30..0fd9fbfaa 100644
+--- a/docker/tgtd/Dockerfile.j2
++++ b/docker/tgtd/Dockerfile.j2
+@@ -20,5 +20,7 @@ RUN sed -i '1 i include /var/lib/cinder/volumes/*' /etc/tgt/targets.conf
+ 
+ {% endif %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block tgtd_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/trove/trove-api/Dockerfile.j2 b/docker/trove/trove-api/Dockerfile.j2
+index ad20e664f..941b79074 100644
+--- a/docker/trove/trove-api/Dockerfile.j2
++++ b/docker/trove/trove-api/Dockerfile.j2
+@@ -10,5 +10,7 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_trove_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_trove_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block trove_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/trove/trove-base/Dockerfile.j2 b/docker/trove/trove-base/Dockerfile.j2
+index 755c402d9..be98dbb4b 100644
+--- a/docker/trove/trove-base/Dockerfile.j2
++++ b/docker/trove/trove-base/Dockerfile.j2
+@@ -25,4 +25,6 @@ RUN ln -s trove-base-source/* trove \
+     && touch /usr/local/bin/kolla_trove_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_trove_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block trove_base_footer %}{% endblock %}
+diff --git a/docker/trove/trove-conductor/Dockerfile.j2 b/docker/trove/trove-conductor/Dockerfile.j2
+index bf187da81..16205c55c 100644
+--- a/docker/trove/trove-conductor/Dockerfile.j2
++++ b/docker/trove/trove-conductor/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block trove_conductor_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/trove/trove-guestagent/Dockerfile.j2 b/docker/trove/trove-guestagent/Dockerfile.j2
+index bee8eb7b6..a35c96342 100644
+--- a/docker/trove/trove-guestagent/Dockerfile.j2
++++ b/docker/trove/trove-guestagent/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block trove_guestagent_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/trove/trove-taskmanager/Dockerfile.j2 b/docker/trove/trove-taskmanager/Dockerfile.j2
+index b5722e26c..fcd5dbfca 100644
+--- a/docker/trove/trove-taskmanager/Dockerfile.j2
++++ b/docker/trove/trove-taskmanager/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block trove_taskmanager_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/venus/venus-api/Dockerfile.j2 b/docker/venus/venus-api/Dockerfile.j2
+index c5f1641ee..35ac69dca 100644
+--- a/docker/venus/venus-api/Dockerfile.j2
++++ b/docker/venus/venus-api/Dockerfile.j2
+@@ -5,9 +5,13 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block venus_api_header %}{% endblock %}
+ 
++{% import "macros.j2" as macros with context %}
++
+ COPY extend_start.sh /usr/local/bin/kolla_venus_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_venus_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block venus_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/venus/venus-base/Dockerfile.j2 b/docker/venus/venus-base/Dockerfile.j2
+index eea2b8206..729ae6bd4 100644
+--- a/docker/venus/venus-base/Dockerfile.j2
++++ b/docker/venus/venus-base/Dockerfile.j2
+@@ -24,4 +24,6 @@ RUN ln -s venus-base-source/* venus \
+     && touch /usr/local/bin/kolla_venus_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_venus_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block venus_base_footer %}{% endblock %}
+diff --git a/docker/venus/venus-manager/Dockerfile.j2 b/docker/venus/venus-manager/Dockerfile.j2
+index ae7d215df..35575adb6 100644
+--- a/docker/venus/venus-manager/Dockerfile.j2
++++ b/docker/venus/venus-manager/Dockerfile.j2
+@@ -5,6 +5,10 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block venus_manager_header %}{% endblock %}
+ 
++{% import "macros.j2" as macros with context %}
++
++{{ macros.kolla_patch_sources() }}
++
+ {% block venus_manager_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/watcher/watcher-api/Dockerfile.j2 b/docker/watcher/watcher-api/Dockerfile.j2
+index 2d4057e03..ea0f5bb3f 100644
+--- a/docker/watcher/watcher-api/Dockerfile.j2
++++ b/docker/watcher/watcher-api/Dockerfile.j2
+@@ -10,6 +10,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ COPY extend_start.sh /usr/local/bin/kolla_watcher_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_watcher_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block watcher_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/watcher/watcher-applier/Dockerfile.j2 b/docker/watcher/watcher-applier/Dockerfile.j2
+index c5d0e70d8..4a332a24a 100644
+--- a/docker/watcher/watcher-applier/Dockerfile.j2
++++ b/docker/watcher/watcher-applier/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block watcher_applier_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/watcher/watcher-base/Dockerfile.j2 b/docker/watcher/watcher-base/Dockerfile.j2
+index c389f675c..97d9eb898 100644
+--- a/docker/watcher/watcher-base/Dockerfile.j2
++++ b/docker/watcher/watcher-base/Dockerfile.j2
+@@ -24,4 +24,6 @@ RUN ln -s watcher-base-source/* watcher \
+     && touch /usr/local/bin/kolla_watcher_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_watcher_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block watcher_base_footer %}{% endblock %}
+diff --git a/docker/watcher/watcher-engine/Dockerfile.j2 b/docker/watcher/watcher-engine/Dockerfile.j2
+index f939cbea1..ce018ece4 100644
+--- a/docker/watcher/watcher-engine/Dockerfile.j2
++++ b/docker/watcher/watcher-engine/Dockerfile.j2
+@@ -7,6 +7,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% import "macros.j2" as macros with context %}
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block watcher_engine_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/zun/zun-api/Dockerfile.j2 b/docker/zun/zun-api/Dockerfile.j2
+index ed68d0b35..ded752ae6 100644
+--- a/docker/zun/zun-api/Dockerfile.j2
++++ b/docker/zun/zun-api/Dockerfile.j2
+@@ -5,8 +5,12 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block zun_api_header %}{% endblock %}
+ 
++{% import "macros.j2" as macros with context %}
++
+ COPY extend_start.sh /usr/local/bin/kolla_zun_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_zun_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block zun_api_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/zun/zun-base/Dockerfile.j2 b/docker/zun/zun-base/Dockerfile.j2
+index 242a6632c..908720b94 100644
+--- a/docker/zun/zun-base/Dockerfile.j2
++++ b/docker/zun/zun-base/Dockerfile.j2
+@@ -50,4 +50,6 @@ RUN ln -s zun-base-source/* zun \
+     && chmod 755 /var/www/cgi-bin/zun \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_zun_extend_start
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block zun_base_footer %}{% endblock %}
+diff --git a/docker/zun/zun-cni-daemon/Dockerfile.j2 b/docker/zun/zun-cni-daemon/Dockerfile.j2
+index 3046dcd9f..02cc9b2be 100644
+--- a/docker/zun/zun-cni-daemon/Dockerfile.j2
++++ b/docker/zun/zun-cni-daemon/Dockerfile.j2
+@@ -36,5 +36,7 @@ RUN chmod 750 /etc/sudoers.d \
+     && tar -C /opt -xzvf /tmp/cni-plugins.tgz ./loopback \
+     && rm -f /tmp/cni-plugins.tgz
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block zun_cni_daemon_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+diff --git a/docker/zun/zun-compute/Dockerfile.j2 b/docker/zun/zun-compute/Dockerfile.j2
+index 45964c4a9..17f34e0be 100644
+--- a/docker/zun/zun-compute/Dockerfile.j2
++++ b/docker/zun/zun-compute/Dockerfile.j2
+@@ -25,6 +25,8 @@ RUN chmod 644 /usr/local/bin/kolla_zun_extend_start \
+     && chmod 750 /etc/sudoers.d \
+     && chmod 640 /etc/sudoers.d/kolla_zun_sudoers
+ 
++{{ macros.kolla_patch_sources() }}
++
+ {% block zun_compute_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/docker/zun/zun-wsproxy/Dockerfile.j2 b/docker/zun/zun-wsproxy/Dockerfile.j2
+index 5e76b755f..09350ad40 100644
+--- a/docker/zun/zun-wsproxy/Dockerfile.j2
++++ b/docker/zun/zun-wsproxy/Dockerfile.j2
+@@ -5,6 +5,10 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ {% block zun_wsproxy_header %}{% endblock %}
+ 
++{% import "macros.j2" as macros with context %}
++
++{{ macros.kolla_patch_sources() }}
++
+ {% block zun_wsproxy_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
+ 
+diff --git a/kolla/common/config.py b/kolla/common/config.py
+index 4a6fd4903..3075052ad 100644
+--- a/kolla/common/config.py
++++ b/kolla/common/config.py
+@@ -178,6 +178,8 @@ _CLI_OPTS = [
+                help='The network mode for Docker build. Example: host'),
+     cfg.BoolOpt('cache', default=True,
+                 help='Use the container engine cache when building'),
++    cfg.StrOpt('patches-path', default=None,
++               help='The path where patch files to be applied are located'),
+     cfg.StrOpt('platform', default=None,
+                help=('The platform to use for a cross-compile build. Should '
+                      'be set in conjunction with "--base-arch" argument. '
+diff --git a/kolla/image/build.py b/kolla/image/build.py
+index 88189e2f7..9b6571d36 100644
+--- a/kolla/image/build.py
++++ b/kolla/image/build.py
+@@ -140,6 +140,7 @@ def run_build():
+     kolla.setup_working_dir()
+     kolla.find_dockerfiles()
+     kolla.create_dockerfiles()
++    kolla.create_patch_files()
+     kolla.build_image_list()
+     kolla.find_parents()
+     kolla.filter_images()
+diff --git a/kolla/image/kolla_worker.py b/kolla/image/kolla_worker.py
+index 1e3f4d861..798c8eaa7 100644
+--- a/kolla/image/kolla_worker.py
++++ b/kolla/image/kolla_worker.py
+@@ -141,6 +141,7 @@ class KollaWorker(object):
+         self.image_statuses_unbuildable = dict()
+         self.image_statuses_allowed_to_fail = dict()
+         self.maintainer = conf.maintainer
++        self.patches_path = conf.patches_path
+ 
+         try:
+             self.engine_client = engine.getEngineClient(self.conf)
+@@ -322,7 +323,8 @@ class KollaWorker(object):
+                       'distro_package_manager': self.distro_package_manager,
+                       'rpm_setup': self.rpm_setup,
+                       'build_date': build_date,
+-                      'clean_package_cache': self.clean_package_cache}
++                      'clean_package_cache': self.clean_package_cache,
++                      'patches_path': self.patches_path}
+             env = jinja2.Environment(  # nosec: not used to render HTML
+                 loader=jinja2.FileSystemLoader(self.working_dir))
+             env.filters.update(self._get_filters())
+@@ -349,6 +351,35 @@ class KollaWorker(object):
+                 f.write(content)
+                 LOG.debug("Wrote it to %s", content_path)
+ 
++    def create_patch_files(self):
++        for path in self.docker_build_paths:
++            image_name = os.path.basename(path)
++            src_patch_folder = os.path.join(self.patches_path, image_name) if \
++                self.patches_path and os.path.isdir(self.patches_path) \
++                else None
++            dest_patch_folder = os.path.join(path, "patches")
++            os.makedirs(dest_patch_folder, exist_ok=True)
++
++            if not src_patch_folder or not os.path.isdir(src_patch_folder):
++                continue
++
++            src_series_path = os.path.join(src_patch_folder, "series")
++            dest_series_path = os.path.join(dest_patch_folder, "series")
++
++            if os.path.isfile(src_series_path):
++                shutil.copyfile(src_series_path, dest_series_path)
++                with open(src_series_path) as f:
++                    patch_files = [line.strip() for line in f
++                                   if not line.startswith("#")]
++            else:
++                patch_files = []
++
++            for patch_file in patch_files:
++                src_patch_file = os.path.join(src_patch_folder, patch_file)
++                dest_patch_file = os.path.join(dest_patch_folder, patch_file)
++                if os.path.isfile(src_patch_file):
++                    shutil.copyfile(src_patch_file, dest_patch_file)
++
+     def _merge_overrides(self, overrides):
+         tpl_name = os.path.basename(overrides[0])
+         with open(overrides[0], 'r') as f:
+diff --git a/releasenotes/notes/patch-docker-images-69764f0b1df5c9ed.yaml b/releasenotes/notes/patch-docker-images-69764f0b1df5c9ed.yaml
+new file mode 100644
+index 000000000..5bd9759c1
+--- /dev/null
++++ b/releasenotes/notes/patch-docker-images-69764f0b1df5c9ed.yaml
+@@ -0,0 +1,6 @@
++---
++features:
++  - |
++    Add support for patching container images during build.
++    See the `build guide <https://docs.openstack.org/kolla/latest/admin/image-building.html#building-kolla-images>`__
++    for details.
