@@ -88,8 +88,6 @@ for image in client.images.list(filters=FILTERS):
             continue
 
         command = configuration[best_key]
-        if best_key == "fluentd" and VERSION in ["zed", "2023.1"]:
-            command = "dpkg -s td-agent"
 
         logger.info(
             f"Best match in configuration for {tag} is {best_key}, using {command}"
