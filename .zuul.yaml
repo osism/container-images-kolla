@@ -87,10 +87,6 @@
           RwuErxyB0erVvm076vn7Dx8NT9T58s08hNS0HFLG7aOpwV2nHECCHYDWO0yWXI=
 
 - semaphore:
-    name: semaphore-container-images-kolla-push-antelope
-    max: 1
-
-- semaphore:
     name: semaphore-container-images-kolla-push-bobcat
     max: 1
 
@@ -132,13 +128,6 @@
       docker_registry: osism.harbor.regio.digital
 
 - job:
-    name: container-images-kolla-build-antelope
-    parent: container-images-kolla-build
-    vars:
-      version_openstack: "2023.1"
-      push_images: false
-
-- job:
     name: container-images-kolla-build-bobcat
     parent: container-images-kolla-build
     vars:
@@ -172,19 +161,6 @@
     vars:
       version_openstack: "2024.2"
       push_images: false
-
-- job:
-    name: container-images-kolla-push-antelope
-    parent: container-images-kolla-build
-    semaphores:
-      - name: semaphore-container-images-kolla-push-antelope
-    vars:
-      version_openstack: "2023.1"
-      push_images: true
-    secrets:
-      - name: secret
-        secret: SECRET_CONTAINER_IMAGES_KOLLA
-        pass-to-parent: true
 
 - job:
     name: container-images-kolla-push-bobcat
@@ -271,7 +247,6 @@
         - yamllint
     label:
       jobs:
-        - container-images-kolla-build-antelope
         - container-images-kolla-build-bobcat
         - container-images-kolla-build-caracal
         - container-images-kolla-build-caracal-aarch64
@@ -289,7 +264,6 @@
         - yamllint
     periodic-midnight:
       jobs:
-        - container-images-kolla-push-antelope
         - container-images-kolla-push-bobcat
         - container-images-kolla-push-caracal
         - container-images-kolla-push-caracal-aarch64
@@ -297,8 +271,6 @@
         - container-images-kolla-push-dalmatian-aarch64
     post:
       jobs:
-        - container-images-kolla-push-antelope:
-            branches: main
         - container-images-kolla-push-bobcat:
             branches: main
         - container-images-kolla-push-caracal:

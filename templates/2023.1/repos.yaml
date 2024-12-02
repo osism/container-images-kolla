@@ -1,8 +1,0 @@
----
-ubuntu:
-  erlang:
-    url: https://ppa1.novemberain.com/rabbitmq/rabbitmq-erlang/deb/ubuntu
-    gpg_key: erlang.gpg
-  rabbitmq:
-    url: https://ppa1.novemberain.com/rabbitmq/rabbitmq-server/deb/ubuntu
-    gpg_key: rabbitmq.gpg
