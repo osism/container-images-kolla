@@ -1,8 +1,8 @@
 diff --git a/docker/ovn/ovn-base/Dockerfile.j2 b/docker/ovn/ovn-base/Dockerfile.j2
-index 247eab83a..2f2e4c7a7 100644
+index 83e1c8dc8..703e06ed8 100644
 --- a/docker/ovn/ovn-base/Dockerfile.j2
 +++ b/docker/ovn/ovn-base/Dockerfile.j2
-@@ -5,20 +5,52 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+@@ -5,25 +5,55 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
  
  {% block ovn_base_header %}{% endblock %}
  
@@ -69,15 +69,19 @@ index 247eab83a..2f2e4c7a7 100644
  
  COPY extend_start.sh /usr/local/bin/kolla_extend_start
  
+ RUN chmod 644 /usr/local/bin/kolla_extend_start
+ 
+-{{ macros.kolla_patch_sources() }}
+-
+ {% block ovn_base_footer %}{% endblock %}
 diff --git a/docker/ovn/ovn-controller/Dockerfile.j2 b/docker/ovn/ovn-controller/Dockerfile.j2
-index ef4d05ddc..78e05ebb0 100644
+index 4674d9f73..e6167c0b0 100644
 --- a/docker/ovn/ovn-controller/Dockerfile.j2
 +++ b/docker/ovn/ovn-controller/Dockerfile.j2
-@@ -4,21 +4,5 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
- {% endblock %}
+@@ -5,22 +5,5 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
  
  {% block ovn_controller_header %}{% endblock %}
--
+ 
 -{% import "macros.j2" as macros with context %}
 -
 -{% if base_package_type == 'rpm' %}
@@ -93,13 +97,15 @@ index ef4d05ddc..78e05ebb0 100644
 -{% endif %}
 -{{ macros.install_packages(ovn_controller_packages | customizable("packages")) }}
 -
+-{{ macros.kolla_patch_sources() }}
+-
  {% block ovn_controller_footer %}{% endblock %}
  {% block footer %}{% endblock %}
 diff --git a/docker/ovn/ovn-nb-db-server/Dockerfile.j2 b/docker/ovn/ovn-nb-db-server/Dockerfile.j2
-index ecc94651b..24838f6e7 100644
+index dc8e3e53d..24838f6e7 100644
 --- a/docker/ovn/ovn-nb-db-server/Dockerfile.j2
 +++ b/docker/ovn/ovn-nb-db-server/Dockerfile.j2
-@@ -5,21 +5,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+@@ -5,25 +5,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
  
  {% block ovn_nb_db_server_header %}{% endblock %}
  
@@ -121,15 +127,18 @@ index ecc94651b..24838f6e7 100644
  COPY start_nb_db_server.sh /usr/local/bin/start-nb-db-server
  RUN chmod 755 /usr/local/bin/start-nb-db-server
  
+-{{ macros.kolla_patch_sources() }}
+-
+ {% block ovn_nb_db_server_footer %}{% endblock %}
+ {% block footer %}{% endblock %}
 diff --git a/docker/ovn/ovn-northd/Dockerfile.j2 b/docker/ovn/ovn-northd/Dockerfile.j2
-index 2c94f2f20..f0f94d380 100644
+index 744495a82..9bd26998e 100644
 --- a/docker/ovn/ovn-northd/Dockerfile.j2
 +++ b/docker/ovn/ovn-northd/Dockerfile.j2
-@@ -4,21 +4,5 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
- {% endblock %}
+@@ -5,22 +5,5 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
  
  {% block ovn_northd_header %}{% endblock %}
--
+ 
 -{% import "macros.j2" as macros with context %}
 -
 -{% if base_package_type == 'rpm' %}
@@ -145,13 +154,15 @@ index 2c94f2f20..f0f94d380 100644
 -{% endif %}
 -{{ macros.install_packages(ovn_northd_packages | customizable("packages")) }}
 -
+-{{ macros.kolla_patch_sources() }}
+-
  {% block ovn_northd_footer %}{% endblock %}
  {% block footer %}{% endblock %}
 diff --git a/docker/ovn/ovn-sb-db-server/Dockerfile.j2 b/docker/ovn/ovn-sb-db-server/Dockerfile.j2
-index 9acd01fa3..c1f40c0ee 100644
+index 2e1da4eb8..c1f40c0ee 100644
 --- a/docker/ovn/ovn-sb-db-server/Dockerfile.j2
 +++ b/docker/ovn/ovn-sb-db-server/Dockerfile.j2
-@@ -5,21 +5,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+@@ -5,25 +5,8 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
  
  {% block ovn_sb_db_server_header %}{% endblock %}
  
@@ -173,3 +184,7 @@ index 9acd01fa3..c1f40c0ee 100644
  COPY start_sb_db_server.sh /usr/local/bin/start-sb-db-server
  RUN chmod 755 /usr/local/bin/start-sb-db-server
  
+-{{ macros.kolla_patch_sources() }}
+-
+ {% block ovn_sb_db_server_footer %}{% endblock %}
+ {% block footer %}{% endblock %}

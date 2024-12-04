@@ -12,10 +12,10 @@ Date:   Tue Jun 13 14:24:23 2023 +0200
     Closes-Bug: 2023632
     Change-Id: I843999d56b9b90af5bd8f4e102e64d261fd483fe
 
-diff --git a/neutron_dynamic_routing/db/bgp_db.py b/neutron_dynamic_routing/db/bgp_db.py
+diff --git /var/lib/kolla/venv/lib/python3/site-packages/neutron_dynamic_routing/db/bgp_db.py /var/lib/kolla/venv/lib/python3/site-packages/neutron_dynamic_routing/db/bgp_db.py
 index 0b9a7db..081c628 100644
---- a/neutron_dynamic_routing/db/bgp_db.py
-+++ b/neutron_dynamic_routing/db/bgp_db.py
+--- /var/lib/kolla/venv/lib/python3/site-packages/neutron_dynamic_routing/db/bgp_db.py
++++ /var/lib/kolla/venv/lib/python3/site-packages/neutron_dynamic_routing/db/bgp_db.py
 @@ -1018,6 +1018,7 @@ class BgpDbMixin(object):
                  l3_db.Router.gw_port_id == models_v2.Port.id,
                  models_v2.Port.network_id == binding.network_id,

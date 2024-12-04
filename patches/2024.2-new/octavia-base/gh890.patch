@@ -1,5 +1,5 @@
---- a/octavia/common/clients.py
-+++ b/octavia/common/clients.py
+--- /var/lib/kolla/venv/lib/python3/site-packages/octavia/common/clients.py
++++ /var/lib/kolla/venv/lib/python3/site-packages/octavia/common/clients.py
 @@ -80,6 +80,12 @@ class NeutronAuth(object):
          if not cls.neutron_client:
              sess = ksession.get_session()

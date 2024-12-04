@@ -61,7 +61,7 @@ popd > /dev/null
 
 # Apply patches
 
-for patch in $(find patches/kolla-build/$OPENSTACK_VERSION -type f -name '*.patch'); do
+for patch in $(find patches/kolla-build/$OPENSTACK_VERSION -type f -name '*.patch' | sort); do
     pushd $PROJECT_REPOSITORY_PATH > /dev/null
     echo "APPLY PATCH $patch"
     patch --forward --batch -p1 --dry-run < ../$patch || exit 1
@@ -89,7 +89,8 @@ for image in $(find overlays/$OPENSTACK_VERSION -maxdepth 1 -mindepth 1 -type d)
     cp -r overlays/$OPENSTACK_VERSION/$image_name/* $PROJECT_REPOSITORY_PATH/docker/$image_name
 done
 
-# Apply patches
+# Apply more patches
+# TODO: drop once 2024.1 is gone
 
 find patches/$OPENSTACK_VERSION -mindepth 1 -type d
 for project in $(find patches/$OPENSTACK_VERSION -mindepth 1 -type d | grep kolla | grep -v kolla-build); do

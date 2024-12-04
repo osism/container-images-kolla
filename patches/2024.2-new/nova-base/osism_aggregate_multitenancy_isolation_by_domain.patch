@@ -1,5 +1,5 @@
---- a/nova/api/openstack/identity.py
-+++ b/nova/api/openstack/identity.py
+--- /var/lib/kolla/venv/lib/python3/site-packages/nova/api/openstack/identity.py
++++ /var/lib/kolla/venv/lib/python3/site-packages/nova/api/openstack/identity.py
 @@ -13,14 +13,20 @@
  # under the License.
  
