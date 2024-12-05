@@ -43,6 +43,8 @@ elif [[ -z "$KOLLA_IMAGES" ]]; then
     PLATFORM="linux/amd64"
 fi
 
+KOLLA_IMAGES="^ovn"
+
 if [[ "$OPENSTACK_VERSION" == "2024.1" || "$OPENSTACK_VERSION" == "2024.2" ]]; then
     PLATFORM_OPTS="--platform $PLATFORM"
 fi
