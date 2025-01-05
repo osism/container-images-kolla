@@ -2,6 +2,9 @@
 - name: Run preparations
   hosts: all
 
+  vars:
+    python_venv_dir: /tmp/venv
+
   roles:
     - ensure-docker
     - ensure-pip
@@ -34,14 +37,8 @@
         name: docker
         state: restarted
 
-    - name: Run install script
-      ansible.builtin.shell:
-        executable: /bin/bash
-        chdir: "{{ zuul.project.src_dir }}"
-        cmd: |
-          set -e
-          set -x
-
-          git submodule update --init
-
-          sudo pip3 install -r requirements.txt
+    - name: Install requirements
+      ansible.builtin.pip:
+        requirements: "{{ ansible_user_dir }}/{{ zuul.project.src_dir }}/requirements.txt"
+        virtualenv: "{{ python_venv_dir }}"
+        virtualenv_command: "python3 -m venv"
