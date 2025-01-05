@@ -1,0 +1,11 @@
+--- a/docker/macros.j2
++++ b/docker/macros.j2
+@@ -34,7 +34,7 @@
+
+ {% macro install_pip(packages, constraints=true, python_version='3') %}
+ {%- if packages is sequence and packages|length > 0 -%}
+-    python{{ python_version }} -m pip --no-cache-dir install --upgrade{{ ' ' }}
++    uv pip install --no-cache --upgrade{{ ' ' }}
+     {%- if constraints %}-c /requirements/upper-constraints.txt {% endif -%}
+     {{ packages | join(' ') }}
+ {%- else -%}
