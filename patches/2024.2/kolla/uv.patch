@@ -7,21 +7,8 @@ index 48c56208c..bbd7522c8 100644
  {% macro install_pip(packages, constraints=true, python_version='3') %}
  {%- if packages is sequence and packages|length > 0 -%}
 -    python{{ python_version }} -m pip --no-cache-dir install --upgrade{{ ' ' }}
++    python{{ python_version }} -m pip --no-cache-dir install uv && \
 +    uv pip install --no-cache --upgrade{{ ' ' }}
      {%- if constraints %}-c /requirements/upper-constraints.txt {% endif -%}
      {{ packages | join(' ') }}
  {%- else -%}
-diff --git a/docker/openstack-base/Dockerfile.j2 b/docker/openstack-base/Dockerfile.j2
-index 46af0aecd..695b6cc11 100644
---- a/docker/openstack-base/Dockerfile.j2
-+++ b/docker/openstack-base/Dockerfile.j2
-@@ -196,7 +196,8 @@ RUN ln -s openstack-base-source/* /requirements \
-     && mkdir -p /var/lib/kolla \
-     && python3 -m venv --system-site-packages /var/lib/kolla/venv \
-     && KOLLA_DISTRO_PYTHON_VERSION=$(/usr/bin/python3 -c "import sys; print('{}.{}'.format(sys.version_info.major, sys.version_info.minor))") \
--    && ln -s python${KOLLA_DISTRO_PYTHON_VERSION} /var/lib/kolla/venv/lib/python3
-+    && ln -s python${KOLLA_DISTRO_PYTHON_VERSION} /var/lib/kolla/venv/lib/python3 \
-+    && /var/lib/kolla/venv/bin/python3 -m pip --no-cache-dir install uv
-
- {# Block used for overriding global version constraints.
-
