@@ -2,10 +2,13 @@
 - name: Build images
   hosts: all
 
+  vars:
+    docker_registry: osism.harbor.regio.digital
+
   tasks:
     - name: Log into registry
       community.docker.docker_login:
-        registry_url: "{{ docker_registry | default('osism.harbor.regio.digital') }}"
+        registry_url: "{{ docker_registry }}"
         username: "{{ secret.DOCKER_USERNAME }}"
         password: "{{ secret.DOCKER_PASSWORD }}"
       when: push_images | bool
