@@ -108,7 +108,7 @@
 
 - job:
     name: container-images-kolla-build
-    nodeset: ubuntu-jammy-large
+    nodeset: ubuntu-noble-large
     pre-run: playbooks/pre.yml
     run: playbooks/build.yml
     timeout: 10800
@@ -118,7 +118,7 @@
 
 - job:
     name: container-images-kolla-build-aarch64
-    nodeset: ubuntu-jammy-large
+    nodeset: ubuntu-noble-large
     pre-run: playbooks/pre.yml
     run: playbooks/build.yml
     timeout: 10800
