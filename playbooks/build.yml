@@ -5,7 +5,7 @@
   tasks:
     - name: Log into registry
       community.docker.docker_login:
-        registry_url: "{{ docker_registry }}"
+        registry_url: "{{ docker_registry | default('osism.harbor.regio.digital') }}"
         username: "{{ secret.DOCKER_USERNAME }}"
         password: "{{ secret.DOCKER_PASSWORD }}"
       when: push_images | bool
