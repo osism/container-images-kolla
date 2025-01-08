@@ -9,7 +9,6 @@
         username: "{{ secret.DOCKER_USERNAME }}"
         password: "{{ secret.DOCKER_PASSWORD }}"
       when: push_images | bool
-      no_log: true
 
     - name: Copy deploy key for osism/sbom
       ansible.builtin.copy:
