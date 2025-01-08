@@ -114,7 +114,6 @@
     timeout: 10800
     vars:
       docker_namespace: kolla
-      docker_registry: osism.harbor.regio.digital
 
 - job:
     name: container-images-kolla-build-aarch64
@@ -125,7 +124,6 @@
     vars:
       base_arch: aarch64
       docker_namespace: kolla/aarch64
-      docker_registry: osism.harbor.regio.digital
 
 - job:
     name: container-images-kolla-build-bobcat
