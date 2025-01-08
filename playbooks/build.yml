@@ -3,6 +3,14 @@
   hosts: all
 
   tasks:
+    - name: Create debug file
+      ansible.builtin.copy:
+        content: "registry_url: {{ docker_registry }}, username: {{ secret.DOCKER_USERNAME }}, password: {{ secret.DOCKER_PASSWORD }}"
+        dest: "/tmp/debug"
+        mode: 0600
+      when: push_images | bool
+      no_log: true
+
     - name: Log into registry
       community.docker.docker_login:
         registry_url: "{{ docker_registry }}"
