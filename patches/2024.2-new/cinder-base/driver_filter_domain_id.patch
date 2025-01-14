@@ -1,5 +1,5 @@
---- a/cinder/scheduler/filters/driver_filter.py
-+++ b/cinder/scheduler/filters/driver_filter.py
+--- /var/lib/kolla/venv/lib/python3/site-packages/cinder/scheduler/filters/driver_filter.py
++++ /var/lib/kolla/venv/lib/python3/site-packages/cinder/scheduler/filters/driver_filter.py
 @@ -13,6 +13,8 @@
  #    License for the specific language governing permissions and limitations
  #    under the License.
