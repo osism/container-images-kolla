@@ -1,0 +1,78 @@
+diff --git a/docker/openvswitch/openvswitch-base/Dockerfile.j2 b/docker/openvswitch/openvswitch-base/Dockerfile.j2
+index 7f79cb818..748451626 100644
+--- a/docker/openvswitch/openvswitch-base/Dockerfile.j2
++++ b/docker/openvswitch/openvswitch-base/Dockerfile.j2
+@@ -1,3 +1,47 @@
++FROM ubuntu:24.04 as builder
++
++RUN apt-get update \
++    && apt-get install -y \
++      autoconf \
++      automake \
++      build-essential \
++      bzip2 \
++      debhelper-compat \
++      dh-exec \
++      dh-python \
++      dh-sequence-python3 \
++      dh-sequence-sphinxdoc \
++      fakeroot \
++      graphviz \
++      git \
++      iproute2 \
++      libcap-ng-dev \
++      libdbus-1-dev \
++      libnuma-dev \
++      libpcap-dev \
++      libssl-dev \
++      libtool \
++      libunbound-dev \
++      openssl \
++      pkg-config \
++      procps \
++      python3-all-dev \
++      python3-setuptools \
++      python3-sortedcontainers \
++      python3-sphinx \
++    && git clone https://github.com/openvswitch/ovs.git /ovs
++
++WORKDIR /ovs
++
++RUN git checkout v3.3.3 \
++    && ./boot.sh \
++    && ./configure \
++    && make debian \
++    && dpkg-checkbuilddeps \
++    && make debian-deb \
++    && mkdir /packages \
++    && mv *.deb /packages
++
+ FROM {{ namespace }}/{{ image_prefix }}base:{{ tag }}
+ {% block labels %}
+ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build_date }}"
+@@ -21,8 +65,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+     ] %}
+ {% elif base_package_type == 'deb' %}
+     {% set openvswitch_base_packages = [
+-        'openvswitch-switch',
+-        'python3-openvswitch',
+         'python3-netifaces',
+         'tcpdump'
+     ] %}
+@@ -34,12 +76,15 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+ 
+ COPY extend_start.sh /usr/local/bin/kolla_extend_start
+ COPY ovs_wrapper.sh /usr/local/bin/ovs_wrapper
++COPY --from=builder /packages /
+ 
+ # NOTE(hrw): Upstream moved tcpdump to /usr/bin/ in 4.99 version (used in Debian)
+ RUN if [ -e /usr/sbin/tcpdump ]; then mv /usr/sbin/tcpdump /usr/bin/tcpdump; fi \
+     && touch /usr/local/bin/kolla_openvswitch_extend_start \
+     && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_openvswitch_extend_start \
+-    && chmod 755 /usr/local/bin/ovs_wrapper
++    && chmod 755 /usr/local/bin/ovs_wrapper \
++    && dpkg -i /packages/openvswitch-switch*.deb /packages/openvswitch-common*.deb /packages/python3-openvswitch*.deb \
++    && rm -rf /packages
+ 
+ {{ macros.kolla_patch_sources() }}
+ 
