@@ -108,16 +108,6 @@ RUN apt-get update ${"\\"}
            libmemcached11 ${"\\"}
     && apt-get clean ${"\\"}
     && rm -rf /var/lib/apt/lists/* ${"\\"}
-    && curl -o /tmp/liboauth2.deb "https://github.com/OpenIDC/liboauth2/releases/download/v1.6.3/liboauth2_1.6.3-1.bookworm_amd64.deb" ${"\\"}
-    && dpkg -i /tmp/liboauth2.deb ${"\\"}
-    && rm -f /tmp/liboauth2.deb ${"\\"}
-    && curl -o /tmp/liboauth2-apache.deb "https://github.com/OpenIDC/liboauth2/releases/download/v1.6.3/liboauth2-apache_1.6.3-1.bookworm_amd64.deb" ${"\\"}
-    && dpkg -i /tmp/liboauth2-apache.deb ${"\\"}
-    && rm -f /tmp/liboauth2-apache.deb ${"\\"}
-    && curl -o /tmp/libapache2-mod-oauth2.deb "https://github.com/OpenIDC/mod_oauth2/releases/download/v3.4.0/libapache2-mod-oauth2_3.4.0-1.bookworm_amd64.deb" ${"\\"}
-    && dpkg -i /tmp/libapache2-mod-oauth2.deb ${"\\"}
-    && rm -f /tmp/libapache2-mod-oauth2.deb ${"\\"}
-    && a2enmod oauth2 ${"\\"}
     && a2enmod auth_openidc
 {% endblock %}
 
