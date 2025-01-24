@@ -127,10 +127,6 @@ RUN rm -rf /usr/share/doc/* ${"\\"}
     && if [ -e /var/lib/kolla/venv/bin/python3 ]; then /var/lib/kolla/venv/bin/pip3 install --no-cache-dir pyclean==3.0.0; /var/lib/kolla/venv/bin/pyclean /var/lib/kolla/venv; /var/lib/kolla/venv/bin/pyclean /usr; /var/lib/kolla/venv/bin/pip3 uninstall -y pyclean; fi
 {% endblock %}
 
-{% block fluentd_footer %}
-LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build_date }}" fluentd_binary="fluentd" fluentd_user="{{ fluentd_user }}"
-{% endblock %}
-
 {% block labels %}
 LABEL "build-date"="{{ build_date }}" ${"\\"}
       "name"="{{ image_name }}" ${"\\"}
