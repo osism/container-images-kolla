@@ -86,15 +86,13 @@ RUN curl -o /tmp/kolla-operations.tar.gz https://github.com/osism/kolla-operatio
 {% endblock %}
 
 {% block ovs_install %}
+COPY --from=osism.harbor.regio.digital/packages/ovs:v3.3.3 /*.deb /tmp/packages/
 RUN apt-get update ${"\\"}
     && apt-get -y install --no-install-recommends ${"\\"}
         python3-netifaces ${"\\"}
         tcpdump ${"\\"}
-    && curl -o /tmp/openvswitch-switch.deb "https://github.com/osism/deb-packaging/releases/download/ovs-3.3.1/openvswitch-switch_3.3.1-1_amd64.deb" ${"\\"}
-    && curl -o /tmp/openvswitch-common.deb "https://github.com/osism/deb-packaging/releases/download/ovs-3.3.1/openvswitch-common_3.3.1-1_amd64.deb" ${"\\"}
-    && curl -o /tmp/python3-openvswitch.deb "https://github.com/osism/deb-packaging/releases/download/ovs-3.3.1/python3-openvswitch_3.3.1-1_amd64.deb" ${"\\"}
-    && apt-get install -y -f /tmp/openvswitch-switch.deb /tmp/openvswitch-common.deb /tmp/python3-openvswitch.deb ${"\\"}
-    && rm -f /tmp/openvswitch-switch.deb /tmp/openvswitch-common.deb /tmp/python3-openvswitch.deb ${"\\"}
+    && apt-get install -y -f /tmp/packages/openvswitch-switch*.deb /tmp/packages/openvswitch-common*.deb /tmp/packages/python3-openvswitch*.deb ${"\\"}
+    && rm -rf /tmp/packages ${"\\"}
     && apt-get clean ${"\\"}
     && rm -rf /var/lib/apt/lists/*
 {% endblock %}

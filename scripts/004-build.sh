@@ -47,6 +47,8 @@ if [[ "$OPENSTACK_VERSION" == "2024.1" || "$OPENSTACK_VERSION" == "2024.2" ]]; t
     PLATFORM_OPTS="--platform $PLATFORM"
 fi
 
+KOLLA_IMAGES="^openvswitch"
+
 # Build images
 
 if [[ $BUILD_TYPE == "base" ]]; then
