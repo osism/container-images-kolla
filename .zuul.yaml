@@ -107,6 +107,15 @@
     max: 1
 
 - job:
+    name: container-images-kolla-patch
+    nodeset: ubuntu-noble
+    pre-run: playbooks/pre.yml
+    run: playbooks/patch.yml
+    timeout: 10800
+    vars:
+      docker_namespace: kolla
+
+- job:
     name: container-images-kolla-build
     nodeset: ubuntu-noble-large
     pre-run: playbooks/pre.yml
@@ -126,10 +135,24 @@
       docker_namespace: kolla/aarch64
 
 - job:
+    name: container-images-kolla-patch-bobcat
+    parent: container-images-kolla-patch
+    vars:
+      version_openstack: "2023.2"
+      push_images: false
+
+- job:
     name: container-images-kolla-build-bobcat
     parent: container-images-kolla-build
     vars:
       version_openstack: "2023.2"
+      push_images: false
+
+- job:
+    name: container-images-kolla-patch-caracal
+    parent: container-images-kolla-patch
+    vars:
+      version_openstack: "2024.1"
       push_images: false
 
 - job:
@@ -144,6 +167,13 @@
     parent: container-images-kolla-build-aarch64
     vars:
       version_openstack: "2024.1"
+      push_images: false
+
+- job:
+    name: container-images-kolla-patch-dalmatian
+    parent: container-images-kolla-patch
+    vars:
+      version_openstack: "2024.2"
       push_images: false
 
 - job:
@@ -243,6 +273,9 @@
         - flake8
         - python-black
         - yamllint
+        - container-images-kolla-patch-bobcat
+        - container-images-kolla-patch-caracal
+        - container-images-kolla-patch-dalmatian
     label:
       jobs:
         - container-images-kolla-build-bobcat
