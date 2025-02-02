@@ -1,0 +1,29 @@
+---
+- name: Test patches
+  hosts: all
+
+  vars:
+    docker_registry: osism.harbor.regio.digital
+
+  tasks:
+    - name: Run patch script
+      ansible.builtin.shell:
+        executable: /bin/bash
+        chdir: "{{ zuul.project.src_dir }}"
+        cmd: |
+          set -e
+          set -x
+
+          export PATH=/home/zuul/.local/bin:$PATH
+
+          bash scripts/001-prepare.sh
+          bash scripts/002-generate.sh
+          bash scripts/003-patch.sh
+      changed_when: false
+      environment:
+        BASE_ARCH: "{{ base_arch | default('x86_64') }}"
+        DOCKER_NAMESPACE: "{{ docker_namespace }}"
+        DOCKER_REGISTRY: "{{ docker_registry }}"
+        IS_RELEASE: "{{ is_release | default(false) }}"
+        OPENSTACK_VERSION: "{{ version_openstack | default('latest') }}"
+        VERSION: "{{ zuul['tag'] | default('latest') }}"
