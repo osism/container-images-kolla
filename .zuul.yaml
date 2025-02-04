@@ -87,23 +87,23 @@
           RwuErxyB0erVvm076vn7Dx8NT9T58s08hNS0HFLG7aOpwV2nHECCHYDWO0yWXI=
 
 - semaphore:
-    name: semaphore-container-images-kolla-push-bobcat
+    name: semaphore-container-images-kolla-push-2023.2
     max: 1
 
 - semaphore:
-    name: semaphore-container-images-kolla-push-caracal
+    name: semaphore-container-images-kolla-push-2024.1
     max: 1
 
 - semaphore:
-    name: semaphore-container-images-kolla-push-caracal-aarch64
+    name: semaphore-container-images-kolla-push-2024.1-aarch64
     max: 1
 
 - semaphore:
-    name: semaphore-container-images-kolla-push-dalmatian
+    name: semaphore-container-images-kolla-push-2024.2
     max: 1
 
 - semaphore:
-    name: semaphore-container-images-kolla-push-dalmatian-aarch64
+    name: semaphore-container-images-kolla-push-2024.2-aarch64
     max: 1
 
 - job:
@@ -135,66 +135,66 @@
       docker_namespace: kolla/aarch64
 
 - job:
-    name: container-images-kolla-patch-bobcat
+    name: container-images-kolla-patch-2023.2
     parent: container-images-kolla-patch
     vars:
       version_openstack: "2023.2"
       push_images: false
 
 - job:
-    name: container-images-kolla-build-bobcat
+    name: container-images-kolla-build-2023.2
     parent: container-images-kolla-build
     vars:
       version_openstack: "2023.2"
       push_images: false
 
 - job:
-    name: container-images-kolla-patch-caracal
+    name: container-images-kolla-patch-2024.1
     parent: container-images-kolla-patch
     vars:
       version_openstack: "2024.1"
       push_images: false
 
 - job:
-    name: container-images-kolla-build-caracal
+    name: container-images-kolla-build-2024.1
     parent: container-images-kolla-build
     vars:
       version_openstack: "2024.1"
       push_images: false
 
 - job:
-    name: container-images-kolla-build-caracal-aarch64
+    name: container-images-kolla-build-2024.1-aarch64
     parent: container-images-kolla-build-aarch64
     vars:
       version_openstack: "2024.1"
       push_images: false
 
 - job:
-    name: container-images-kolla-patch-dalmatian
+    name: container-images-kolla-patch-2024.2
     parent: container-images-kolla-patch
     vars:
       version_openstack: "2024.2"
       push_images: false
 
 - job:
-    name: container-images-kolla-build-dalmatian
+    name: container-images-kolla-build-2024.2
     parent: container-images-kolla-build
     vars:
       version_openstack: "2024.2"
       push_images: false
 
 - job:
-    name: container-images-kolla-build-dalmatian-aarch64
+    name: container-images-kolla-build-2024.2-aarch64
     parent: container-images-kolla-build-aarch64
     vars:
       version_openstack: "2024.2"
       push_images: false
 
 - job:
-    name: container-images-kolla-push-bobcat
+    name: container-images-kolla-push-2023.2
     parent: container-images-kolla-build
     semaphores:
-      - name: semaphore-container-images-kolla-push-bobcat
+      - name: semaphore-container-images-kolla-push-2023.2
     vars:
       version_openstack: "2023.2"
       push_images: true
@@ -204,10 +204,10 @@
         pass-to-parent: true
 
 - job:
-    name: container-images-kolla-push-caracal
+    name: container-images-kolla-push-2024.1
     parent: container-images-kolla-build
     semaphores:
-      - name: semaphore-container-images-kolla-push-caracal
+      - name: semaphore-container-images-kolla-push-2024.1
     vars:
       version_openstack: "2024.1"
       push_images: true
@@ -217,10 +217,10 @@
         pass-to-parent: true
 
 - job:
-    name: container-images-kolla-push-caracal-aarch64
+    name: container-images-kolla-push-2024.1-aarch64
     parent: container-images-kolla-build-aarch64
     semaphores:
-      - name: semaphore-container-images-kolla-push-caracal-aarch64
+      - name: semaphore-container-images-kolla-push-2024.1-aarch64
     vars:
       version_openstack: "2024.1"
       push_images: true
@@ -230,10 +230,10 @@
         pass-to-parent: true
 
 - job:
-    name: container-images-kolla-push-dalmatian
+    name: container-images-kolla-push-2024.2
     parent: container-images-kolla-build
     semaphores:
-      - name: semaphore-container-images-kolla-push-dalmatian
+      - name: semaphore-container-images-kolla-push-2024.2
     vars:
       version_openstack: "2024.2"
       push_images: true
@@ -243,10 +243,10 @@
         pass-to-parent: true
 
 - job:
-    name: container-images-kolla-push-dalmatian-aarch64
+    name: container-images-kolla-push-2024.2-aarch64
     parent: container-images-kolla-build-aarch64
     semaphores:
-      - name: semaphore-container-images-kolla-push-dalmatian-aarch64
+      - name: semaphore-container-images-kolla-push-2024.2-aarch64
     vars:
       version_openstack: "2024.2"
       push_images: true
@@ -273,16 +273,16 @@
         - flake8
         - python-black
         - yamllint
-        - container-images-kolla-patch-bobcat
-        - container-images-kolla-patch-caracal
-        - container-images-kolla-patch-dalmatian
+        - container-images-kolla-patch-2023.2
+        - container-images-kolla-patch-2024.1
+        - container-images-kolla-patch-2024.2
     label:
       jobs:
-        - container-images-kolla-build-bobcat
-        - container-images-kolla-build-caracal
-        - container-images-kolla-build-dalmatian
-        # - container-images-kolla-build-caracal-aarch64
-        # - container-images-kolla-build-dalmatian-aarch64
+        - container-images-kolla-build-2023.2
+        - container-images-kolla-build-2024.1
+        - container-images-kolla-build-2024.2
+        # - container-images-kolla-build-2024.1-aarch64
+        # - container-images-kolla-build-2024.2-aarch64
     gate:
       jobs:
         - flake8
@@ -295,22 +295,22 @@
         - yamllint
     periodic-midnight:
       jobs:
-        - container-images-kolla-push-bobcat
-        - container-images-kolla-push-caracal
-        - container-images-kolla-push-dalmatian
-        # - container-images-kolla-push-caracal-aarch64
-        # - container-images-kolla-push-dalmatian-aarch64
+        - container-images-kolla-push-2023.2
+        - container-images-kolla-push-2024.1
+        - container-images-kolla-push-2024.2
+        # - container-images-kolla-push-2024.1-aarch64
+        # - container-images-kolla-push-2024.2-aarch64
     post:
       jobs:
-        - container-images-kolla-push-bobcat:
+        - container-images-kolla-push-2023.2:
             branches: main
-        - container-images-kolla-push-caracal:
+        - container-images-kolla-push-2024.1:
             branches: main
-        - container-images-kolla-push-dalmatian:
+        - container-images-kolla-push-2024.2:
             branches: main
-        # - container-images-kolla-push-caracal-aarch64:
+        # - container-images-kolla-push-2024.1-aarch64:
         #     branches: main
-        # - container-images-kolla-push-dalmatian-aarch64:
+        # - container-images-kolla-push-2024.2-aarch64:
         #     branches: main
     tag:
       jobs:
