@@ -1,0 +1,19 @@
+---
+giltDir: ~/.gilt/clone
+debug: false
+parallel: true
+repositories:
+  - git: https://github.com/LINBIT/openstack-cinder
+    version: 'linstor/stable/2024.1'
+    sources:
+      - src: cinder/volume/drivers/linstordrv.py
+        dstFile: overlays/2024.1/cinder/source/cinder/volume/drivers
+    commands:
+      - cmd: black overlays/2024.1/cinder/source/cinder/volume/drivers
+  - git: https://github.com/LINBIT/openstack-cinder
+    version: 'linstor/stable/2024.2'
+    sources:
+      - src: cinder/volume/drivers/linstordrv.py
+        dstFile: overlays/2024.2/cinder/source/cinder/volume/drivers
+    commands:
+      - cmd: black overlays/2024.2/cinder/source/cinder/volume/drivers
