@@ -46,6 +46,8 @@ for tarball in $(grep '# tarball' $KOLLA_CONF_FILE | awk '{ print $4 }'); do
 
     echo Process $filename
     directory=$(tar -tzf $filename | head -1 | cut -f1 -d"/")
+
+    echo Check patches for $filename
     if [[ -e ../patches/$OPENSTACK_VERSION/${directory%-*} ]]; then
         tar xzf $filename
         rm $filename
@@ -56,6 +58,15 @@ for tarball in $(grep '# tarball' $KOLLA_CONF_FILE | awk '{ print $4 }'); do
             patch --forward --batch -p1 < $patch
         done
         popd > /dev/null
+        tar czf $filename $directory
+        rm -r $directory
+    fi
+
+    echo Check overlays for $filename
+    if [[ -e ../overlays/$OPENSTACK_VERSION/${directory%-*}/source ]]; then
+        tar xzf $filename
+        rm $filename
+        rsync -avz ../overlays/$OPENSTACK_VERSION/${directory%-*}/source/ $directory
         tar czf $filename $directory
         rm -r $directory
     fi
