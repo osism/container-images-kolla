@@ -1,0 +1,224 @@
+From 1cda1acc7fd22bc42917c723f14c6ee076098297 Mon Sep 17 00:00:00 2001
+From: Michal Arbet <michal.arbet@ultimum.io>
+Date: Wed, 21 Aug 2024 14:08:34 +0200
+Subject: [PATCH] Switch to Dynamic Python Version Detection
+
+This commit removes the hardcoded KOLLA_DISTRO_PYTHON_VERSION
+and replaces it with dynamic Python version detection during
+container images build. Dockerfiles and scripts now use general
+python3 references, simplifying maintenance and ensuring
+compatibility with future Python versions.
+
+Test cases relying on distro_python_version were also cleaned up.
+
+Change-Id: I891749598247a5e951ed4a873b16acfd0566f59c
+---
+
+diff --git a/docker/base/Dockerfile.j2 b/docker/base/Dockerfile.j2
+index d220eba..b3662f8 100644
+--- a/docker/base/Dockerfile.j2
++++ b/docker/base/Dockerfile.j2
+@@ -23,7 +23,6 @@
+ {% block base_header %}{% endblock %}
+ 
+ ENV KOLLA_BASE_DISTRO={{ base_distro }} \
+-    KOLLA_DISTRO_PYTHON_VERSION={{ distro_python_version }} \
+     KOLLA_BASE_ARCH={{ base_arch }}
+ 
+ 
+diff --git a/docker/horizon/Dockerfile.j2 b/docker/horizon/Dockerfile.j2
+index cec72a1..d9d6b32 100644
+--- a/docker/horizon/Dockerfile.j2
++++ b/docker/horizon/Dockerfile.j2
+@@ -66,7 +66,7 @@
+     && if [ "$(ls /plugins)" ]; then \
+            {{ macros.install_pip(horizon_plugins_pip_packages) }}; \
+        fi \
+-    && for locale in  /var/lib/kolla/venv/lib/python{{distro_python_version}}/site-packages/*/locale; do \
++    && for locale in  /var/lib/kolla/venv/lib/python3/site-packages/*/locale; do \
+            (cd ${locale%/*} && /var/lib/kolla/venv/bin/django-admin compilemessages) \
+        done \
+     && chmod 644 /usr/local/bin/kolla_extend_start
+diff --git a/docker/horizon/extend_start.sh b/docker/horizon/extend_start.sh
+index 5a71d6b..63a4018 100644
+--- a/docker/horizon/extend_start.sh
++++ b/docker/horizon/extend_start.sh
+@@ -5,7 +5,7 @@
+ FORCE_GENERATE="${FORCE_GENERATE:-no}"
+ HASH_PATH=/var/lib/kolla/.settings.md5sum.txt
+ 
+-SITE_PACKAGES="/var/lib/kolla/venv/lib/python${KOLLA_DISTRO_PYTHON_VERSION}/site-packages"
++SITE_PACKAGES="/var/lib/kolla/venv/lib/python3/site-packages"
+ 
+ MANAGE_PY="/var/lib/kolla/venv/bin/python /var/lib/kolla/venv/bin/manage.py"
+ 
+diff --git a/docker/kolla-toolbox/Dockerfile.j2 b/docker/kolla-toolbox/Dockerfile.j2
+index 7cdc760..7a60674 100644
+--- a/docker/kolla-toolbox/Dockerfile.j2
++++ b/docker/kolla-toolbox/Dockerfile.j2
+@@ -6,10 +6,7 @@
+ {% block kolla_toolbox_header %}{% endblock %}
+ 
+ {% set venv_path='/opt/ansible' %}
+-{% if base_package_type == 'rpm' %}
+-    {% set distro_python_version = '3.11' %}
+-{% endif %}
+-{% set os_client_config= venv_path + '/lib/python' + distro_python_version + '/site-packages/os_client_config/defaults.json' %}
++{% set os_client_config= venv_path + '/lib/python3/site-packages/os_client_config/defaults.json' %}
+ 
+ {% import "macros.j2" as macros with context %}
+ 
+@@ -63,11 +60,32 @@
+ {% endif %}
+ {{ macros.install_packages(kolla_toolbox_packages | customizable("packages")) }}
+ 
++{# NOTE(kevko):
++  In all distros, there is always a /usr/bin/python3 -> python3.X.
++  However, this is disrupted for RHEL-based systems because, unlike
++  other distros, we upgrade Python above [1], but we forget to set
++  the default python3 to the new python3.X. As a result also, everything
++  outside of the virtual environment ends up running on Python 3.9.
++
++  So, let's correctly set python3 -> python3.X since we had to install
++  it and now have default python3 points to the new version.
++
++  [1] https://review.opendev.org/c/openstack/kolla/+/924245
++#}
++{% if base_package_type == 'rpm' %}
++RUN cd /usr/bin && \
++    rm -f python3 && \
++    ln -s python3.12 python3
++{% endif %}
++
+ {% block kolla_toolbox_upper_constraints %}
+ RUN mkdir -p /requirements \
+     && curl -o /requirements/upper-constraints.txt ${UPPER_CONSTRAINTS_FILE:-https://releases.openstack.org/constraints/upper/{{ openstack_release }}} \
+     && {{ macros.upper_constraints_remove("openstacksdk") }} \
+-    && python{{ distro_python_version }} -m venv --system-site-packages {{ venv_path }}
++    && python3 -m venv --system-site-packages {{ venv_path }} \
++    && KOLLA_DISTRO_PYTHON_VERSION=$(/usr/bin/python3 -c "import sys; print('{}.{}'.format(sys.version_info.major, sys.version_info.minor))") \
++    && cd {{ venv_path }}/lib \
++    && ln -s python${KOLLA_DISTRO_PYTHON_VERSION} {{ venv_path }}/lib/python3
+ {% endblock %}
+ 
+ ENV PATH {{ venv_path }}/bin:$PATH
+@@ -86,8 +104,8 @@
+         'pyudev',
+     ] %}
+ 
+-RUN {{ macros.install_pip(['pip', 'wheel', 'setuptools'], python_version=distro_python_version) }} \
+-    && {{ macros.install_pip((kolla_toolbox_pip_packages | customizable("pip_packages")), python_version=distro_python_version) }} \
++RUN {{ macros.install_pip(['pip', 'wheel', 'setuptools']) }} \
++    && {{ macros.install_pip((kolla_toolbox_pip_packages | customizable("pip_packages"))) }} \
+     && mkdir -p /etc/ansible /usr/share/ansible \
+     && echo 'localhost ansible_connection=local ansible_python_interpreter={{ venv_path }}/bin/python' > /etc/ansible/hosts \
+     && sed -i 's|  "identity_api_version": "2.0",|  "identity_api_version": "3",|' {{ os_client_config }}
+diff --git a/docker/openstack-base/Dockerfile.j2 b/docker/openstack-base/Dockerfile.j2
+index 1df4321..f6aebd6 100644
+--- a/docker/openstack-base/Dockerfile.j2
++++ b/docker/openstack-base/Dockerfile.j2
+@@ -195,7 +195,9 @@
+ #}
+     && {{ macros.upper_constraints_remove("ovs") }} \
+     && mkdir -p /var/lib/kolla \
+-    && python3 -m venv --system-site-packages /var/lib/kolla/venv
++    && python3 -m venv --system-site-packages /var/lib/kolla/venv \
++    && KOLLA_DISTRO_PYTHON_VERSION=$(/usr/bin/python3 -c "import sys; print('{}.{}'.format(sys.version_info.major, sys.version_info.minor))") \
++    && ln -s python${KOLLA_DISTRO_PYTHON_VERSION} /var/lib/kolla/venv/lib/python3
+ 
+ {# Block used for overriding global version constraints.
+ 
+diff --git a/docker/skyline/skyline-apiserver/extend_start.sh b/docker/skyline/skyline-apiserver/extend_start.sh
+index e762106..e180293 100644
+--- a/docker/skyline/skyline-apiserver/extend_start.sh
++++ b/docker/skyline/skyline-apiserver/extend_start.sh
+@@ -3,7 +3,7 @@
+ # Bootstrap and exit if KOLLA_BOOTSTRAP variable is set. This catches all cases
+ # of the KOLLA_BOOTSTRAP variable being set, including empty.
+ if [[ "${!KOLLA_BOOTSTRAP[@]}" ]]; then
+-    SITE_PACKAGES="/var/lib/kolla/venv/lib/python${KOLLA_DISTRO_PYTHON_VERSION}/site-packages"
++    SITE_PACKAGES="/var/lib/kolla/venv/lib/python3/site-packages"
+     pushd ${SITE_PACKAGES}/skyline_apiserver/db/alembic
+     alembic upgrade head
+     popd
+diff --git a/kolla/image/kolla_worker.py b/kolla/image/kolla_worker.py
+index b959ec7..a464d21 100644
+--- a/kolla/image/kolla_worker.py
++++ b/kolla/image/kolla_worker.py
+@@ -114,20 +114,14 @@
+         self.rpm_setup = self.build_rpm_setup(rpm_setup_config)
+ 
+         if self.base in ['centos', 'rocky']:
+-            self.conf.distro_python_version = "3.9"
+             self.distro_package_manager = 'dnf'
+             self.base_package_type = 'rpm'
+         elif self.base in ['debian']:
+-            self.conf.distro_python_version = "3.11"
+             self.distro_package_manager = 'apt'
+             self.base_package_type = 'deb'
+         elif self.base in ['ubuntu']:
+-            self.conf.distro_python_version = "3.10"
+             self.distro_package_manager = 'apt'
+             self.base_package_type = 'deb'
+-        else:
+-            # Assume worst
+-            self.conf.distro_python_version = "3.8"
+ 
+         if self.conf.distro_package_manager is not None:
+             self.distro_package_manager = self.conf.distro_package_manager
+@@ -147,7 +141,6 @@
+         self.image_statuses_unbuildable = dict()
+         self.image_statuses_allowed_to_fail = dict()
+         self.maintainer = conf.maintainer
+-        self.distro_python_version = conf.distro_python_version
+ 
+         try:
+             self.engine_client = engine.getEngineClient(self.conf)
+@@ -326,7 +319,6 @@
+                       'kolla_version': kolla_version,
+                       'image_name': image_name,
+                       'users': self.get_users(),
+-                      'distro_python_version': self.distro_python_version,
+                       'distro_package_manager': self.distro_package_manager,
+                       'rpm_setup': self.rpm_setup,
+                       'build_date': build_date,
+diff --git a/kolla/tests/test_build.py b/kolla/tests/test_build.py
+index afbfe00..9b3719c 100644
+--- a/kolla/tests/test_build.py
++++ b/kolla/tests/test_build.py
+@@ -661,24 +661,6 @@
+         kolla = build.KollaWorker(self.conf)
+         self.assertEqual(2, len(kolla.rpm_setup))
+ 
+-    def test_build_distro_python_version_debian(self):
+-        """check distro_python_version for Debian"""
+-        self.conf.set_override('base', 'debian')
+-        kolla = build.KollaWorker(self.conf)
+-        self.assertEqual('3.11', kolla.distro_python_version)
+-
+-    def test_build_distro_python_version_ubuntu(self):
+-        """check distro_python_version for Ubuntu"""
+-        self.conf.set_override('base', 'ubuntu')
+-        kolla = build.KollaWorker(self.conf)
+-        self.assertEqual('3.10', kolla.distro_python_version)
+-
+-    def test_build_distro_python_version_centos(self):
+-        """check distro_python_version for CentOS Stream 9"""
+-        self.conf.set_override('base', 'centos')
+-        kolla = build.KollaWorker(self.conf)
+-        self.assertEqual('3.9', kolla.distro_python_version)
+-
+     def test_build_distro_package_manager(self):
+         """check distro_package_manager conf value is taken"""
+         self.conf.set_override('distro_package_manager', 'foo')
+diff --git a/releasenotes/notes/remove-kolla-base-distro-d0376ae3aafffcc3.yaml b/releasenotes/notes/remove-kolla-base-distro-d0376ae3aafffcc3.yaml
+new file mode 100644
+index 0000000..9a22354
+--- /dev/null
++++ b/releasenotes/notes/remove-kolla-base-distro-d0376ae3aafffcc3.yaml
+@@ -0,0 +1,5 @@
++---
++upgrade:
++  - |
++    Environment variable ``KOLLA_DISTRO_PYTHON_VERSION`` has
++    been dropped.
