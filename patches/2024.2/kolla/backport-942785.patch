@@ -1,0 +1,64 @@
+commit 76385d10fb495352f6c224af74bb298246cce023
+Author: Dr. Jens Harbott <harbott@osism.tech>
+Date:   Wed Feb 26 12:55:26 2025 +0100
+
+    Add mtools package to ironic-conductor image
+    
+    In certain deployments ironic-conductor needs to create floppy images to
+    mount in virtual media. This needs the mtools package installed.
+    
+    Change-Id: I00ccc47f7a993f13e2b2feb3f6a2565dad32b80c
+    (cherry picked from commit d2837d8538a74cbcca391cff1279a2e47264c88d)
+
+diff --git a/docker/ironic/ironic-conductor/Dockerfile.j2 b/docker/ironic/ironic-conductor/Dockerfile.j2
+index 8d3d3c7af..9fafa0b89 100644
+--- a/docker/ironic/ironic-conductor/Dockerfile.j2
++++ b/docker/ironic/ironic-conductor/Dockerfile.j2
+@@ -13,7 +13,9 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+         'e2fsprogs',
+         'fuse',
+         'gdisk',
++        'genisoimage',
+         'ipmitool',
++        'mtools',
+         'openssh-clients',
+         'parted',
+         'psmisc',
+@@ -22,7 +24,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+         'systemd-udev',
+         'util-linux',
+         'xfsprogs',
+-        'genisoimage',
+     ] %}
+     {% if base_arch in ['x86_64'] %}
+         {% set ironic_conductor_packages = ironic_conductor_packages + [
+@@ -35,7 +36,10 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+         'dosfstools',
+         'e2fsprogs',
+         'gdisk',
++        'genisoimage',
+         'ipmitool',
++        'isolinux',
++        'mtools',
+         'openssh-client',
+         'parted',
+         'psmisc',
+@@ -44,8 +48,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+         'shellinabox',
+         'udev',
+         'xfsprogs',
+-        'genisoimage',
+-        'isolinux',
+     ] %}
+ {% endif %}
+ 
+diff --git a/releasenotes/notes/ironic-mtools-2938ccfe951f5dc5.yaml b/releasenotes/notes/ironic-mtools-2938ccfe951f5dc5.yaml
+new file mode 100644
+index 000000000..868bf745a
+--- /dev/null
++++ b/releasenotes/notes/ironic-mtools-2938ccfe951f5dc5.yaml
+@@ -0,0 +1,4 @@
++---
++fixes:
++  - |
++    Fixes ironic-conductor missing mtools package.
