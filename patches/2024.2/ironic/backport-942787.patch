@@ -1,0 +1,138 @@
+commit fb9333b5a182c1d2a916d65cfbbf17d4d7e5c431
+Author: Dr. Jens Harbott <harbott@osism.tech>
+Date:   Wed Feb 26 13:14:46 2025 +0100
+
+    Make floppy images more floppy
+    
+    Some vendors insist that floppy images need to be exactly 1440 KiB in
+    size and have a suffix of ".img". Let's adapt to this and assume that
+    this doesn't break other vendors.
+    
+    Closes-Bug: 2100276
+    Change-Id: I5be6380e8c8c3eac5bea1c189b205b05a9fae625
+    (cherry picked from commit 56dbf38ed8f200ff91d58559962d9265dff9ee83)
+
+diff --git a/ironic/drivers/modules/image_utils.py b/ironic/drivers/modules/image_utils.py
+index c74d6ccc8..2dde428c3 100644
+--- a/ironic/drivers/modules/image_utils.py
++++ b/ironic/drivers/modules/image_utils.py
+@@ -208,7 +208,7 @@ def prepare_floppy_image(task, params=None):
+     :raises: SwiftOperationError, if any operation with Swift fails.
+     :returns: image URL for the floppy image.
+     """
+-    object_name = _get_name(task.node, prefix='image')
++    object_name = _get_name(task.node, prefix='image', suffix='.img')
+     params = override_api_url(params)
+ 
+     LOG.debug("Trying to create floppy image for node "
+@@ -218,7 +218,8 @@ def prepare_floppy_image(task, params=None):
+             dir=CONF.tempdir, suffix='.img') as vfat_image_tmpfile_obj:
+ 
+         vfat_image_tmpfile = vfat_image_tmpfile_obj.name
+-        images.create_vfat_image(vfat_image_tmpfile, parameters=params)
++        images.create_vfat_image(vfat_image_tmpfile, fs_size_kib=1440,
++                                 parameters=params)
+ 
+         img_handler = ImageHandler(task.node.driver)
+         node_http_url = task.node.driver_info.get("external_http_url")
+@@ -239,7 +240,8 @@ def cleanup_floppy_image(task):
+ 
+     :param task: an ironic node object.
+     """
+-    ImageHandler.unpublish_image_for_node(task.node, prefix='image')
++    ImageHandler.unpublish_image_for_node(task.node, prefix='image',
++                                          suffix='.img')
+ 
+ 
+ def prepare_configdrive_image(task, content):
+diff --git a/ironic/tests/unit/drivers/modules/test_image_utils.py b/ironic/tests/unit/drivers/modules/test_image_utils.py
+index ee0ebb519..217ebf229 100644
+--- a/ironic/tests/unit/drivers/modules/test_image_utils.py
++++ b/ironic/tests/unit/drivers/modules/test_image_utils.py
+@@ -122,7 +122,7 @@ class RedfishImageUtilsTestCase(db_base.DbTestCase):
+                                   shared=True) as task:
+             image_utils.cleanup_floppy_image(task)
+ 
+-            object_name = 'image-%s' % task.node.uuid
++            object_name = 'image-%s.img' % task.node.uuid
+ 
+             mock_unpublish.assert_called_once_with(mock.ANY, object_name)
+ 
+@@ -139,13 +139,13 @@ class RedfishImageUtilsTestCase(db_base.DbTestCase):
+ 
+             url = image_utils.prepare_floppy_image(task)
+ 
+-            object_name = 'image-%s' % task.node.uuid
++            object_name = 'image-%s.img' % task.node.uuid
+ 
+             mock_publish_image.assert_called_once_with(mock.ANY, mock.ANY,
+                                                        object_name, None)
+ 
+             mock_create_vfat_image.assert_called_once_with(
+-                mock.ANY, parameters=None)
++                mock.ANY, fs_size_kib=1440, parameters=None)
+ 
+             self.assertEqual(expected_url, url)
+ 
+@@ -163,13 +163,14 @@ class RedfishImageUtilsTestCase(db_base.DbTestCase):
+ 
+             url = image_utils.prepare_floppy_image(task)
+ 
+-            object_name = 'image-%s' % task.node.uuid
++            object_name = 'image-%s.img' % task.node.uuid
+ 
+             mock_publish_image.assert_called_once_with(mock.ANY, mock.ANY,
+                                                        object_name, None)
+ 
+             mock_create_vfat_image.assert_called_once_with(
+-                mock.ANY, parameters={"ipa-api-url": "http://callback"})
++                mock.ANY, fs_size_kib=1440,
++                parameters={"ipa-api-url": "http://callback"})
+ 
+             self.assertEqual(expected_url, url)
+ 
+@@ -189,13 +190,14 @@ class RedfishImageUtilsTestCase(db_base.DbTestCase):
+ 
+             url = image_utils.prepare_floppy_image(task)
+ 
+-            object_name = 'image-%s' % task.node.uuid
++            object_name = 'image-%s.img' % task.node.uuid
+ 
+             mock_publish_image.assert_called_once_with(mock.ANY, mock.ANY,
+                                                        object_name, None)
+ 
+             mock_create_vfat_image.assert_called_once_with(
+-                mock.ANY, parameters={"ipa-api-url": "http://callback"})
++                mock.ANY, fs_size_kib=1440,
++                parameters={"ipa-api-url": "http://callback"})
+ 
+             self.assertEqual(expected_url, url)
+ 
+@@ -218,13 +220,14 @@ class RedfishImageUtilsTestCase(db_base.DbTestCase):
+ 
+             url = image_utils.prepare_floppy_image(task)
+ 
+-            object_name = 'image-%s' % task.node.uuid
++            object_name = 'image-%s.img' % task.node.uuid
+ 
+             mock_publish_image.assert_called_once_with(
+                 mock.ANY, mock.ANY, object_name, override_url)
+ 
+             mock_create_vfat_image.assert_called_once_with(
+-                mock.ANY, parameters={"ipa-api-url": "http://callback"})
++                mock.ANY, fs_size_kib=1440,
++                parameters={"ipa-api-url": "http://callback"})
+ 
+             self.assertEqual(expected_url, url)
+ 
+diff --git a/releasenotes/notes/floppy-image-quirks-32e14d32a37b0742.yaml b/releasenotes/notes/floppy-image-quirks-32e14d32a37b0742.yaml
+new file mode 100644
+index 000000000..f49fd25cd
+--- /dev/null
++++ b/releasenotes/notes/floppy-image-quirks-32e14d32a37b0742.yaml
+@@ -0,0 +1,5 @@
++---
++fixes:
++  - |
++    Some vendors insist that floppy images must be 1440 KiB in size and
++    that the file name ends with ``.img``. Make it so.
