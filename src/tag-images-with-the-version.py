@@ -197,17 +197,17 @@ for image in client.images.list(filters=FILTERS):
                 if IS_RELEASE == "True":
                     target_tag = target_tag.replace("/kolla/", "/kolla/release/")
 
-                logger.info(
-                    f"Adding org.opencontainers.image.version='{target_version}' label to {tag}"
-                )
-                with tempfile.NamedTemporaryFile() as fp:
-                    fp.write(f"FROM {tag}\n".encode())
-                    fp.write(
-                        f"LABEL org.opencontainers.image.version='{target_version}'\n".encode()
-                    )
-                    fp.seek(0)
-
-                    client.images.build(fileobj=fp, tag=target_tag)
+                # logger.info(
+                #     f"Adding org.opencontainers.image.version='{target_version}' label to {tag}"
+                # )
+                # with tempfile.NamedTemporaryFile() as fp:
+                #     fp.write(f"FROM {tag}\n".encode())
+                #     fp.write(
+                #         f"LABEL org.opencontainers.image.version='{target_version}'\n".encode()
+                #     )
+                #     fp.seek(0)
+                #
+                #     client.images.build(fileobj=fp, tag=target_tag)
 
                 logger.info(f"Remove old image {tag}")
                 subprocess.run(["docker", "rmi", "-f", tag])
