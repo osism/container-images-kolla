@@ -34,7 +34,7 @@ if [[ ! -e $RELEASE_REPOSITORY_PATH ]]; then
     git clone $RELEASE_REPOSITORY $RELEASE_REPOSITORY_PATH
 fi
 
-if [[ ! -e release/$VERSION/base.yml ]]; then
+if [[ ! -e release/$VERSION/openstack.yml ]]; then
     echo "release $VERSION does not exist"
     exit 1
 fi
