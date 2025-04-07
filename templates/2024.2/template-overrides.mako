@@ -84,7 +84,7 @@ RUN curl -o /tmp/kolla-operations.tar.gz https://github.com/osism/kolla-operatio
 {% endblock %}
 
 {% block ovs_install %}
-COPY --from=osism.harbor.regio.digital/packages/ovs-debian-bookworm:v3.3.3 /*.deb /tmp/packages/
+COPY --from=osism.harbor.regio.digital/packages/ovs-debian-bookworm:v3.4.2 /*.deb /tmp/packages/
 RUN apt-get update ${"\\"}
     && apt-get -y install --no-install-recommends ${"\\"}
         python3-netifaces ${"\\"}
