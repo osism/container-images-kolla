@@ -14,11 +14,9 @@ Test cases relying on distro_python_version were also cleaned up.
 Change-Id: I891749598247a5e951ed4a873b16acfd0566f59c
 ---
 
-diff --git a/docker/base/Dockerfile.j2 b/docker/base/Dockerfile.j2
-index d220eba..b3662f8 100644
 --- a/docker/base/Dockerfile.j2
 +++ b/docker/base/Dockerfile.j2
-@@ -23,7 +23,6 @@
+@@ -23,7 +23,6 @@ LABEL kolla_version="{{ kolla_version }}"
  {% block base_header %}{% endblock %}
  
  ENV KOLLA_BASE_DISTRO={{ base_distro }} \
@@ -26,11 +24,9 @@ index d220eba..b3662f8 100644
      KOLLA_BASE_ARCH={{ base_arch }}
  
  
-diff --git a/docker/horizon/Dockerfile.j2 b/docker/horizon/Dockerfile.j2
-index cec72a1..d9d6b32 100644
 --- a/docker/horizon/Dockerfile.j2
 +++ b/docker/horizon/Dockerfile.j2
-@@ -66,7 +66,7 @@
+@@ -66,7 +66,7 @@ RUN ln -s horizon-source/* horizon \
      && if [ "$(ls /plugins)" ]; then \
             {{ macros.install_pip(horizon_plugins_pip_packages) }}; \
         fi \
@@ -39,11 +35,9 @@ index cec72a1..d9d6b32 100644
             (cd ${locale%/*} && /var/lib/kolla/venv/bin/django-admin compilemessages) \
         done \
      && chmod 644 /usr/local/bin/kolla_extend_start
-diff --git a/docker/horizon/extend_start.sh b/docker/horizon/extend_start.sh
-index 5a71d6b..63a4018 100644
 --- a/docker/horizon/extend_start.sh
 +++ b/docker/horizon/extend_start.sh
-@@ -5,7 +5,7 @@
+@@ -5,7 +5,7 @@ set -o errexit
  FORCE_GENERATE="${FORCE_GENERATE:-no}"
  HASH_PATH=/var/lib/kolla/.settings.md5sum.txt
  
@@ -52,11 +46,9 @@ index 5a71d6b..63a4018 100644
  
  MANAGE_PY="/var/lib/kolla/venv/bin/python /var/lib/kolla/venv/bin/manage.py"
  
-diff --git a/docker/kolla-toolbox/Dockerfile.j2 b/docker/kolla-toolbox/Dockerfile.j2
-index 7cdc760..7a60674 100644
 --- a/docker/kolla-toolbox/Dockerfile.j2
 +++ b/docker/kolla-toolbox/Dockerfile.j2
-@@ -6,10 +6,7 @@
+@@ -6,10 +6,7 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
  {% block kolla_toolbox_header %}{% endblock %}
  
  {% set venv_path='/opt/ansible' %}
@@ -68,7 +60,7 @@ index 7cdc760..7a60674 100644
  
  {% import "macros.j2" as macros with context %}
  
-@@ -63,11 +60,32 @@
+@@ -63,11 +60,32 @@ COPY apt_preferences_rabbitmq.{{ base_distro }} /etc/apt/preferences.d/rabbitmq
  {% endif %}
  {{ macros.install_packages(kolla_toolbox_packages | customizable("packages")) }}
  
@@ -102,7 +94,7 @@ index 7cdc760..7a60674 100644
  {% endblock %}
  
  ENV PATH {{ venv_path }}/bin:$PATH
-@@ -86,8 +104,8 @@
+@@ -86,8 +104,8 @@ ENV PATH {{ venv_path }}/bin:$PATH
          'pyudev',
      ] %}
  
@@ -113,11 +105,9 @@ index 7cdc760..7a60674 100644
      && mkdir -p /etc/ansible /usr/share/ansible \
      && echo 'localhost ansible_connection=local ansible_python_interpreter={{ venv_path }}/bin/python' > /etc/ansible/hosts \
      && sed -i 's|  "identity_api_version": "2.0",|  "identity_api_version": "3",|' {{ os_client_config }}
-diff --git a/docker/openstack-base/Dockerfile.j2 b/docker/openstack-base/Dockerfile.j2
-index 1df4321..f6aebd6 100644
 --- a/docker/openstack-base/Dockerfile.j2
 +++ b/docker/openstack-base/Dockerfile.j2
-@@ -195,7 +195,9 @@
+@@ -195,7 +195,9 @@ RUN ln -s openstack-base-source/* /requirements \
  #}
      && {{ macros.upper_constraints_remove("ovs") }} \
      && mkdir -p /var/lib/kolla \
@@ -128,8 +118,6 @@ index 1df4321..f6aebd6 100644
  
  {# Block used for overriding global version constraints.
  
-diff --git a/docker/skyline/skyline-apiserver/extend_start.sh b/docker/skyline/skyline-apiserver/extend_start.sh
-index e762106..e180293 100644
 --- a/docker/skyline/skyline-apiserver/extend_start.sh
 +++ b/docker/skyline/skyline-apiserver/extend_start.sh
 @@ -3,7 +3,7 @@
@@ -141,11 +129,9 @@ index e762106..e180293 100644
      pushd ${SITE_PACKAGES}/skyline_apiserver/db/alembic
      alembic upgrade head
      popd
-diff --git a/kolla/image/kolla_worker.py b/kolla/image/kolla_worker.py
-index b959ec7..a464d21 100644
 --- a/kolla/image/kolla_worker.py
 +++ b/kolla/image/kolla_worker.py
-@@ -114,20 +114,14 @@
+@@ -114,23 +114,14 @@ class KollaWorker(object):
          self.rpm_setup = self.build_rpm_setup(rpm_setup_config)
  
          if self.base in ['centos', 'rocky']:
@@ -157,7 +143,10 @@ index b959ec7..a464d21 100644
              self.distro_package_manager = 'apt'
              self.base_package_type = 'deb'
          elif self.base in ['ubuntu']:
--            self.conf.distro_python_version = "3.10"
+-            if self.base_tag.startswith(('24.04', 'noble')):
+-                self.conf.distro_python_version = "3.12"
+-            else:
+-                self.conf.distro_python_version = "3.10"
              self.distro_package_manager = 'apt'
              self.base_package_type = 'deb'
 -        else:
@@ -166,7 +155,7 @@ index b959ec7..a464d21 100644
  
          if self.conf.distro_package_manager is not None:
              self.distro_package_manager = self.conf.distro_package_manager
-@@ -147,7 +141,6 @@
+@@ -150,7 +141,6 @@ class KollaWorker(object):
          self.image_statuses_unbuildable = dict()
          self.image_statuses_allowed_to_fail = dict()
          self.maintainer = conf.maintainer
@@ -174,7 +163,7 @@ index b959ec7..a464d21 100644
  
          try:
              self.engine_client = engine.getEngineClient(self.conf)
-@@ -326,7 +319,6 @@
+@@ -329,7 +319,6 @@ class KollaWorker(object):
                        'kolla_version': kolla_version,
                        'image_name': image_name,
                        'users': self.get_users(),
@@ -182,11 +171,9 @@ index b959ec7..a464d21 100644
                        'distro_package_manager': self.distro_package_manager,
                        'rpm_setup': self.rpm_setup,
                        'build_date': build_date,
-diff --git a/kolla/tests/test_build.py b/kolla/tests/test_build.py
-index afbfe00..9b3719c 100644
 --- a/kolla/tests/test_build.py
 +++ b/kolla/tests/test_build.py
-@@ -661,24 +661,6 @@
+@@ -661,24 +661,6 @@ class KollaWorkerTest(base.TestCase):
          kolla = build.KollaWorker(self.conf)
          self.assertEqual(2, len(kolla.rpm_setup))
  
@@ -211,14 +198,3 @@ index afbfe00..9b3719c 100644
      def test_build_distro_package_manager(self):
          """check distro_package_manager conf value is taken"""
          self.conf.set_override('distro_package_manager', 'foo')
-diff --git a/releasenotes/notes/remove-kolla-base-distro-d0376ae3aafffcc3.yaml b/releasenotes/notes/remove-kolla-base-distro-d0376ae3aafffcc3.yaml
-new file mode 100644
-index 0000000..9a22354
---- /dev/null
-+++ b/releasenotes/notes/remove-kolla-base-distro-d0376ae3aafffcc3.yaml
-@@ -0,0 +1,5 @@
-+---
-+upgrade:
-+  - |
-+    Environment variable ``KOLLA_DISTRO_PYTHON_VERSION`` has
-+    been dropped.
