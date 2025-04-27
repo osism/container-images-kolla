@@ -14,6 +14,7 @@ DOCKER_PUSH_JOBS=${DOCKER_PUSH_JOBS:-8}
 
 LSTFILE=images.txt
 
+# push base images
 if [[ $BUILD_TYPE == "base" ]]; then
     # push the base image
     while read image; do
