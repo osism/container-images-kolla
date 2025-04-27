@@ -80,11 +80,13 @@ python3 src/tag-images-with-the-version.py
 docker images
 
 if [[ $IS_RELEASE == "True" ]]; then
-    mkdir -p $VERSION
-    cp images.yml $VERSION/openstack.yml
     python3 src/add-image-checksum.py
-    cat $VERSION/openstack.yml
 fi
+
+cat images.yml
+docker build -t $DOCKER_REGISTRY/$DOCKER_NAMESPACE/sbom:$OPENSTACK_VERSION .
+
+echo "$DOCKER_REGISTRY/$DOCKER_NAMESPACE/sbom:$OPENSTACK_VERSION" >> $LSTFILE
 
 # NOTE: The generation of SBOMs requires a lot of time and memory.
 #       Therefore, SBOMs are currently only created for release images.

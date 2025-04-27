@@ -11,7 +11,6 @@ from loguru import logger
 import json
 import yaml
 
-VERSION = os.environ.get("VERSION")
 LIST = os.environ.get("LIST", "openstack")
 
 level = "INFO"
@@ -23,8 +22,7 @@ log_fmt = (
 logger.remove()
 logger.add(sys.stderr, format=log_fmt, level=level, colorize=True)
 
-filename = os.path.join(VERSION, f"{LIST}.yml")
-with open(filename) as fp:
+with open(f"{LIST}.yml") as fp:
     data = yaml.load(fp, Loader=yaml.SafeLoader)
 
 images = data.get("images", {})
@@ -41,5 +39,5 @@ for image in images:
     result = json.loads(stdout.read())
     image["digest"] = result["Digest"]
 
-with open(os.path.join(VERSION, f"{LIST}.yml"), "w+") as fp:
+with open(f"{LIST}.yml", "w+") as fp:
     fp.write(yaml.dump(data))
