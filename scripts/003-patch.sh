@@ -37,7 +37,7 @@ for tarball in $(grep '# tarball' $KOLLA_CONF_FILE | awk '{ print $4 }'); do
     fi
 
     echo Download $tarball
-    wget --quiet $tarball
+    wget --no-verbose $tarball
 
     if [[ $tarball == *"gnocchi"* && ! $filename == *"gnocchi"* ]]; then
         mv $filename gnocchi-$filename
