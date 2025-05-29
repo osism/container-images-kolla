@@ -25,7 +25,7 @@ SOURCE_DOCKER_TAG=build-$BUILD_ID
 
 # NOTE: For builds for a specific release, the OpenStack version is taken from the release repository.
 if [[ $VERSION != "latest" ]]; then
-    OPENSTACK_VERSION=$(grep "openstack_version:" release/$VERSION/openstack.yml | awk -F': ' '{ print $2 }')
+    OPENSTACK_VERSION=$(grep "openstack_version:" release/latest/openstack.yml | awk -F': ' '{ print $2 }')
 fi
 
 . defaults/all.sh
@@ -84,9 +84,13 @@ if [[ $IS_RELEASE == "True" ]]; then
 fi
 
 cat images.yml
-docker build -t $DOCKER_REGISTRY/$DOCKER_NAMESPACE/sbom:$OPENSTACK_VERSION .
-
-echo "$DOCKER_REGISTRY/$DOCKER_NAMESPACE/sbom:$OPENSTACK_VERSION" >> $LSTFILE
+if [[ $VERSION != "latest" ]]; then
+    docker build -t $DOCKER_REGISTRY/$DOCKER_NAMESPACE/sbom:$VERSION .
+    echo "$DOCKER_REGISTRY/$DOCKER_NAMESPACE/sbom:$VERSION" >> $LSTFILE
+else
+    docker build -t $DOCKER_REGISTRY/$DOCKER_NAMESPACE/sbom:$OPENSTACK_VERSION .
+    echo "$DOCKER_REGISTRY/$DOCKER_NAMESPACE/sbom:$OPENSTACK_VERSION" >> $LSTFILE
+fi
 
 # NOTE: The generation of SBOMs requires a lot of time and memory.
 #       Therefore, SBOMs are currently only created for release images.
