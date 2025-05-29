@@ -34,14 +34,10 @@ if [[ ! -e $RELEASE_REPOSITORY_PATH ]]; then
     git clone $RELEASE_REPOSITORY $RELEASE_REPOSITORY_PATH
 fi
 
-if [[ ! -e release/$VERSION/openstack.yml ]]; then
-    echo "release $VERSION does not exist"
-    exit 1
-fi
-
 # NOTE: For builds for a specific release, the OpenStack version is taken from the release repository.
 if [[ $VERSION != "latest" ]]; then
-    OPENSTACK_VERSION=$(grep "openstack_version:" release/$VERSION/openstack.yml | awk -F': ' '{ print $2 }')
+    ( cd $RELEASE_REPOSITORY_PATH || exit; git fetch --all --force; git checkout "kolla-$VERSION" )
+    OPENSTACK_VERSION=$(grep "openstack_version:" release/latest/openstack.yml | awk -F': ' '{ print $2 }')
 fi
 
 # Clone repository
@@ -113,7 +109,7 @@ export KOLLA_VERSION=$(kolla-build --version)
 # Prepare template-overrides.j2
 
 export HASH_DOCKER_IMAGES_KOLLA=$(git rev-parse --short HEAD)
-export HASH_RELEASE=$(cd release; git rev-parse --short HEAD)
+export HASH_RELEASE=$(cd $RELEASE_REPOSITORY_PATH; git rev-parse --short HEAD)
 python3 src/generate-template-overrides-file.py > templates/$OPENSTACK_VERSION/template-overrides.j2
 
 echo DEBUG template-overrides.j2
