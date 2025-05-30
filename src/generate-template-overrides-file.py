@@ -15,7 +15,7 @@ KOLLA_VERSION = os.environ.get("KOLLA_VERSION", "none")
 OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "latest")
 VERSION = os.environ.get("VERSION", "latest")
 
-filename = "release/%s/openstack-%s.yml" % (VERSION, OPENSTACK_VERSION)
+filename = "release/latest/openstack-%s.yml" % OPENSTACK_VERSION
 with open(filename, "rb") as fp:
     versions = yaml.load(fp, Loader=yaml.FullLoader)
 

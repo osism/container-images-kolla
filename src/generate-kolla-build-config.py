@@ -7,7 +7,6 @@ import yaml
 
 IS_RELEASE = os.environ.get("IS_RELEASE", "False")
 OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "latest")
-VERSION = os.environ.get("VERSION", "latest")
 
 KOLLA_BASE = os.environ.get("BASE", "ubuntu")
 KOLLA_BASE_TAG = os.environ.get("BASE_VERSION", "22.04")
@@ -27,7 +26,7 @@ class AttrDict(dict):
 versions = {}
 projects = []
 
-filename = "release/%s/openstack-%s.yml" % (VERSION, OPENSTACK_VERSION)
+filename = "release/latest/openstack-%s.yml" % OPENSTACK_VERSION
 with open(filename, "rb") as fp:
     versions = yaml.load(fp, Loader=yaml.FullLoader)
 
