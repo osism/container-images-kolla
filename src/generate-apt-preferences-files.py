@@ -6,7 +6,6 @@ import jinja2
 import yaml
 
 OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "latest")
-VERSION = os.environ.get("VERSION", "latest")
 
 if OPENSTACK_VERSION in ["2023.2", "2024.1"]:
     TEMPLATE_FILE = "apt_preferences.ubuntu.j2"
@@ -21,7 +20,7 @@ class AttrDict(dict):
         self.__dict__ = self
 
 
-filename = "release/%s/openstack-%s.yml" % (VERSION, OPENSTACK_VERSION)
+filename = "release/latest/openstack-%s.yml" % OPENSTACK_VERSION
 with open(filename, "rb") as fp:
     versions = yaml.load(fp, Loader=yaml.FullLoader)
 
