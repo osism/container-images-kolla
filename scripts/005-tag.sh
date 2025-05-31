@@ -85,8 +85,9 @@ fi
 
 cat images.yml
 if [[ $VERSION != "latest" ]]; then
-    docker build -t $DOCKER_REGISTRY/$DOCKER_NAMESPACE/sbom:$VERSION .
-    echo "$DOCKER_REGISTRY/$DOCKER_NAMESPACE/sbom:$VERSION" >> $LSTFILE
+    sbom_version="${VERSION:1:${#VERSION}-1}"
+    docker build -t $DOCKER_REGISTRY/$DOCKER_NAMESPACE/release/sbom:$sbom_version .
+    echo "$DOCKER_REGISTRY/$DOCKER_NAMESPACE/release/sbom:$sbom_version" >> $LSTFILE
 else
     docker build -t $DOCKER_REGISTRY/$DOCKER_NAMESPACE/sbom:$OPENSTACK_VERSION .
     echo "$DOCKER_REGISTRY/$DOCKER_NAMESPACE/sbom:$OPENSTACK_VERSION" >> $LSTFILE
