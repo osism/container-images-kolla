@@ -57,6 +57,9 @@ if [[ $BUILD_TYPE == "base" ]]; then
         fi
     done
 
+    # The line can be commented out for tests to build keystone images only.
+    KOLLA_IMAGES_BASE=^keystone-base
+
     kolla-build \
       --base-arch $BASE_ARCH \
       --debug \
@@ -67,6 +70,9 @@ if [[ $BUILD_TYPE == "base" ]]; then
       $BUILD_OPTS \
       $KOLLA_IMAGES_BASE 2>&1 | tee kolla-build-$BUILD_ID.log
 else
+    # The line can be commented out for tests to build keystone images only.
+    KOLLA_IMAGES=^keystone
+
     kolla-build \
       --base-arch $BASE_ARCH \
       --debug \
@@ -82,5 +88,18 @@ if grep -q "Failed with status: error" kolla-build-$BUILD_ID.log; then
     echo "ERROR: Not all the required images could be built."
     exit 1
 fi
+
+# List images
+
+docker images
+
+# Cleanup images
+
+export DOCKER_NAMESPACE=${DOCKER_NAMESPACE:-osism}
+export DOCKER_REGISTRY=${DOCKER_REGISTRY:-quay.io}
+
+python3 src/cleanup-images.py
+
+# List images
 
 docker images
