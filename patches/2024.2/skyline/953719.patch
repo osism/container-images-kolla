@@ -1,0 +1,30 @@
+From 9c9061065eb3cf22eb10119c788ffe826b455037 Mon Sep 17 00:00:00 2001
+From: Janaka Wickramasinghe <janaka@ascensionit.com.au>
+Date: Sat, 15 Feb 2025 01:20:48 +0530
+Subject: [PATCH] fix: add TLSv1.2 and TLSv1.3 support for HTTPS upstream endpoints
+
+refer to: https://bugs.launchpad.net/skyline-apiserver/+bug/1951437
+
+When the upstream endpoint uses HTTPS, TLS errors were observed.
+This fix checks if the upstream endpoint is HTTPS and ensures
+TLSv1.2 and TLSv1.3 are enabled in the nginx configuration.
+
+Change-Id: I92178663eb42e727e550ed5e9056dc7414fa1b80
+(cherry picked from commit 95383a941b7b187e9514141609b76dca160fde92)
+---
+
+diff --git a/skyline_apiserver/templates/nginx.conf.j2 b/skyline_apiserver/templates/nginx.conf.j2
+index e48fc59..f41461c 100644
+--- a/skyline_apiserver/templates/nginx.conf.j2
++++ b/skyline_apiserver/templates/nginx.conf.j2
+@@ -118,6 +118,10 @@
+             proxy_set_header X-Forwarded-Proto $scheme;
+             proxy_set_header X-Forwarded-Host $host;
+             proxy_set_header Host {{ endpoint["host"] }};
++        {% if endpoint["url"].startswith('https://') %}
++            proxy_ssl_protocols TLSv1.2 TLSv1.3;
++            proxy_ssl_server_name on;
++        {% endif %}
+         }
+         {% endfor %}
+     }
