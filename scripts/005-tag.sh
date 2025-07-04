@@ -88,6 +88,7 @@ if [[ $VERSION != "latest" ]]; then
     sbom_version="${VERSION:1:${#VERSION}-1}"
     docker build -t $DOCKER_REGISTRY/$DOCKER_NAMESPACE/release/sbom:$sbom_version .
     echo "$DOCKER_REGISTRY/$DOCKER_NAMESPACE/release/sbom:$sbom_version" >> $LSTFILE
+    echo "$DOCKER_REGISTRY/$DOCKER_NAMESPACE/release/sbom:$sbom_version" >> images.lst
 else
     docker build -t $DOCKER_REGISTRY/$DOCKER_NAMESPACE/sbom:$OPENSTACK_VERSION .
     echo "$DOCKER_REGISTRY/$DOCKER_NAMESPACE/sbom:$OPENSTACK_VERSION" >> $LSTFILE
