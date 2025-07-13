@@ -42,3 +42,9 @@ fi
 cat $LSTFILE | grep -v base | \
   parallel --retries 3 --joblog other.log -j$DOCKER_PUSH_JOBS docker push {} ">" /dev/null
 cat other.log
+
+for image in $(cat other.log); do
+    curl -O -L "https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64"
+    chmod +x cosign-linux-amd64
+    ./cosign-linux-amd64 sign --yes --key env://COSIGN_PRIVATE_KEY "$image"
+done
