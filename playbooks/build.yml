@@ -49,6 +49,9 @@
 
           bash scripts/100-push.sh
       changed_when: false
+      environment:
+        COSIGN_PASSWORD: "{{ secret.COSIGN_PASSWORD }}"
+        COSIGN_PRIVATE_KEY: "{{ secret.COSIGN_PRIVATE_KEY }}"
       when:
         - push_images | bool
         - not is_release | default(false) | bool
@@ -65,6 +68,9 @@
 
           bash scripts/110-release.sh
       changed_when: false
+      environment:
+        COSIGN_PASSWORD: "{{ secret.COSIGN_PASSWORD }}"
+        COSIGN_PRIVATE_KEY: "{{ secret.COSIGN_PRIVATE_KEY }}"
       when:
         - push_images | bool
         - is_release | default(false) | bool
