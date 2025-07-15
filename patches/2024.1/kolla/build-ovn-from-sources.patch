@@ -1,5 +1,5 @@
 diff --git a/docker/ovn/ovn-base/Dockerfile.j2 b/docker/ovn/ovn-base/Dockerfile.j2
-index 247eab83a..2f2e4c7a7 100644
+index 247eab83a..9d8a54139 100644
 --- a/docker/ovn/ovn-base/Dockerfile.j2
 +++ b/docker/ovn/ovn-base/Dockerfile.j2
 @@ -5,20 +5,52 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
@@ -70,14 +70,13 @@ index 247eab83a..2f2e4c7a7 100644
  COPY extend_start.sh /usr/local/bin/kolla_extend_start
  
 diff --git a/docker/ovn/ovn-controller/Dockerfile.j2 b/docker/ovn/ovn-controller/Dockerfile.j2
-index ef4d05ddc..78e05ebb0 100644
+index 7af2ccf45..3975b7be3 100644
 --- a/docker/ovn/ovn-controller/Dockerfile.j2
 +++ b/docker/ovn/ovn-controller/Dockerfile.j2
-@@ -4,21 +4,5 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
- {% endblock %}
+@@ -5,21 +5,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
  
  {% block ovn_controller_header %}{% endblock %}
--
+ 
 -{% import "macros.j2" as macros with context %}
 -
 -{% if base_package_type == 'rpm' %}
@@ -93,10 +92,11 @@ index ef4d05ddc..78e05ebb0 100644
 -{% endif %}
 -{{ macros.install_packages(ovn_controller_packages | customizable("packages")) }}
 -
- {% block ovn_controller_footer %}{% endblock %}
- {% block footer %}{% endblock %}
+ COPY extend_start.sh /usr/local/bin/kolla_ovn_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_ovn_extend_start
+ 
 diff --git a/docker/ovn/ovn-nb-db-server/Dockerfile.j2 b/docker/ovn/ovn-nb-db-server/Dockerfile.j2
-index ecc94651b..24838f6e7 100644
+index cc3620a28..c4eec18f8 100644
 --- a/docker/ovn/ovn-nb-db-server/Dockerfile.j2
 +++ b/docker/ovn/ovn-nb-db-server/Dockerfile.j2
 @@ -5,21 +5,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
@@ -120,16 +120,15 @@ index ecc94651b..24838f6e7 100644
 -
  COPY start_nb_db_server.sh /usr/local/bin/start-nb-db-server
  RUN chmod 755 /usr/local/bin/start-nb-db-server
- 
+ COPY extend_start.sh /usr/local/bin/kolla_ovn_extend_start
 diff --git a/docker/ovn/ovn-northd/Dockerfile.j2 b/docker/ovn/ovn-northd/Dockerfile.j2
-index 2c94f2f20..f0f94d380 100644
+index f9c6cdbd6..18a438f6e 100644
 --- a/docker/ovn/ovn-northd/Dockerfile.j2
 +++ b/docker/ovn/ovn-northd/Dockerfile.j2
-@@ -4,21 +4,5 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
- {% endblock %}
+@@ -5,21 +5,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
  
  {% block ovn_northd_header %}{% endblock %}
--
+ 
 -{% import "macros.j2" as macros with context %}
 -
 -{% if base_package_type == 'rpm' %}
@@ -145,10 +144,11 @@ index 2c94f2f20..f0f94d380 100644
 -{% endif %}
 -{{ macros.install_packages(ovn_northd_packages | customizable("packages")) }}
 -
- {% block ovn_northd_footer %}{% endblock %}
- {% block footer %}{% endblock %}
+ COPY extend_start.sh /usr/local/bin/kolla_ovn_extend_start
+ RUN chmod 644 /usr/local/bin/kolla_ovn_extend_start
+ 
 diff --git a/docker/ovn/ovn-sb-db-server/Dockerfile.j2 b/docker/ovn/ovn-sb-db-server/Dockerfile.j2
-index 9acd01fa3..c1f40c0ee 100644
+index b5a6dc22b..55c9f26ef 100644
 --- a/docker/ovn/ovn-sb-db-server/Dockerfile.j2
 +++ b/docker/ovn/ovn-sb-db-server/Dockerfile.j2
 @@ -5,21 +5,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
@@ -172,4 +172,4 @@ index 9acd01fa3..c1f40c0ee 100644
 -
  COPY start_sb_db_server.sh /usr/local/bin/start-sb-db-server
  RUN chmod 755 /usr/local/bin/start-sb-db-server
- 
+ COPY extend_start.sh /usr/local/bin/kolla_ovn_extend_start
