@@ -53,7 +53,10 @@ setini DEFAULT tag $DOCKER_TAG
 setini DEFAULT base $KOLLA_BASE
 setini DEFAULT base_tag $KOLLA_BASE_TAG
 setini DEFAULT install_type $KOLLA_INSTALL_TYPE
-setini openstack-base location https://tarballs.opendev.org/openstack/requirements/requirements-stable-$OPENSTACK_VERSION.tar.gz
+setini openstack-base location tarballs/requirements-stable-$OPENSTACK_VERSION.tar.gz
+sed -i "/\[openstack-base\]/a # tarball = https://tarballs.opendev.org/openstack/requirements/requirements-stable-$OPENSTACK_VERSION.tar.gz" $KOLLA_CONF_FILE
+setini openstack-base type local
+
 
 if [[ -n $DOCKER_REGISTRY ]]; then
     setini DEFAULT registry $DOCKER_REGISTRY
