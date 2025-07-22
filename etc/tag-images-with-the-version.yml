@@ -17,8 +17,10 @@ fluentd: dpkg -s fluent-package
 glance: pip3 show glance
 gnocchi: pip3 show gnocchi
 grafana: dpkg -s grafana
-haproxy: dpkg -s haproxy
+hacluster-corosync: dpkg -s corosync
+hacluster: dpkg -s pacemaker-common
 haproxy-ssh: dpkg -s openssh-server
+haproxy: dpkg -s haproxy
 heat: pip3 show openstack-heat
 horizon: pip3 show horizon
 influxdb: dpkg -s influxdb
@@ -39,6 +41,7 @@ magnum: pip3 show magnum
 manila: pip3 show manila
 mariadb: dpkg -s mariadb-client
 mariadb-clustercheck: dpkg -s mariadb-client
+masakari: pip3 show masakari
 memcached: dpkg -s memcached
 mistral: pip3 show mistral
 monasca: pip3 show monasca
