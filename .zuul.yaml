@@ -196,11 +196,6 @@
         - container-images-kolla-build-2024.1
         - container-images-kolla-build-2024.2
         # - container-images-kolla-build-2024.2-aarch64
-    gate:
-      jobs:
-        - flake8
-        - python-black
-        - yamllint
     periodic-daily:
       jobs:
         - flake8
