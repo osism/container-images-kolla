@@ -5,8 +5,10 @@ import sys
 
 import yaml
 
-OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "latest")
 BUILD_TYPE = os.environ.get("BUILD_TYPE", "all")
+IS_RELEASE = os.environ.get("IS_RELEASE", "False")
+OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "latest")
+VERSION = os.environ.get("VERSION", "latest")
 
 OPENSTACK_CORE_PROJECTS = [
     "cinder",
@@ -49,9 +51,24 @@ else:
     print("BUILD_TYPE %s not supported" % BUILD_TYPE)
     sys.exit(1)
 
+if "openstack_projects_filter" in versions:
+    openstack_projects_filter = versions["openstack_projects_filter"]
+else:
+    openstack_projects_filter = []
+
+if IS_RELEASE == "True":
+    next_filename = f"release/next/kolla-{VERSION}.yml"
+    if os.path.exists(next_filename):
+        with open(next_filename, "rb") as fp:
+            next_overwrites = yaml.load(fp, Loader=yaml.FullLoader)
+            if "openstack_projects_filter" in next_overwrites:
+                openstack_projects_filter.extend(
+                    next_overwrites["openstack_projects_filter"]
+                )
+
 # This allows us to only rebuild some images for minor releases and
 # not to rebuild all images.
-if "openstack_projects_filter" in versions:
+if openstack_projects_filter:
     for project in all_projects:
         if (
             "vpnaas" not in project

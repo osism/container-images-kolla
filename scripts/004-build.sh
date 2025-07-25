@@ -17,6 +17,7 @@ set -x
 BASE_ARCH=${BASE_ARCH:-x86_64}
 BUILD_ID=${BUILD_ID:-$(date +%Y%m%d)}
 BUILD_TYPE=${BUILD_TYPE:-all}
+IS_RELEASE=${IS_RELEASE:-False}
 OPENSTACK_VERSION=${OPENSTACK_VERSION:-latest}
 VERSION=${VERSION:-latest}
 
@@ -30,8 +31,9 @@ fi
 . defaults/all.sh
 . defaults/$OPENSTACK_VERSION.sh
 
-export VERSION
+export IS_RELEASE
 export OPENSTACK_VERSION
+export VERSION
 
 # For ARM64 we currently only support the images that are required on the compute plane.
 if [[ "$BASE_ARCH" == "aarch64" ]]; then
