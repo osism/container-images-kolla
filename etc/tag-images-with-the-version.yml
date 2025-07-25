@@ -21,7 +21,6 @@ hacluster-corosync: dpkg -s corosync
 hacluster: dpkg -s pacemaker-common
 haproxy-ssh: dpkg -s openssh-server
 haproxy: dpkg -s haproxy
-heat: pip3 show openstack-heat
 horizon: pip3 show horizon
 influxdb: dpkg -s influxdb
 ironic: pip3 show ironic

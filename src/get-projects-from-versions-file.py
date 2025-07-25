@@ -12,7 +12,6 @@ OPENSTACK_CORE_PROJECTS = [
     "cinder",
     "designate",
     "glance",
-    "heat",
     "horizon",
     "keystone",
     "neutron",

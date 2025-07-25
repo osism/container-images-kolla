@@ -248,7 +248,6 @@ SBOM_IMAGE_TO_VERSION = {
     "grafana": "grafana",
     "haproxy": "haproxy",
     "haproxy_ssh": "haproxy-ssh",
-    "heat": "heat-api",
     "horizon": "horizon",
     "influxdb": "influxdb",
     "ironic": "ironic-api",
