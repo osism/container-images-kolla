@@ -1,0 +1,57 @@
+From 6bad36142c8652a7304abfc19472fd488561afb0 Mon Sep 17 00:00:00 2001
+From: Maximilian Stinsky <maximilian.stinsky-damke@wiit.cloud>
+Date: Wed, 17 Jul 2024 09:37:05 +0200
+Subject: [PATCH] Add Dockerfile for neutron-ovn-vpn-agent
+
+This patch adds support for the standalone neutron-ovn-vpn-agent.
+The new agent was added in the 2024.1 and is required for vpnaas
+when using ovn.
+
+[1] https://review.opendev.org/c/openstack/neutron-vpnaas/+/765353
+
+Related-Bug: #2048392
+Change-Id: I552b9fbc8fa0b49d3e0e3212dd11962b02837b9f
+---
+
+diff --git a/docker/neutron/neutron-ovn-vpn-agent/Dockerfile.j2 b/docker/neutron/neutron-ovn-vpn-agent/Dockerfile.j2
+new file mode 100644
+index 0000000..9465005
+--- /dev/null
++++ b/docker/neutron/neutron-ovn-vpn-agent/Dockerfile.j2
+@@ -0,0 +1,26 @@
++FROM {{ namespace }}/{{ image_prefix }}neutron-base:{{ tag }}
++{% block labels %}
++LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build_date }}"
++{% endblock %}
++
++{% block neutron_ovn_vpn_agent_header %}{% endblock %}
++
++{% import "macros.j2" as macros with context %}
++
++{% if base_package_type == 'rpm' %}
++   {% set neutron_ovn_vpn_agent_packages = [
++      'libreswan'
++   ] %}
++{% elif base_package_type == 'deb' %}
++   {% set neutron_ovn_vpn_agent_packages = [
++      'strongswan'
++   ] %}
++{% endif %}
++
++
++{{ macros.install_packages(neutron_ovn_vpn_agent_packages | customizable("packages")) }}
++
++{% block neutron_ovn_vpn_agent_footer %}{% endblock %}
++{% block footer %}{% endblock %}
++
++USER neutron
+diff --git a/releasenotes/notes/releasenotes/notes/neutron-ovn-vpn-agent-kolla-image-979df04014ed9440.yaml b/releasenotes/notes/releasenotes/notes/neutron-ovn-vpn-agent-kolla-image-979df04014ed9440.yaml
+new file mode 100644
+index 0000000..fa67df9
+--- /dev/null
++++ b/releasenotes/notes/releasenotes/notes/neutron-ovn-vpn-agent-kolla-image-979df04014ed9440.yaml
+@@ -0,0 +1,4 @@
++---
++features:
++  - |
++    Added the neutron ovn vpn agent container image (``neutron-ovn-vpn-agent``)

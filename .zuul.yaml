@@ -66,6 +66,10 @@
     max: 1
 
 - semaphore:
+    name: semaphore-container-images-kolla-push-2025.1
+    max: 1
+
+- semaphore:
     name: semaphore-container-images-kolla-push-2024.2-aarch64
     max: 1
 
@@ -126,6 +130,20 @@
       push_images: false
 
 - job:
+    name: container-images-kolla-patch-2025.1
+    parent: container-images-kolla-patch
+    vars:
+      version_openstack: "2025.1"
+      push_images: false
+
+- job:
+    name: container-images-kolla-build-2025.1
+    parent: container-images-kolla-build
+    vars:
+      version_openstack: "2025.1"
+      push_images: false
+
+- job:
     name: container-images-kolla-build-2024.2-aarch64
     parent: container-images-kolla-build-aarch64
     vars:
@@ -152,6 +170,19 @@
       - name: semaphore-container-images-kolla-push-2024.2
     vars:
       version_openstack: "2024.2"
+      push_images: true
+    secrets:
+      - name: secret
+        secret: SECRET_CONTAINER_IMAGES_KOLLA
+        pass-to-parent: true
+
+- job:
+    name: container-images-kolla-push-2025.1
+    parent: container-images-kolla-build
+    semaphores:
+      - name: semaphore-container-images-kolla-push-2025.1
+    vars:
+      version_openstack: "2025.1"
       push_images: true
     secrets:
       - name: secret
@@ -191,10 +222,12 @@
         - yamllint
         - container-images-kolla-patch-2024.1
         - container-images-kolla-patch-2024.2
+        - container-images-kolla-patch-2025.1
     label:
       jobs:
         - container-images-kolla-build-2024.1
         - container-images-kolla-build-2024.2
+        - container-images-kolla-build-2025.1
         # - container-images-kolla-build-2024.2-aarch64
     periodic-daily:
       jobs:
@@ -205,12 +238,15 @@
       jobs:
         - container-images-kolla-push-2024.1
         - container-images-kolla-push-2024.2
+        - container-images-kolla-push-2025.1
         # - container-images-kolla-push-2024.2-aarch64
     post:
       jobs:
         - container-images-kolla-push-2024.1:
             branches: main
         - container-images-kolla-push-2024.2:
+            branches: main
+        - container-images-kolla-push-2025.1:
             branches: main
         # - container-images-kolla-push-2024.2-aarch64:
         #     branches: main
