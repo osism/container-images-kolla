@@ -14,6 +14,10 @@
 {% block nova_libvirt_footer %}
 RUN chgrp tss /var/lib/swtpm-localca ${"\\"}
     && chmod g+w /var/lib/swtpm-localca
+## The `efi-virtio.rom` used to be 512kb in 2024.1 and shrunk to 256kb in 2024.2.
+## A change in size causes an error in libvirt/qemu and breaks live migration, therefore we inflate it with zeros to match the expected size.
+## https://github.com/osism/issues/issues/1289
+RUN truncate --size=524288 /usr/lib/ipxe/qemu/efi-virtio.rom
 {% endblock %}
 
 {% block horizon_header %}
