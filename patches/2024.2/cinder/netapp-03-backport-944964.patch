@@ -1,0 +1,62 @@
+commit 1cd028e85e134bb181a4f8534c72f2d6d0450bd6
+Author: jayaanan <jayaanand.borra@netapp.com>
+Date:   Wed Mar 19 01:26:19 2025 -0400
+
+    NetApp NVMe namespace support for in-use expansion
+    
+    This patch enables in-use expansion of NetApp NVMe namespaces, allowing
+    volumes to be resized while attached to running instances without
+    requiring detachment as this feature is supported by NetApp backend.
+    
+    Closes-bug: #2120279
+    Change-Id: If7de1dd46798b82211be10708f8eb1d175eafb75
+    Signed-off-by: jayaanan <jayaanand.borra@netapp.com>
+    (cherry picked from commit 1549d536d1fe106964dcf188741ec7ef292b5cdc)
+    (cherry picked from commit 335e3ae99deb5efbf769653b6ee1707b23129402)
+
+diff --git a/cinder/tests/unit/volume/drivers/netapp/dataontap/test_nvme_library.py b/cinder/tests/unit/volume/drivers/netapp/dataontap/test_nvme_library.py
+index ce45d4e22d..b6a340227c 100644
+--- a/cinder/tests/unit/volume/drivers/netapp/dataontap/test_nvme_library.py
++++ b/cinder/tests/unit/volume/drivers/netapp/dataontap/test_nvme_library.py
+@@ -618,7 +618,7 @@ class NetAppNVMeStorageLibraryTestCase(test.TestCase):
+             'netapp_aggregate': 'aggr1',
+             'netapp_raid_type': 'raid_dp',
+             'netapp_disk_type': 'SSD',
+-            'online_extend_support': False,
++            'online_extend_support': True,
+             'netapp_is_flexgroup': 'false',
+         }]
+         if report_provisioned_capacity:
+diff --git a/cinder/volume/drivers/netapp/dataontap/nvme_library.py b/cinder/volume/drivers/netapp/dataontap/nvme_library.py
+index fe13b209e2..39f91431c9 100644
+--- a/cinder/volume/drivers/netapp/dataontap/nvme_library.py
++++ b/cinder/volume/drivers/netapp/dataontap/nvme_library.py
+@@ -515,7 +515,7 @@ class NetAppNVMeStorageLibrary(
+             # Add driver capabilities and config info
+             pool['QoS_support'] = False
+             pool['multiattach'] = True
+-            pool['online_extend_support'] = False
++            pool['online_extend_support'] = True
+             pool['consistencygroup_support'] = True
+             pool['consistent_group_snapshot_enabled'] = True
+             pool['reserved_percentage'] = self.reserved_percentage
+diff --git a/releasenotes/notes/netapp-nvme-in-use-expansion-d11f03fb64050145.yaml b/releasenotes/notes/netapp-nvme-in-use-expansion-d11f03fb64050145.yaml
+new file mode 100644
+index 0000000000..dfb519ad0b
+--- /dev/null
++++ b/releasenotes/notes/netapp-nvme-in-use-expansion-d11f03fb64050145.yaml
+@@ -0,0 +1,14 @@
++---
++features:
++  - |
++    **NetApp NVMe namespace support for in-use expansion**
++
++    Added support for in-use expansion of NetApp NVMe namespaces, allowing
++    volumes to be resized while attached to running instances without
++    requiring detachment. This feature enables seamless volume expansion
++    for NVMe-backed volumes in NetApp ONTAP environments.
++
++    Key capabilities:
++
++    * **In-use expansion**: Volumes can be expanded while attached to running instances
++    * **NVMe namespace compatibility**: Full support for NetApp NVMe namespace expansion
