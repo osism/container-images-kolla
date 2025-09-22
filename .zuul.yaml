@@ -220,9 +220,7 @@
         - flake8
         - python-black
         - yamllint
-        - container-images-kolla-patch-2024.1
-        - container-images-kolla-patch-2024.2
-        - container-images-kolla-patch-2025.1
+        - container-images-kolla-build-2025.1
     label:
       jobs:
         - container-images-kolla-build-2024.1

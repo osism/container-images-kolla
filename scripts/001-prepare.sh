@@ -55,6 +55,10 @@ fi
 export HASH_KOLLA=$(git rev-parse --short HEAD)
 popd > /dev/null
 
+# Do not build rabbitmq-4-1 image
+
+rm -rf $PROJECT_REPOSITORY_PATH/docker/rabbitmq/rabbitmq-4-1
+
 # Apply patches
 
 for patch in $(find patches/kolla-build/$OPENSTACK_VERSION -type f -name '*.patch'); do
