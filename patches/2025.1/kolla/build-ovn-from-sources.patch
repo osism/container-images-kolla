@@ -1,13 +1,9 @@
-diff --git a/docker/ovn/ovn-base/Dockerfile.j2 b/docker/ovn/ovn-base/Dockerfile.j2
-index 247eab83a..9d8a54139 100644
 --- a/docker/ovn/ovn-base/Dockerfile.j2
 +++ b/docker/ovn/ovn-base/Dockerfile.j2
-@@ -5,20 +5,52 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+@@ -7,18 +7,52 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
  
- {% block ovn_base_header %}{% endblock %}
+ {% import "macros.j2" as macros with context %}
  
--{% import "macros.j2" as macros with context %}
--
 -{% if base_package_type == 'rpm' %}
 -    {% set ovn_base_packages = [
 -        'openvswitch-ovn-common',
@@ -39,7 +35,7 @@ index 247eab83a..9d8a54139 100644
 +        jq \
 +        libjemalloc2 \
 +        procps \
-+    && git clone -b v24.09.3 --depth 1 https://github.com/ovn-org/ovn.git /ovn \
++    && git clone -b v25.03.1 --depth 1 https://github.com/ovn-org/ovn.git /ovn \
 +    && cd /ovn \
 +    && ./boot.sh \
 +    && git submodule update --init --depth 1 \
@@ -69,16 +65,12 @@ index 247eab83a..9d8a54139 100644
  
  COPY extend_start.sh /usr/local/bin/kolla_extend_start
  
-diff --git a/docker/ovn/ovn-controller/Dockerfile.j2 b/docker/ovn/ovn-controller/Dockerfile.j2
-index 7af2ccf45..3975b7be3 100644
 --- a/docker/ovn/ovn-controller/Dockerfile.j2
 +++ b/docker/ovn/ovn-controller/Dockerfile.j2
-@@ -5,21 +5,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+@@ -7,19 +7,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
  
- {% block ovn_controller_header %}{% endblock %}
+ {% import "macros.j2" as macros with context %}
  
--{% import "macros.j2" as macros with context %}
--
 -{% if base_package_type == 'rpm' %}
 -    {% set ovn_controller_packages = [
 -        'openvswitch-ovn-host'
@@ -95,16 +87,12 @@ index 7af2ccf45..3975b7be3 100644
  COPY extend_start.sh /usr/local/bin/kolla_ovn_extend_start
  RUN chmod 644 /usr/local/bin/kolla_ovn_extend_start
  
-diff --git a/docker/ovn/ovn-nb-db-server/Dockerfile.j2 b/docker/ovn/ovn-nb-db-server/Dockerfile.j2
-index cc3620a28..c4eec18f8 100644
 --- a/docker/ovn/ovn-nb-db-server/Dockerfile.j2
 +++ b/docker/ovn/ovn-nb-db-server/Dockerfile.j2
-@@ -5,21 +5,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+@@ -7,19 +7,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
  
- {% block ovn_nb_db_server_header %}{% endblock %}
+ {% import "macros.j2" as macros with context %}
  
--{% import "macros.j2" as macros with context %}
--
 -{% if base_package_type == 'rpm' %}
 -    {% set ovn_nb_db_server_packages = [
 -        'openvswitch-ovn-central',
@@ -121,16 +109,12 @@ index cc3620a28..c4eec18f8 100644
  COPY start_nb_db_server.sh /usr/local/bin/start-nb-db-server
  RUN chmod 755 /usr/local/bin/start-nb-db-server
  COPY extend_start.sh /usr/local/bin/kolla_ovn_extend_start
-diff --git a/docker/ovn/ovn-northd/Dockerfile.j2 b/docker/ovn/ovn-northd/Dockerfile.j2
-index f9c6cdbd6..18a438f6e 100644
 --- a/docker/ovn/ovn-northd/Dockerfile.j2
 +++ b/docker/ovn/ovn-northd/Dockerfile.j2
-@@ -5,21 +5,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+@@ -7,19 +7,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
  
- {% block ovn_northd_header %}{% endblock %}
+ {% import "macros.j2" as macros with context %}
  
--{% import "macros.j2" as macros with context %}
--
 -{% if base_package_type == 'rpm' %}
 -    {% set ovn_northd_packages = [
 -        'openvswitch-ovn-central',
@@ -147,16 +131,12 @@ index f9c6cdbd6..18a438f6e 100644
  COPY extend_start.sh /usr/local/bin/kolla_ovn_extend_start
  RUN chmod 644 /usr/local/bin/kolla_ovn_extend_start
  
-diff --git a/docker/ovn/ovn-sb-db-server/Dockerfile.j2 b/docker/ovn/ovn-sb-db-server/Dockerfile.j2
-index b5a6dc22b..55c9f26ef 100644
 --- a/docker/ovn/ovn-sb-db-server/Dockerfile.j2
 +++ b/docker/ovn/ovn-sb-db-server/Dockerfile.j2
-@@ -5,21 +5,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
+@@ -7,19 +7,6 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}" build-date="{{ build
  
- {% block ovn_sb_db_server_header %}{% endblock %}
+ {% import "macros.j2" as macros with context %}
  
--{% import "macros.j2" as macros with context %}
--
 -{% if base_package_type == 'rpm' %}
 -    {% set ovn_sb_db_server_packages = [
 -        'openvswitch-ovn-central',
