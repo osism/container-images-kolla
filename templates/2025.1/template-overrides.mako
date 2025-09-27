@@ -88,7 +88,7 @@ RUN curl -o /tmp/kolla-operations.tar.gz https://github.com/osism/kolla-operatio
 {% endblock %}
 
 {% block ovs_install %}
-COPY --from=osism.harbor.regio.digital/packages/ovs-debian-bookworm:v3.4.2 /*.deb /tmp/packages/
+COPY --from=osism.harbor.regio.digital/packages/ovs-ubuntu-noble:v3.4.3 /*.deb /tmp/packages/
 RUN apt-get update ${"\\"}
     && apt-get -y install --no-install-recommends ${"\\"}
         python3-netifaces ${"\\"}
@@ -114,28 +114,6 @@ RUN apt-get update ${"\\"}
     && a2enmod auth_openidc ${"\\"}
     && a2enmod shib
 {% endblock %}
-
-##########################################
-# install open-iscsi bookworm-backport
-
-{% set osism_install_open_iscsi %}
-COPY --from=osism.harbor.regio.digital/packages/open-iscsi:bookworm-backports /*.deb /tmp/packages/
-RUN apt -y install -f /tmp/packages/libopeniscsiusr_*_amd64.deb -f /tmp/packages/open-iscsi_*_amd64.deb
-{% endset %}
-
-{% block base_footer %}
-{{ osism_install_open_iscsi }}
-{% endblock %}
-
-{% block nova_compute_footer %}
-{{ osism_install_open_iscsi }}
-{% endblock %}
-
-{% block iscsid_footer %}
-{{ osism_install_open_iscsi }} ${"\\"}
-RUN rm -f /etc/iscsi/initiatorname.iscsi
-{% endblock %}
-##########################################
 
 {% block footer %}
 RUN rm -rf /usr/share/doc/* ${"\\"}
