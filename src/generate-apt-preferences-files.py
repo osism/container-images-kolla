@@ -6,11 +6,7 @@ import jinja2
 import yaml
 
 OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "latest")
-
-if OPENSTACK_VERSION in ["2023.2", "2024.1"]:
-    TEMPLATE_FILE = "apt_preferences.ubuntu.j2"
-else:
-    TEMPLATE_FILE = "apt_preferences.debian.j2"
+TEMPLATE_FILE = "apt_preferences.ubuntu.j2"
 
 
 # http://stackoverflow.com/questions/4984647/accessing-dict-keys-like-an-attribute-in-python
