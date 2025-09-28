@@ -59,19 +59,19 @@
 
 - semaphore:
     name: semaphore-container-images-kolla-push-2024.1
-    max: 1
+    max: 3
 
 - semaphore:
     name: semaphore-container-images-kolla-push-2024.2
-    max: 1
+    max: 3
 
 - semaphore:
     name: semaphore-container-images-kolla-push-2025.1
-    max: 1
+    max: 3
 
 - semaphore:
     name: semaphore-container-images-kolla-push-2024.2-aarch64
-    max: 1
+    max: 3
 
 - job:
     name: container-images-kolla-patch
