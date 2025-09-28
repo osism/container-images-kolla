@@ -87,20 +87,6 @@ RUN curl -o /tmp/kolla-operations.tar.gz https://github.com/osism/kolla-operatio
     && rm -f /tmp/kolla-operations.tar.gz
 {% endblock %}
 
-{% block ovs_install %}
-COPY --from=osism.harbor.regio.digital/packages/ovs-ubuntu-noble:v3.4.3 /*.deb /tmp/packages/
-RUN apt-get update ${"\\"}
-    && apt-get -y install --no-install-recommends ${"\\"}
-        python3-netifaces ${"\\"}
-        tcpdump ${"\\"}
-    && apt-get install -y -f /tmp/packages/openvswitch-common*.deb ${"\\"}
-    && apt-get install -y -f /tmp/packages/python3-openvswitch*.deb ${"\\"}
-    && apt-get install -y -f /tmp/packages/openvswitch-switch*.deb ${"\\"}
-    && rm -rf /tmp/packages ${"\\"}
-    && apt-get clean ${"\\"}
-    && rm -rf /var/lib/apt/lists/*
-{% endblock %}
-
 {% block keystone_footer %}
 RUN python3 -m pip --no-cache-dir install keystone-keycloak-backend
 RUN apt-get update ${"\\"}
