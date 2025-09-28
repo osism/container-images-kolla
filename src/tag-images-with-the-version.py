@@ -120,10 +120,6 @@ for image in client.images.list(filters=FILTERS):
                 # 2.0.1 (Commit:fa14705e51bd2ce5)
                 r = findall(r"(.*) \(Commit:", result)
 
-            elif best_key == "ovn":
-                # ovn-controller 22.03.0
-                r = findall(r"ovn-controller (.*)\n", result)
-
             elif best_key.split("-")[0] == "prometheus":
                 # alertmanager, version 0.20.0 (branch: HEAD, revision: f74be0400a6243d10bb53812d6fa408ad71ff32d)
                 r = findall(r", version (.*) \(branch:", result)
