@@ -48,6 +48,8 @@
           export PATH=/home/zuul/.local/bin:$PATH
 
           bash scripts/100-push.sh
+          bash scripts/120-check-and-repush.sh
+          bash scripts/130-cosign.sh
       changed_when: false
       environment:
         COSIGN_PASSWORD: "{{ secret.COSIGN_PASSWORD }}"
@@ -67,6 +69,8 @@
           export PATH=/home/zuul/.local/bin:$PATH
 
           bash scripts/110-release.sh
+          bash scripts/120-check-and-repush.sh
+          bash scripts/130-cosign.sh
       changed_when: false
       environment:
         COSIGN_PASSWORD: "{{ secret.COSIGN_PASSWORD }}"

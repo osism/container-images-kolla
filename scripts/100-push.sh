@@ -39,13 +39,7 @@ if [[ $BUILD_TYPE == "base" ]]; then
 fi
 
 # push all other images
-cat $LSTFILE | grep -v base | \
+cat $LSTFILE | grep -v base > images.lst
+cat images.lst | \
   parallel --retries 3 --joblog other.log -j$DOCKER_PUSH_JOBS docker push {} ">" /dev/null
 cat other.log
-
-curl -O -L "https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64"
-chmod +x cosign-linux-amd64
-
-for image in $(cat $LSTFILE | grep -v base); do
-    ./cosign-linux-amd64 sign --yes --key env://COSIGN_PRIVATE_KEY "$image"
-done
