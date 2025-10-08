@@ -97,8 +97,7 @@ RUN apt-get update ${"\\"}
            libmemcached11 ${"\\"}
     && apt-get clean ${"\\"}
     && rm -rf /var/lib/apt/lists/* ${"\\"}
-    && a2enmod auth_openidc ${"\\"}
-    && a2enmod shib
+    && a2enmod auth_openidc
 {% endblock %}
 
 {% block footer %}
