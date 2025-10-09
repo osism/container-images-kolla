@@ -97,7 +97,9 @@ RUN apt-get update ${"\\"}
            libmemcached11 ${"\\"}
     && apt-get clean ${"\\"}
     && rm -rf /var/lib/apt/lists/* ${"\\"}
-    && a2enmod auth_openidc
+    && a2enmod auth_openidc ${"\\"}
+    && a2dismod shib ${"\\"}
+    && rm -f /etc/apache2/conf-enabled/shib.conf
 {% endblock %}
 
 {% block footer %}
