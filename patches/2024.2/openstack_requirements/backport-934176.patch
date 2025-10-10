@@ -1,0 +1,38 @@
+From 1f4a84b85cd9eeb2eeb4d34590cd6de6de4776ab Mon Sep 17 00:00:00 2001
+From: OpenStack Proposal Bot <openstack-infra@lists.openstack.org>
+Date: Tue, 05 Nov 2024 19:03:28 +0000
+Subject: [PATCH] update constraint for oslo.utils to new release 7.4.0
+
+meta: version: 7.4.0
+meta: team: oslo
+meta: diff-start: -
+meta: series: epoxy
+meta: branch: master
+meta: release-type: release
+meta: pypi: yes
+meta: first: yes
+meta: release:Author: Takashi Kajinami <kajinamit@oss.nttdata.com>
+meta: release:Commit: Takashi Kajinami <kajinamit@oss.nttdata.com>
+meta: release:Change-Id: Idd8797cd6f338f64544a0c128fd9d996c0140f35
+meta: release:Code-Review+2: Thierry Carrez <thierry@openstack.org>
+meta: release:Code-Review+1: Sylvain Bauza <sbauza@redhat.com>
+meta: release:Workflow+1: Dr. Jens Harbott <frickler@offenerstapel.de>
+meta: release:Code-Review+1: Daniel Bengtsson <dbengt@redhat.com>
+meta: release:Code-Review+2: Dr. Jens Harbott <frickler@offenerstapel.de>
+meta: release:Code-Review+1: Dan Smith <dms@danplanet.com>
+Change-Id: I3431f8d54bcf5e9d062efd58bd7de2dc8b36cdec
+---
+
+diff --git a/upper-constraints.txt b/upper-constraints.txt
+index c2feb644..44508e65 100644
+--- a/upper-constraints.txt
++++ b/upper-constraints.txt
+@@ -597,7 +597,7 @@ filelock===3.15.4
+ python-tackerclient===2.1.0
+ python-heatclient===3.5.0;python_version=='3.8'
+ python-heatclient===4.0.0;python_version>='3.9'
+-oslo.utils===7.3.0
++oslo.utils===7.4.0
+ requests-kerberos===0.15.0
+ itsdangerous===2.2.0
+ XStatic-jquery-ui===1.13.0.1

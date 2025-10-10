@@ -1,0 +1,297 @@
+From 64ad5e4b775190a75f6ac9fae166c21d1980c553 Mon Sep 17 00:00:00 2001
+From: Dan Smith <dansmith@redhat.com>
+Date: Tue, 08 Oct 2024 10:00:02 -0700
+Subject: [PATCH] Handle iso+gpt detections
+
+Some bootable CD images have an MBR or GPT boot record in the system
+area of the ISO format. That causes us to detect both ISO and GPT
+formats, which are currently rejected (intentionally). Since that
+special case is legitimate and we need to treat those as ISO files,
+this adds handling to make that determination. It does so by handling
+the detection pipeline within nova so we have access to the multiple
+matching inspectors (similar to what glance does).
+
+
+Change-Id: I01e4f1bd74c9535f1e588159fd5e91c9b8bc60d4
+(cherry picked from commit 507c6c1113ec8bdd2ab704f92ad7d2209f053b50)
+---
+
+diff --git a/nova/tests/unit/virt/libvirt/test_driver.py b/nova/tests/unit/virt/libvirt/test_driver.py
+index de3321d..657d5bb 100644
+--- a/nova/tests/unit/virt/libvirt/test_driver.py
++++ b/nova/tests/unit/virt/libvirt/test_driver.py
+@@ -14996,7 +14996,7 @@
+                                             '/fake/instance/dir', disk_info)
+         self.assertFalse(mock_fetch_image.called)
+ 
+-    @mock.patch('oslo_utils.imageutils.format_inspector.detect_file_format')
++    @mock.patch('nova.virt.images.get_image_format')
+     @mock.patch('nova.privsep.path.utime')
+     @mock.patch('nova.virt.libvirt.utils.create_image')
+     def test_create_images_and_backing_ephemeral_gets_created(
+@@ -16743,7 +16743,7 @@
+         fake_mkfs.assert_has_calls([mock.call('ext4', '/dev/something',
+                                               'myVol')])
+ 
+-    @mock.patch('oslo_utils.imageutils.format_inspector.detect_file_format')
++    @mock.patch('nova.virt.images.get_image_format')
+     @mock.patch('nova.privsep.path.utime')
+     @mock.patch('nova.virt.libvirt.utils.fetch_image')
+     @mock.patch('nova.virt.libvirt.utils.create_image')
+diff --git a/nova/tests/unit/virt/libvirt/test_imagebackend.py b/nova/tests/unit/virt/libvirt/test_imagebackend.py
+index 9d35f66..f1f170b 100644
+--- a/nova/tests/unit/virt/libvirt/test_imagebackend.py
++++ b/nova/tests/unit/virt/libvirt/test_imagebackend.py
+@@ -563,7 +563,7 @@
+ 
+         mock_exists.assert_has_calls(exist_calls)
+ 
+-    @mock.patch('oslo_utils.imageutils.format_inspector.detect_file_format')
++    @mock.patch('nova.virt.images.get_image_format')
+     @mock.patch.object(imagebackend.utils, 'synchronized')
+     @mock.patch('nova.virt.libvirt.utils.create_image')
+     @mock.patch.object(os.path, 'exists', side_effect=[])
+@@ -596,7 +596,7 @@
+         mock_detect_format.assert_called_once()
+         mock_detect_format.return_value.safety_check.assert_called_once_with()
+ 
+-    @mock.patch('oslo_utils.imageutils.format_inspector.detect_file_format')
++    @mock.patch('nova.virt.images.get_image_format')
+     @mock.patch.object(imagebackend.utils, 'synchronized')
+     @mock.patch('nova.virt.libvirt.utils.create_image')
+     @mock.patch.object(imagebackend.disk, 'extend')
+@@ -624,7 +624,7 @@
+         self.assertFalse(mock_extend.called)
+         mock_detect_format.assert_called_once()
+ 
+-    @mock.patch('oslo_utils.imageutils.format_inspector.detect_file_format')
++    @mock.patch('nova.virt.images.get_image_format')
+     @mock.patch.object(imagebackend.utils, 'synchronized')
+     @mock.patch('nova.virt.libvirt.utils.create_image')
+     @mock.patch('nova.virt.libvirt.utils.get_disk_backing_file')
+@@ -666,7 +666,7 @@
+         mock_utime.assert_called()
+         mock_detect_format.assert_called_once()
+ 
+-    @mock.patch('oslo_utils.imageutils.format_inspector.detect_file_format')
++    @mock.patch('nova.virt.images.get_image_format')
+     @mock.patch.object(imagebackend.utils, 'synchronized')
+     @mock.patch('nova.virt.libvirt.utils.create_image')
+     @mock.patch('nova.virt.libvirt.utils.get_disk_backing_file')
+@@ -701,7 +701,7 @@
+         self.assertFalse(mock_extend.called)
+         mock_detect_format.assert_called_once()
+ 
+-    @mock.patch('oslo_utils.imageutils.format_inspector.detect_file_format')
++    @mock.patch('nova.virt.images.get_image_format')
+     @mock.patch.object(imagebackend.utils, 'synchronized')
+     @mock.patch('nova.virt.libvirt.utils.create_image')
+     @mock.patch('nova.virt.libvirt.utils.get_disk_backing_file')
+diff --git a/nova/tests/unit/virt/libvirt/test_utils.py b/nova/tests/unit/virt/libvirt/test_utils.py
+index f5ccaee..67824b7 100644
+--- a/nova/tests/unit/virt/libvirt/test_utils.py
++++ b/nova/tests/unit/virt/libvirt/test_utils.py
+@@ -107,7 +107,7 @@
+     @mock.patch('tempfile.NamedTemporaryFile')
+     @mock.patch('oslo_concurrency.processutils.execute')
+     @mock.patch('nova.virt.images.qemu_img_info')
+-    @mock.patch('oslo_utils.imageutils.format_inspector.detect_file_format')
++    @mock.patch('nova.virt.images.get_image_format')
+     def _test_create_image(
+         self, path, disk_format, disk_size, mock_detect, mock_info,
+         mock_execute, mock_ntf, backing_file=None, encryption=None,
+@@ -443,7 +443,7 @@
+             _context, image_id, target, trusted_certs)
+ 
+     @mock.patch.object(images, 'IMAGE_API')
+-    @mock.patch.object(format_inspector, 'detect_file_format')
++    @mock.patch('nova.virt.images.get_image_format')
+     @mock.patch.object(compute_utils, 'disk_ops_semaphore')
+     @mock.patch('nova.privsep.utils.supports_direct_io', return_value=True)
+     @mock.patch('nova.privsep.qemu.unprivileged_convert_image')
+diff --git a/nova/tests/unit/virt/test_images.py b/nova/tests/unit/virt/test_images.py
+index 10894e5..49674a9 100644
+--- a/nova/tests/unit/virt/test_images.py
++++ b/nova/tests/unit/virt/test_images.py
+@@ -101,7 +101,7 @@
+         mocked_execute.assert_called_once()
+ 
+     @mock.patch.object(images, 'IMAGE_API')
+-    @mock.patch('oslo_utils.imageutils.format_inspector.detect_file_format')
++    @mock.patch('nova.virt.images.get_image_format')
+     @mock.patch.object(images, 'convert_image',
+                        side_effect=exception.ImageUnacceptable)
+     @mock.patch.object(images, 'qemu_img_info')
+@@ -121,7 +121,7 @@
+                                None, 'href123', '/no/path')
+ 
+     @mock.patch.object(images, 'IMAGE_API')
+-    @mock.patch('oslo_utils.imageutils.format_inspector.detect_file_format')
++    @mock.patch('nova.virt.images.get_image_format')
+     @mock.patch.object(images, 'convert_image',
+                        side_effect=exception.ImageUnacceptable)
+     @mock.patch.object(images, 'qemu_img_info')
+@@ -144,7 +144,7 @@
+                                images.fetch_to_raw,
+                                None, 'href123', '/no/path')
+ 
+-    @mock.patch('oslo_utils.imageutils.format_inspector.detect_file_format')
++    @mock.patch('nova.virt.images.get_image_format')
+     @mock.patch.object(images, 'IMAGE_API')
+     @mock.patch('os.rename')
+     @mock.patch.object(images, 'qemu_img_info')
+@@ -218,7 +218,7 @@
+                                                  format='json'))
+ 
+     @mock.patch.object(images, 'IMAGE_API')
+-    @mock.patch('oslo_utils.imageutils.format_inspector.detect_file_format')
++    @mock.patch('nova.virt.images.get_image_format')
+     @mock.patch.object(images, 'fetch')
+     @mock.patch('nova.privsep.qemu.unprivileged_qemu_img_info')
+     def test_fetch_checks_vmdk_rules(self, mock_info, mock_fetch, mock_detect,
+@@ -242,7 +242,7 @@
+     @mock.patch('os.rename')
+     @mock.patch.object(images, 'IMAGE_API')
+     @mock.patch('oslo_utils.imageutils.format_inspector.get_inspector')
+-    @mock.patch('oslo_utils.imageutils.format_inspector.detect_file_format')
++    @mock.patch('nova.virt.images.get_image_format')
+     @mock.patch.object(images, 'fetch')
+     @mock.patch('nova.privsep.qemu.unprivileged_qemu_img_info')
+     def test_fetch_iso_is_raw(
+@@ -272,7 +272,7 @@
+         mock_rename.assert_called_once_with('anypath.part', 'anypath')
+ 
+     @mock.patch.object(images, 'IMAGE_API')
+-    @mock.patch('oslo_utils.imageutils.format_inspector.detect_file_format')
++    @mock.patch('nova.virt.images.get_image_format')
+     @mock.patch.object(images, 'qemu_img_info')
+     @mock.patch.object(images, 'fetch')
+     def test_fetch_to_raw_inspector(self, fetch, qemu_img_info, mock_detect,
+@@ -311,7 +311,7 @@
+         qemu_img_info.assert_not_called()
+ 
+     @mock.patch.object(images, 'IMAGE_API')
+-    @mock.patch('oslo_utils.imageutils.format_inspector.detect_file_format')
++    @mock.patch('nova.virt.images.get_image_format')
+     @mock.patch.object(images, 'qemu_img_info')
+     @mock.patch.object(images, 'fetch')
+     def test_fetch_to_raw_inspector_disabled(self, fetch, qemu_img_info,
+@@ -329,7 +329,7 @@
+ 
+     @mock.patch.object(images, 'IMAGE_API')
+     @mock.patch.object(images, 'qemu_img_info')
+-    @mock.patch('oslo_utils.imageutils.format_inspector.detect_file_format')
++    @mock.patch('nova.virt.images.get_image_format')
+     def test_fetch_inspect_ami(self, detect, imginfo, glance):
+         glance.get.return_value = {'disk_format': 'ami'}
+         detect.return_value.__str__.return_value = 'raw'
+@@ -340,7 +340,7 @@
+ 
+     @mock.patch.object(images, 'IMAGE_API')
+     @mock.patch.object(images, 'qemu_img_info')
+-    @mock.patch('oslo_utils.imageutils.format_inspector.detect_file_format')
++    @mock.patch('nova.virt.images.get_image_format')
+     def test_fetch_inspect_aki(self, detect, imginfo, glance):
+         glance.get.return_value = {'disk_format': 'aki'}
+         detect.return_value.__str__.return_value = 'raw'
+@@ -351,7 +351,7 @@
+ 
+     @mock.patch.object(images, 'IMAGE_API')
+     @mock.patch.object(images, 'qemu_img_info')
+-    @mock.patch('oslo_utils.imageutils.format_inspector.detect_file_format')
++    @mock.patch('nova.virt.images.get_image_format')
+     def test_fetch_inspect_ari(self, detect, imginfo, glance):
+         glance.get.return_value = {'disk_format': 'ari'}
+         detect.return_value.__str__.return_value = 'raw'
+@@ -371,7 +371,7 @@
+ 
+     @mock.patch.object(images, 'IMAGE_API')
+     @mock.patch.object(images, 'qemu_img_info')
+-    @mock.patch('oslo_utils.imageutils.format_inspector.detect_file_format')
++    @mock.patch('nova.virt.images.get_image_format')
+     def test_fetch_inspect_disagrees_qemu(self, mock_detect, imginfo, glance):
+         glance.get.return_value = {'disk_format': 'qcow2'}
+         mock_detect.return_value.__str__.return_value = 'qcow2'
+diff --git a/nova/virt/images.py b/nova/virt/images.py
+index 50564d1..b525383 100644
+--- a/nova/virt/images.py
++++ b/nova/virt/images.py
+@@ -142,6 +142,30 @@
+         raise exception.ImageUnacceptable(image_id=image_id, reason=msg)
+ 
+ 
++def get_image_format(path):
++    with open(path, 'rb') as f:
++        wrapper = format_inspector.InspectWrapper(f)
++        try:
++            while f.peek():
++                wrapper.read(4096)
++                if wrapper.formats:
++                    break
++        finally:
++            wrapper.close()
++
++    try:
++        return wrapper.format
++    except format_inspector.ImageFormatError:
++        format_names = set(str(x) for x in wrapper.formats)
++        if format_names == {'iso', 'gpt'}:
++            # If iso+gpt, we choose the iso because bootable-as-block ISOs
++            # can legitimately have a GPT bootloader in front.
++            LOG.debug('Detected %s as ISO+GPT, allowing as ISO', path)
++            return [x for x in wrapper.formats if str(x) == 'iso'][0]
++        # Any other case of multiple formats is an error
++        raise
++
++
+ def do_image_deep_inspection(img, image_href, path):
+     ami_formats = ('ami', 'aki', 'ari')
+     disk_format = img['disk_format']
+@@ -158,7 +182,7 @@
+                 image_id=image_href,
+                 reason=_('Image not in a supported format'))
+ 
+-        inspector = format_inspector.detect_file_format(path)
++        inspector = get_image_format(path)
+         inspector.safety_check()
+ 
+         # Images detected as gpt but registered as raw are legacy "whole disk"
+diff --git a/nova/virt/libvirt/imagebackend.py b/nova/virt/libvirt/imagebackend.py
+index a86322c..a24e532 100644
+--- a/nova/virt/libvirt/imagebackend.py
++++ b/nova/virt/libvirt/imagebackend.py
+@@ -688,7 +688,7 @@
+         # NOTE(sean-k-mooney) If the image was created by nova as a swap
+         # or ephemeral disk it is safe to skip the deep inspection.
+         if not CONF.workarounds.disable_deep_image_inspection and not safe:
+-            inspector = format_inspector.detect_file_format(base)
++            inspector = images.get_image_format(base)
+             try:
+                 inspector.safety_check()
+             except format_inspector.SafetyCheckFailed as e:
+diff --git a/nova/virt/libvirt/utils.py b/nova/virt/libvirt/utils.py
+index 202d718..2b5b1b3 100644
+--- a/nova/virt/libvirt/utils.py
++++ b/nova/virt/libvirt/utils.py
+@@ -163,7 +163,7 @@
+         # the backing file if the image is not created by nova for swap or
+         # ephemeral disks.
+         if not CONF.workarounds.disable_deep_image_inspection and not safe:
+-            inspector = format_inspector.detect_file_format(backing_file)
++            inspector = images.get_image_format(backing_file)
+             try:
+                 inspector.safety_check()
+             except format_inspector.SafetyCheckFailed as e:
+diff --git a/requirements.txt b/requirements.txt
+index ba5c4dc..cfb825b 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -38,7 +38,7 @@
+ oslo.reports>=1.18.0 # Apache-2.0
+ oslo.serialization>=4.2.0 # Apache-2.0
+ oslo.upgradecheck>=1.3.0
+-oslo.utils>=7.3.0 # Apache-2.0
++oslo.utils>=7.3.1 # Apache-2.0
+ oslo.db>=10.0.0 # Apache-2.0
+ oslo.rootwrap>=5.15.0 # Apache-2.0
+ oslo.messaging>=14.1.0 # Apache-2.0
