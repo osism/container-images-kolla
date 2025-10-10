@@ -1,0 +1,98 @@
+From a4f68e18890fdc837230f20c6fcca2972746ab1a Mon Sep 17 00:00:00 2001
+From: Michal Arbet <michal.arbet@ultimum.io>
+Date: Thu, 29 May 2025 23:46:10 +0200
+Subject: [PATCH] Bump proxysql to 3.0.x
+
+This patch bump proxysql 2.7.x to 3.0.x
+
+Change-Id: I30d5093c1997b1ac99a762983248b8d29e677ba3
+---
+
+diff --git a/doc/source/contributor/versions.rst b/doc/source/contributor/versions.rst
+index da02236..9de20ec 100644
+--- a/doc/source/contributor/versions.rst
++++ b/doc/source/contributor/versions.rst
+@@ -42,7 +42,7 @@
+ .. _`Kibana install guide`: https://www.elastic.co/guide/en/kibana/7.10/install.html
+ .. _`Logstash install guide`: https://www.elastic.co/guide/en/logstash/7.9/installing-logstash.html
+ .. _`TreasureData install guide`: https://www.fluentd.org/download
+-.. _`ProxySQL repository`: https://repo.proxysql.com/ProxySQL/proxysql-2.7.x/
++.. _`ProxySQL repository`: https://repo.proxysql.com/ProxySQL/proxysql-3.0.x/
+ 
+ .. _`Team RabbitMQ 'Cloudsmith' repo (Deb)`: https://www.rabbitmq.com/install-debian.html#apt-cloudsmith
+ .. _`Team RabbitMQ 'Modern Erlang' PPA`: https://launchpad.net/~rabbitmq/+archive/ubuntu/rabbitmq-erlang
+diff --git a/docker/base/Dockerfile.j2 b/docker/base/Dockerfile.j2
+index 2af0243..5765ee8 100644
+--- a/docker/base/Dockerfile.j2
++++ b/docker/base/Dockerfile.j2
+@@ -309,7 +309,7 @@
+    {'name': 'influxdb', 'url': 'https://repos.influxdata.com/influxdata-archive_compat.key'},
+    {'name': 'mariadb', 'url': 'https://downloads.mariadb.com/MariaDB/mariadb-keyring-2019.gpg', 'type': 'gpg'},
+    {'name': 'opensearch', 'url': 'https://artifacts.opensearch.org/publickeys/opensearch.pgp'},
+-   {'name': 'proxysql', 'url': 'https://repo.proxysql.com/ProxySQL/proxysql-2.7.x/repo_pub_key'},
++   {'name': 'proxysql', 'url': 'https://repo.proxysql.com/ProxySQL/proxysql-3.0.x/repo_pub_key'},
+    {'name': 'treasuredata', 'url': 'https://packages.treasuredata.com/GPG-KEY-td-agent'},
+ ] %}
+ 
+diff --git a/docker/base/proxysql.repo b/docker/base/proxysql.repo
+index 938f565..3c09fa7 100644
+--- a/docker/base/proxysql.repo
++++ b/docker/base/proxysql.repo
+@@ -1,6 +1,6 @@
+ [proxysql]
+ name = ProxySQL
+-baseurl = https://repo.proxysql.com/ProxySQL/proxysql-2.7.x/almalinux/$releasever
+-gpgkey = https://repo.proxysql.com/ProxySQL/proxysql-2.7.x/repo_pub_key
++baseurl = https://repo.proxysql.com/ProxySQL/proxysql-3.0.x/almalinux/$releasever
++gpgkey = https://repo.proxysql.com/ProxySQL/proxysql-3.0.x/repo_pub_key
+ gpgcheck = 1
+ enabled = 0
+diff --git a/kolla/template/repos.yaml b/kolla/template/repos.yaml
+index 907909e..6b66aec 100644
+--- a/kolla/template/repos.yaml
++++ b/kolla/template/repos.yaml
+@@ -82,7 +82,7 @@
+     component: "main"
+     gpg_key: "opensearch.asc"
+   proxysql:
+-    url: "https://repo.proxysql.com/ProxySQL/proxysql-2.7.x/bookworm/"
++    url: "https://repo.proxysql.com/ProxySQL/proxysql-3.0.x/bookworm/"
+     suite: "./"
+     component: ""
+     gpg_key: "proxysql.asc"
+@@ -134,7 +134,7 @@
+     component: "main"
+     gpg_key: "opensearch.asc"
+   proxysql:
+-    url: "https://repo.proxysql.com/ProxySQL/proxysql-2.7.x/bookworm/"
++    url: "https://repo.proxysql.com/ProxySQL/proxysql-3.0.x/bookworm/"
+     suite: "./"
+     component: ""
+     gpg_key: "proxysql.asc"
+@@ -228,7 +228,7 @@
+     component: "main"
+     gpg_key: "opensearch.asc"
+   proxysql:
+-    url: "https://repo.proxysql.com/ProxySQL/proxysql-2.7.x/noble/"
++    url: "https://repo.proxysql.com/ProxySQL/proxysql-3.0.x/noble/"
+     suite: "./"
+     component: ""
+     gpg_key: "proxysql.asc"
+@@ -281,7 +281,7 @@
+     component: "main"
+     gpg_key: "opensearch.asc"
+   proxysql:
+-    url: "https://repo.proxysql.com/ProxySQL/proxysql-2.7.x/noble/"
++    url: "https://repo.proxysql.com/ProxySQL/proxysql-3.0.x/noble/"
+     suite: "./"
+     component: ""
+     gpg_key: "proxysql.asc"
+diff --git a/releasenotes/notes/bump-proxysql-version-5669b13bcc3d88fe.yaml b/releasenotes/notes/bump-proxysql-version-5669b13bcc3d88fe.yaml
+new file mode 100644
+index 0000000..791e41d
+--- /dev/null
++++ b/releasenotes/notes/bump-proxysql-version-5669b13bcc3d88fe.yaml
+@@ -0,0 +1,3 @@
++---
++upgrade:
++  - Upgraded ProxySQL to version ``3.0.x``.
