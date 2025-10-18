@@ -1,0 +1,11 @@
+--- a/ironic/drivers/modules/redfish/bios.py
++++ b/ironic/drivers/modules/redfish/bios.py
+@@ -29,7 +29,7 @@
+ 
+ registry_fields = ('attribute_type', 'allowable_values', 'lower_bound',
+                    'max_length', 'min_length', 'read_only',
+-                   'reset_required', 'unique', 'upper_bound')
++                   'reset_required', 'unique')
+ 
+ 
+ class RedfishBIOS(base.BIOSInterface):
