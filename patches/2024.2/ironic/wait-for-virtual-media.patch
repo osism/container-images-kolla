@@ -1,0 +1,59 @@
+--- a/ironic/common/exception.py
++++ b/ironic/common/exception.py
+@@ -931,3 +931,6 @@ class ImageChecksumFileReadFailure(InvalidImage):
+     _msg_fmt = _("Failed to read the file from local storage "
+                  "to perform a checksum operation.")
+     code = http_client.SERVICE_UNAVAILABLE
++
++class VirtualMediaNotMountedError(IronicException):
++    _msg_fmt = _("Virtual media is not mounted.")
+--- a/ironic/drivers/modules/redfish/boot.py
++++ b/ironic/drivers/modules/redfish/boot.py
+@@ -16,6 +16,7 @@
+ from oslo_log import log
+ import sushy
+ import tenacity
++import time
+ 
+ from ironic.common import boot_devices
+ from ironic.common import exception
+@@ -156,13 +157,13 @@ def _parse_instance_info(node):
+     return deploy_info
+ 
+ 
+-def _test_retry(exception):
+-    if isinstance(exception, sushy.exceptions.ServerSideError):
++def _test_retry(_exception):
++    if isinstance(_exception, (sushy.exceptions.ServerSideError, exception.VirtualMediaNotMountedError)):
+         # On some Dell hw, the eject media may still be in progress
+         # https://storyboard.openstack.org/#!/story/2008504
+         LOG.warning("Boot media insert failed for node %(node)s, "
+                     "will retry after 3 seconds",
+-                    {'node': exception.node_uuid})
++                    {'node': _exception.node_uuid})
+         return True
+     return False
+ 
+@@ -332,6 +333,21 @@ def _insert_vmedia_in_resource(task, resource, boot_url, boot_device,
+         try:
+             v_media.insert_media(boot_url, inserted=True,
+                                  write_protected=True)
++
++            # NOTE(fzakfeld): check that virtual media mount was successful.
++            # On some systems this is an asynchronous operation, so we need to
++            # poll the state a few times.
++            num_tries = 5
++            while True:
++                num_tries -= 1
++                v_media.refresh()
++                if v_media.inserted:
++                    break
++                if num_tries == 0:
++                    raise exception.VirtualMediaNotMountedError()
++                time.sleep(5)
++
++
+         # NOTE(janders): On Cisco UCSB and UCSX blades there are several
+         # vMedia devices. Some of those are only meant for internal use
+         # by CIMC vKVM - attempts to InsertMedia into those will result
+
