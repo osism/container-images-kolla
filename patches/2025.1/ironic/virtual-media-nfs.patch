@@ -1,0 +1,24 @@
+--- /var/lib/kolla/venv/lib/python3.11/site-packages/sushy/resources/manager/virtual_media.py	2025-07-23 14:06:57.925614838 +0000
++++ /var/lib/kolla/venv/lib/python3.11/site-packages/sushy/resources/manager/virtual_media.py	2025-07-23 14:09:50.738413189 +0000
+@@ -197,7 +197,12 @@
+                         payload['TransferProtocolType'] = "HTTPS"
+                     elif payload['Image'].startswith('http://'):
+                         payload['TransferProtocolType'] = "HTTP"
++                    elif payload['Image'].startswith('nfs://'):
++                        payload['TransferProtocolType'] = "NFS"
+
+                     # NOTE (iurygregory) we try to handle the case where a
+                     # a TransferMethod is also required in the payload.
+                     try:
+
+--- /var/lib/kolla/venv/lib/python3.11/site-packages/ironic/conf/deploy.py	2025-07-23 14:10:27.737012308 +0000
++++ /var/lib/kolla/venv/lib/python3.11/site-packages/ironic/conf/deploy.py	2025-07-23 14:11:05.223619327 +0000
+@@ -53,7 +53,7 @@
+                       "requires password credential. Currently utilized by "
+                       "the http_basic authentication strategy.")),
+     cfg.URIOpt('external_http_url',
+-               schemes=['http', 'https'],
++               schemes=['http', 'https', 'nfs'],
+                help=_("URL of the ironic-conductor node's HTTP server for "
+                       "boot methods such as virtual media, "
+                       "where images could be served outside of the "
