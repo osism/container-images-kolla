@@ -129,3 +129,17 @@ LABEL "build-date"="{{ build_date }}" ${"\\"}
       "org.opencontainers.image.url"="https://quay.io/organization/osism" ${"\\"}
       "org.opencontainers.image.vendor"="OSISM GmbH"
 {% endblock %}
+
+{% block ovs_install %}
+COPY --from=osism.harbor.regio.digital/packages/ovs-ubuntu-noble:v3.4.3 /*.deb /tmp/packages/
+RUN apt-get update ${"\\"}
+    && apt-get -y install --no-install-recommends ${"\\"}
+        python3-netifaces ${"\\"}
+        tcpdump ${"\\"}
+    && apt-get install -y -f /tmp/packages/openvswitch-common*.deb ${"\\"}
+    && apt-get install -y -f /tmp/packages/python3-openvswitch*.deb ${"\\"}
+    && apt-get install -y -f /tmp/packages/openvswitch-switch*.deb ${"\\"}
+    && rm -rf /tmp/packages ${"\\"}
+    && apt-get clean ${"\\"}
+    && rm -rf /var/lib/apt/lists/*
+{% endblock %}
