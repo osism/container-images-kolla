@@ -87,7 +87,10 @@ for image in client.images.list(filters=FILTERS):
             logger.error(f"Configuration for {name} ({best_key}) not found")
             continue
 
-        command = configuration[best_key]
+        if best_key == "ovn" and VERSION in ["2024.1", "2024.2"]:
+            command = "ovn-controller --version"
+        else:
+            command = configuration[best_key]
 
         logger.info(
             f"Best match in configuration for {tag} is {best_key}, using {command}"
@@ -111,7 +114,8 @@ for image in client.images.list(filters=FILTERS):
 
             elif best_key == "prometheus-ovn-exporter":
                 # ovn-exporter 1.0.4
-                r = findall(r"ovn-exporter (.*)", result)
+                # ovn-exporter 1.0.7, commit: 79cb6010e656fd6b24c9ccba29bde4cddcf832c2
+                r = findall(r"ovn-exporter ([^,\n]+)", result)
 
             elif best_key == "kolla-toolbox":
                 r = [image.labels["de.osism.commit.kolla_version"]]
@@ -119,6 +123,10 @@ for image in client.images.list(filters=FILTERS):
             elif best_key == "kafka":
                 # 2.0.1 (Commit:fa14705e51bd2ce5)
                 r = findall(r"(.*) \(Commit:", result)
+
+            elif best_key == "ovn" and VERSION in ["2024.1", "2024.2"]:
+                # ovn-controller 22.03.0
+                r = findall(r"ovn-controller (.*)\n", result)
 
             elif best_key.split("-")[0] == "prometheus":
                 # alertmanager, version 0.20.0 (branch: HEAD, revision: f74be0400a6243d10bb53812d6fa408ad71ff32d)
