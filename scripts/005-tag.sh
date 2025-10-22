@@ -84,6 +84,9 @@ if [[ $IS_RELEASE == "True" ]]; then
 fi
 
 cat images.yml
+
+python3 src/compare-sbom.py || exit 1
+
 if [[ $VERSION != "latest" ]]; then
     sbom_version="${VERSION:1:${#VERSION}-1}"
     docker build -t $DOCKER_REGISTRY/$DOCKER_NAMESPACE/release/sbom:$sbom_version .
