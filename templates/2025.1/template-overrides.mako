@@ -46,7 +46,12 @@ RUN apt-get update ${"\\"}
     && rm -rf /var/lib/apt/lists/*
 {% endblock %}
 
+{% block kolla_toolbox_header %}
+COPY --from=ghcr.io/astral-sh/uv:0.8.22 /uv /usr/local/bin/uv
+{% endblock %}
+
 {% block openstack_base_header %}
+COPY --from=ghcr.io/astral-sh/uv:0.8.22 /uv /usr/local/bin/uv
 RUN apt-get update ${"\\"}
     && apt-get -y install --no-install-recommends python3-setuptools ${"\\"}
     && apt-get clean ${"\\"}
