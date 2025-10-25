@@ -18,24 +18,27 @@
 
  from ironic.common import boot_devices
  from ironic.common import exception
-@@ -156,13 +157,13 @@ def _parse_instance_info(node):
+@@ -156,13 +157,16 @@ def _parse_instance_info(node):
      return deploy_info
 
 
 -def _test_retry(exception):
 -    if isinstance(exception, sushy.exceptions.ServerSideError):
 +def _test_retry(_exception):
-+    if isinstance(_exception, (sushy.exceptions.ServerSideError, exception.VirtualMediaNotMountedError)):
++    if isinstance(_exception, sushy.exceptions.ServerSideError):
          # On some Dell hw, the eject media may still be in progress
          # https://storyboard.openstack.org/#!/story/2008504
          LOG.warning("Boot media insert failed for node %(node)s, "
                      "will retry after 3 seconds",
 -                    {'node': exception.node_uuid})
 +                    {'node': _exception.node_uuid})
++        return True
++    if isinstance(_exception, exception.VirtualMediaNotMountedError):
++        LOG.warning("Boot media was not inserted. Will retry after 3 seconds")
          return True
      return False
 
-@@ -332,6 +333,21 @@ def _insert_vmedia_in_resource(task, resource, boot_url, boot_device,
+@@ -332,6 +336,20 @@ def _insert_vmedia_in_resource(task, resource, boot_url, boot_device,
          try:
              v_media.insert_media(boot_url, inserted=True,
                                   write_protected=True)
@@ -52,7 +55,6 @@
 +                if num_tries == 0:
 +                    raise exception.VirtualMediaNotMountedError()
 +                time.sleep(5)
-+
 +
          # NOTE(janders): On Cisco UCSB and UCSX blades there are several
          # vMedia devices. Some of those are only meant for internal use
