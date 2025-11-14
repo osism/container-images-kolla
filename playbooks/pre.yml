@@ -1,4 +1,33 @@
 ---
+- name: Pin docker version
+  hosts: all
+
+  vars:
+    docker_package_name: docker-ce
+    docker_version: "5:28.5.2"
+    docker_cli_version: "5:28.5.2"
+
+  tasks:
+    - name: Pin docker package version
+      become: true
+      ansible.builtin.copy:
+        content: |
+          Package: {{ docker_package_name }}
+          Pin: version {{ docker_version }}*
+          Pin-Priority: 1001
+        dest: /etc/apt/preferences.d/docker
+        mode: 0644
+
+    - name: Pin docker-cli package version
+      become: true
+      ansible.builtin.copy:
+        content: |
+          Package: {{ docker_package_name }}-cli
+          Pin: version {{ docker_cli_version }}*
+          Pin-Priority: 1001
+        dest: /etc/apt/preferences.d/docker-cli
+        mode: 0644
+
 - name: Run preparations
   hosts: all
 
