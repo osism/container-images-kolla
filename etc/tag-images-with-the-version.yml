@@ -35,6 +35,8 @@ kibana: dpkg -s kibana-oss
 # Version of Kolla is used
 kolla-toolbox: echo
 kuryr-libnetwork: pip3 show kuryr-libnetwork
+letsencrypt-lego: /opt/lego --version
+letsencrypt-webserver: dpkg -s apache2
 logstash: dpkg -s logstash-oss
 magnum: pip3 show magnum
 manila: pip3 show manila
