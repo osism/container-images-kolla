@@ -95,5 +95,6 @@ storm: /opt/storm/bin/storm version
 swift: pip3 show swift
 tgtd: dpkg -s tgt
 trove: pip3 show trove
+watcher: pip3 show watcher
 # /opt/zookeeper/zookeeper-3.4.13.jar
 zookeeper: find /opt/zookeeper -maxdepth 1 -name 'zookeeper-*.jar'
