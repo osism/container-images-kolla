@@ -1,15 +1,9 @@
-diff --git a/kolla/common/sources.py b/kolla/common/sources.py
-index 5ba79d5a3..f086cef10 100644
 --- a/kolla/common/sources.py
 +++ b/kolla/common/sources.py
-@@ -83,14 +83,6 @@ SOURCES = {
+@@ -83,10 +83,6 @@ SOURCES = {
          'type': 'url',
-         'location': ('$tarballs_base/openstack/horizon/'
-                      'horizon-${openstack_branch}.tar.gz')},
--    'horizon-plugin-blazar-dashboard': {
--        'type': 'url',
--        'location': ('$tarballs_base/openstack/blazar-dashboard/'
--                     'blazar-dashboard-${openstack_branch}.tar.gz')},
+         'location': ('$tarballs_base/openstack/blazar-dashboard/'
+                      'blazar-dashboard-${openstack_branch}.tar.gz')},
 -    'horizon-plugin-cloudkitty-dashboard': {
 -        'type': 'url',
 -        'location': ('$tarballs_base/openstack/cloudkitty-dashboard/'
@@ -17,7 +11,7 @@ index 5ba79d5a3..f086cef10 100644
      'horizon-plugin-designate-dashboard': {
          'type': 'url',
          'location': ('$tarballs_base/openstack/designate-dashboard/'
-@@ -119,10 +111,6 @@ SOURCES = {
+@@ -115,10 +111,6 @@ SOURCES = {
          'type': 'url',
          'location': ('$tarballs_base/openstack/masakari-dashboard/'
                       'masakari-dashboard-${openstack_branch}.tar.gz')},
@@ -28,7 +22,7 @@ index 5ba79d5a3..f086cef10 100644
      'horizon-plugin-neutron-vpnaas-dashboard': {
          'type': 'url',
          'location': ('$tarballs_base/openstack/neutron-vpnaas-dashboard/'
-@@ -131,22 +119,6 @@ SOURCES = {
+@@ -127,26 +119,10 @@ SOURCES = {
          'type': 'url',
          'location': ('$tarballs_base/openstack/octavia-dashboard/'
                       'octavia-dashboard-${openstack_branch}.tar.gz')},
@@ -44,10 +38,14 @@ index 5ba79d5a3..f086cef10 100644
 -        'type': 'url',
 -        'location': ('$tarballs_base/openstack/venus-dashboard/'
 -                     'venus-dashboard-${openstack_branch}.tar.gz')},
--    'horizon-plugin-watcher-dashboard': {
--        'type': 'url',
--        'location': ('$tarballs_base/openstack/watcher-dashboard/'
--                     'watcher-dashboard-${openstack_branch}.tar.gz')},
-     'horizon-plugin-zun-ui': {
+     'horizon-plugin-watcher-dashboard': {
          'type': 'url',
-         'location': ('$tarballs_base/openstack/zun-ui/'
+         'location': ('$tarballs_base/openstack/watcher-dashboard/'
+                      'watcher-dashboard-${openstack_branch}.tar.gz')},
+-    'horizon-plugin-zun-ui': {
+-        'type': 'url',
+-        'location': ('$tarballs_base/openstack/zun-ui/'
+-                     'zun-ui-${openstack_branch}.tar.gz')},
+     'ironic-base': {
+         'type': 'url',
+         'location': ('$tarballs_base/openstack/ironic/'
