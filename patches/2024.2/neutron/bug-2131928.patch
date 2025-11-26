@@ -1,0 +1,70 @@
+From 67f8a5e9517d69fdc2b31e72047db99da0ea7af2 Mon Sep 17 00:00:00 2001
+From: Martin Morgenstern <martin.morgenstern@cloudandheat.com>
+Date: Wed, 26 Nov 2025 11:42:52 +0100
+Subject: [PATCH] [ML2/OVN]: Fix regression in allowed_address_pairs validation
+
+This patch improves the validation of the allowed_address_pairs by the OVN
+mech_driver. We now only check if a single IP address (/32 or /128) set as
+allowed_address_pair is used by the `network:distributed` port.
+
+Closes-Bug: #2131928
+Change-Id: If5cf09bbf0e5ba060c3c4f8b6a974f77c47c558f
+Signed-off-by: Martin Morgenstern <martin.morgenstern@cloudandheat.com>
+---
+ .../ml2/drivers/ovn/mech_driver/mech_driver.py       | 12 +++++++++++-
+ .../ml2/drivers/ovn/mech_driver/test_mech_driver.py  | 10 ++++------
+ 2 files changed, 15 insertions(+), 7 deletions(-)
+
+diff --git a/neutron/plugins/ml2/drivers/ovn/mech_driver/mech_driver.py b/neutron/plugins/ml2/drivers/ovn/mech_driver/mech_driver.py
+index 16d01f5bce..a2599ffe47 100644
+--- a/neutron/plugins/ml2/drivers/ovn/mech_driver/mech_driver.py
++++ b/neutron/plugins/ml2/drivers/ovn/mech_driver/mech_driver.py
+@@ -640,10 +640,20 @@ class OVNMechanismDriver(api.MechanismDriver):
+         if not allowed_address_pairs:
+             return
+ 
+-        port_allowed_address_pairs_ip_addresses = [
++        port_allowed_ip_networks = [
+             netaddr.IPNetwork(pair['ip_address'])
+             for pair in allowed_address_pairs]
+ 
++        # LP#2131928: only check for single network:distributed addresses
++        def _is_single_address(ip_network):
++            if ip_network.version == 6:
++                return ip_network.prefixlen == 128
++            return ip_network.prefixlen == 32
++
++        port_allowed_address_pairs_ip_addresses = [
++            net for net in port_allowed_ip_networks
++            if _is_single_address(net)]
++
+         distributed_ports = self._plugin.get_ports(
+             context.elevated(),
+             filters={'device_owner': [const.DEVICE_OWNER_DISTRIBUTED],
+diff --git a/neutron/tests/unit/plugins/ml2/drivers/ovn/mech_driver/test_mech_driver.py b/neutron/tests/unit/plugins/ml2/drivers/ovn/mech_driver/test_mech_driver.py
+index f303d5404e..6aeb5271b9 100644
+--- a/neutron/tests/unit/plugins/ml2/drivers/ovn/mech_driver/test_mech_driver.py
++++ b/neutron/tests/unit/plugins/ml2/drivers/ovn/mech_driver/test_mech_driver.py
+@@ -3358,15 +3358,13 @@ class TestOVNMechanismDriver(TestOVNMechanismDriverBase):
+                       'mac_address': port2['mac_address']}],
+                     port2['allowed_address_pairs'])
+ 
+-                # Now test the same but giving a subnet as allowed address pair
+-                self._make_port(
++                # LP#2131928: Now test the same but giving a subnet as allowed address pair
++                port3 = self._make_port(
+                     self.fmt, network['network']['id'],
+                     allowed_address_pairs=[{'ip_address': '10.0.0.2/26'}],
+-                    expected_res_status=exc.HTTPBadRequest.code,
+-                    arg_list=('allowed_address_pairs',))
+-                port3 = self._show('ports', port1['id'])['port']
++                    arg_list=('allowed_address_pairs',))['port']
+                 self.assertEqual(
+-                    [{'ip_address': '10.0.0.3',
++                    [{'ip_address': '10.0.0.2/26',
+                       'mac_address': port3['mac_address']}],
+                     port3['allowed_address_pairs'])
+ 
+-- 
+2.51.0
+
