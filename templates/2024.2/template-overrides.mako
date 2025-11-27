@@ -53,6 +53,8 @@ RUN apt-get update ${"\\"}
     && rm -rf /var/lib/apt/lists/*
 {% endblock %}
 
+{% set glance_base_packages_append = ['nvme-cli'] %}
+
 {% set kolla_toolbox_packages_append = ['iputils-ping', 'traceroute'] %}
 
 {% set cinder_volume_packages_append = ['multipath-tools'] %}
