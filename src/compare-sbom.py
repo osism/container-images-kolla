@@ -21,6 +21,7 @@ Exit codes:
 
 import argparse
 import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -40,6 +41,82 @@ log_fmt = (
     "<level>{message}</level>"
 )
 logger.add(sys.stderr, format=log_fmt)
+
+
+def is_git_repository() -> bool:
+    """
+    Check if the current directory is inside a Git repository.
+
+    Returns:
+        True if inside a Git repository, False otherwise
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return result.returncode == 0 and result.stdout.strip() == "true"
+    except FileNotFoundError:
+        return False
+
+
+def get_excluded_images_from_commit() -> Set[str]:
+    """
+    Extract image names to exclude from SBOM check from the last commit message.
+
+    Looks for lines in the format: NO-SBOM-CHECK: <image-name>
+
+    The function first checks for the COMMIT_MESSAGE environment variable (useful
+    for CI environments), then falls back to reading from git log.
+
+    The function normalizes names by storing both hyphen and underscore variants,
+    since image names use hyphens (e.g., prometheus-libvirt-exporter) while
+    version keys use underscores (e.g., prometheus_libvirt_exporter).
+
+    Returns:
+        Set of image names to exclude from checking (both variants).
+        Returns empty set if not in a Git repository and COMMIT_MESSAGE is not set.
+    """
+    commit_message = os.environ.get("COMMIT_MESSAGE")
+
+    if commit_message:
+        logger.info("Using commit message from COMMIT_MESSAGE environment variable")
+    else:
+        if not is_git_repository():
+            logger.info("Not in a Git repository, skipping commit message parsing")
+            return set()
+
+        try:
+            result = subprocess.run(
+                ["git", "log", "-1", "--format=%B"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            commit_message = result.stdout
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            logger.warning(f"Failed to get commit message: {e}")
+            return set()
+
+    excluded_images = set()
+    excluded_count = 0
+    for line in commit_message.splitlines():
+        line = line.strip()
+        if line.startswith("NO-SBOM-CHECK:"):
+            image_name = line.split(":", 1)[1].strip()
+            if image_name:
+                # Add both hyphen and underscore variants for matching
+                excluded_images.add(image_name.replace("_", "-"))
+                excluded_images.add(image_name.replace("-", "_"))
+                excluded_count += 1
+                logger.info(f"Excluding image from SBOM check: {image_name}")
+
+    if excluded_count > 0:
+        logger.info(f"Found {excluded_count} image(s) excluded via NO-SBOM-CHECK")
+
+    return excluded_images
 
 
 def strip_date_postfix(version_string: str) -> str:
@@ -436,17 +513,46 @@ Exit codes:
         logger.error(f"Unexpected error loading SBOMs: {e}")
         sys.exit(2)
 
+    # Get excluded images from commit message
+    excluded_images = get_excluded_images_from_commit()
+
     # Extract data
     logger.info("")
     logger.info("Extracting image names...")
     remote_images = extract_image_names(remote)
     local_images = extract_image_names(local)
 
+    # Remove excluded images from comparison
+    if excluded_images:
+        remote_images = remote_images - excluded_images
+        local_images = local_images - excluded_images
+
     logger.info(f"Remote SBOM contains {len(remote_images)} images")
     logger.info(f"Local SBOM contains {len(local_images)} images")
 
-    remote_versions = remote.get("versions", {})
-    local_versions = local.get("versions", {})
+    remote_versions_all = remote.get("versions", {})
+    local_versions_all = local.get("versions", {})
+
+    # Remove excluded images from version comparisons
+    if excluded_images:
+        remote_versions = {
+            k: v for k, v in remote_versions_all.items() if k not in excluded_images
+        }
+        local_versions = {
+            k: v for k, v in local_versions_all.items() if k not in excluded_images
+        }
+        # Keep excluded versions for info output
+        remote_versions_excluded = {
+            k: v for k, v in remote_versions_all.items() if k in excluded_images
+        }
+        local_versions_excluded = {
+            k: v for k, v in local_versions_all.items() if k in excluded_images
+        }
+    else:
+        remote_versions = remote_versions_all
+        local_versions = local_versions_all
+        remote_versions_excluded = {}
+        local_versions_excluded = {}
 
     logger.info(f"Remote SBOM contains {len(remote_versions)} version entries")
     logger.info(f"Local SBOM contains {len(local_versions)} version entries")
@@ -483,6 +589,19 @@ Exit codes:
             log_level(f"  {service}: {remote_ver} -> {local_ver} (DOWNGRADE)")
     else:
         logger.success("No version downgrades detected")
+
+    # Show version changes for excluded images (info only, no failure)
+    if remote_versions_excluded or local_versions_excluded:
+        excluded_changes = compare_versions(
+            remote_versions_excluded, local_versions_excluded
+        )
+        if excluded_changes:
+            logger.info("")
+            logger.info(
+                f"Version changes in excluded images ({len(excluded_changes)}):"
+            )
+            for service, remote_ver, local_ver in sorted(excluded_changes):
+                logger.info(f"  {service}: {remote_ver} -> {local_ver} (EXCLUDED)")
 
     # Compare version presence (added/removed components)
     logger.info("")

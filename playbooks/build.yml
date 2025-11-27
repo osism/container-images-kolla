@@ -23,6 +23,8 @@
 
           export PATH=/home/zuul/.local/bin:$PATH
 
+          echo $COMMIT_MESSAGE
+
           bash scripts/001-prepare.sh
           bash scripts/002-generate.sh
           bash scripts/003-patch.sh
@@ -36,6 +38,7 @@
         IS_RELEASE: "{{ is_release | default(false) }}"
         OPENSTACK_VERSION: "{{ version_openstack | default('latest') }}"
         VERSION: "{{ zuul['tag'] | default('latest') }}"
+        COMMIT_MESSAGE: "{{ zuul['change_message'] | default('') }}"
 
     - name: Run push script
       ansible.builtin.shell:
