@@ -105,13 +105,20 @@ for image in client.images.list(filters=FILTERS):
             )
             result = result.decode("utf-8")
 
-            # NOTE: the libvirt_export binary has no --version argument
-            # https://github.com/osism/container-images-kolla/issues/143
             if best_key == "prometheus-libvirt-exporter":
-                r = [VERSION]
+                # libvirt_exporter, version 2.2.0 (branch: , revision: unknown
+                r = findall(r"libvirt_exporter, version (.*) \(branch", result)
 
             elif best_key == "prometheus-openstack-exporter":
-                r = [VERSION]
+                # 4827ad4a95c3af9f56c026e168168050429793c3406c0330b9f9c4049e8bca3f  /opt/openstack-exporter/openstack-exporter
+                checksum = findall(r"(\S+)\s*\/opt", result)
+                if (
+                    "4827ad4a95c3af9f56c026e168168050429793c3406c0330b9f9c4049e8bca3f"
+                    in checksum
+                ):
+                    r = ["1.7.0"]
+                else:
+                    r = [image.labels["de.osism.commit.kolla_version"]]
 
             elif best_key == "prometheus-ovn-exporter":
                 # ovn-exporter 1.0.4
