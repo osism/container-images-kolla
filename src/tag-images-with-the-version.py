@@ -132,6 +132,10 @@ for image in client.images.list(filters=FILTERS):
                 # 2.0.1 (Commit:fa14705e51bd2ce5)
                 r = findall(r"(.*) \(Commit:", result)
 
+            elif best_key == "letsencrypt-lego":
+                # lego version 4.20.4 linux/amd64
+                r = findall(r"lego version (.*) linux", result)
+
             elif best_key == "ovn" and OPENSTACK_VERSION in ["2024.1", "2024.2"]:
                 # ovn-controller 22.03.0
                 r = findall(r"ovn-controller (.*)\n", result)
@@ -272,6 +276,8 @@ SBOM_IMAGE_TO_VERSION = {
     "kolla_toolbox": "kolla-toolbox",
     "kolla-toolbox": "kolla-toolbox",
     "kuryr": "kuryr-libnetwork",
+    "letsencrypt_lego": "letsencrypt-lego",
+    "letsencrypt_webserver": "letsencrypt-webserver",
     "logstash": "logstash",
     "magnum": "magnum-api",
     "manila": "manila-api",
