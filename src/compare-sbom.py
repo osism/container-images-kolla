@@ -13,6 +13,9 @@ The script pulls the SBOM from a remote container registry and compares it
 with a local SBOM file. The OpenStack version can be configured via
 --openstack-version or the OPENSTACK_VERSION environment variable.
 
+Alternatively, use --list-remote to only list the remote SBOM contents without
+loading a local SBOM or performing any comparison.
+
 Exit codes:
     0: Success (no failures based on configured fail conditions)
     1: One or more configured fail conditions triggered
@@ -414,6 +417,28 @@ def compare_version_presence(
     return removed, added
 
 
+def list_sbom(sbom: Dict) -> None:
+    """
+    List contents of an SBOM.
+
+    Args:
+        sbom: SBOM data dictionary
+    """
+    # List images
+    images = extract_image_names(sbom)
+    logger.info("")
+    logger.info(f"Images ({len(images)}):")
+    for image in sorted(images):
+        logger.info(f"  {image}")
+
+    # List versions
+    versions = sbom.get("versions", {})
+    logger.info("")
+    logger.info(f"Versions ({len(versions)}):")
+    for component, version in sorted(versions.items()):
+        logger.info(f"  {component}: {version}")
+
+
 def main():
     """
     Main entry point for SBOM comparison.
@@ -429,6 +454,13 @@ Exit codes:
   1 - One or more configured fail conditions triggered
   2 - Fatal errors (Docker errors, file not found, etc.)
 """,
+    )
+
+    parser.add_argument(
+        "--list-remote",
+        action="store_true",
+        default=False,
+        help="Only list remote SBOM contents without comparing to local SBOM",
     )
 
     parser.add_argument(
@@ -494,6 +526,25 @@ Exit codes:
     # If remote-image not explicitly set, construct it with openstack-version
     if args.remote_image is None:
         args.remote_image = f"registry.osism.cloud/kolla/sbom:{args.openstack_version}"
+
+    # Handle --list-remote mode
+    if args.list_remote:
+        logger.info("Listing remote SBOM contents")
+        logger.info(f"Using OpenStack version: {args.openstack_version}")
+        logger.info(f"Remote image: {args.remote_image}")
+
+        try:
+            remote = load_sbom_from_container(args.remote_image)
+        except SystemExit:
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error loading remote SBOM: {e}")
+            sys.exit(2)
+
+        list_sbom(remote)
+        logger.info("")
+        logger.success("Remote SBOM listing complete")
+        sys.exit(0)
 
     # Convert string to Path
     local_sbom_path = Path(args.local_sbom)
