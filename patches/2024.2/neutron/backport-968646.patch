@@ -1,0 +1,99 @@
+From 71ae26e3529161bd5101bd42ade4d2f1b3b4c781 Mon Sep 17 00:00:00 2001
+From: Slawek Kaplonski <skaplons@redhat.com>
+Date: Thu, 27 Nov 2025 14:04:53 +0100
+Subject: [PATCH] Don't prevent setting CIDRs as allowed_address_pair for port
+
+Previously with [1] we blocked possiblility to set as allowed address
+pair for port any IP or CIDR which contains IP address assigned to the
+distributed metadata IP address in same network. It was done that way
+because setting distributed metadata IP address as allowed address pair
+for any port in the network breaks metadata service for all of the ports
+in that network.
+
+But this restriction was too strict as it also prevented to set CIDRs
+bigger then /32 or /128 in the allowed_address_pair if CIDR contained
+distributed metadata port IP. For example:
+- distributed metadata port IP address 10.0.0.2
+- allowed address pairs set for port in that network:
+  - 10.0.0.3 - allowed
+  - 10.0.0.1/26 - not allowed as 10.0.0.2 belongs to that CIDR.
+
+In such case however, when CIDR is set as
+allowed_address_pair, it is not set in OVN as Virtual IP so it won't
+break connectivity to the metadata service as was reported in [2]
+thus we should allow that.
+This patch is reducing that restriction. Now CIDRs can be set as
+allowed_address_pair for the port even if it includes IP assigned for
+the distributed metadata port.
+It is only forbidden to set as allowed_address_pair same, single IP
+address as set for the distributed metadata port.
+
+Closes-Bug: #2131928
+
+[1] https://review.opendev.org/c/openstack/neutron/+/955757
+[2] https://bugs.launchpad.net/neutron/+bug/2116249
+
+Change-Id: Ieb98a126b6d380894456ed892c0a19787e7fbb04
+Signed-off-by: Slawek Kaplonski <skaplons@redhat.com>
+---
+
+diff --git a/neutron/plugins/ml2/drivers/ovn/mech_driver/mech_driver.py b/neutron/plugins/ml2/drivers/ovn/mech_driver/mech_driver.py
+index 16d01f5..49e30b5 100644
+--- a/neutron/plugins/ml2/drivers/ovn/mech_driver/mech_driver.py
++++ b/neutron/plugins/ml2/drivers/ovn/mech_driver/mech_driver.py
+@@ -658,6 +658,14 @@
+                     common_ips.add(str(ip_address))
+             return common_ips
+ 
++        # NOTE(slaweq): We can safely ignore any CIDR larger than /32 (for
++        # IPv4) or /128 (for IPv6) in the allowed_address_pairs, since such
++        # CIDRs cannot be set as a Virtual IP in OVN.
++        # Only /32 and /128 CIDRs are allowed to be set as Virtual IPs in OVN.
++        address_pairs_to_check = [
++            ip_net for ip_net in port_allowed_address_pairs_ip_addresses
++            if ip_net.size == 1]
++
+         for distributed_port in distributed_ports:
+             distributed_port_ip_addresses = [
+                 netaddr.IPAddress(fixed_ip['ip_address']) for fixed_ip in
+@@ -665,7 +673,7 @@
+ 
+             common_ips = _get_common_ips(
+                 distributed_port_ip_addresses,
+-                port_allowed_address_pairs_ip_addresses)
++                address_pairs_to_check)
+ 
+             if common_ips:
+                 err_msg = (
+diff --git a/neutron/tests/unit/plugins/ml2/drivers/ovn/mech_driver/test_mech_driver.py b/neutron/tests/unit/plugins/ml2/drivers/ovn/mech_driver/test_mech_driver.py
+index 152ba1f..9eed381 100644
+--- a/neutron/tests/unit/plugins/ml2/drivers/ovn/mech_driver/test_mech_driver.py
++++ b/neutron/tests/unit/plugins/ml2/drivers/ovn/mech_driver/test_mech_driver.py
+@@ -3356,17 +3356,23 @@
+                       'mac_address': port2['mac_address']}],
+                     port2['allowed_address_pairs'])
+ 
+-                # Now test the same but giving a subnet as allowed address pair
+-                self._make_port(
++                # Now test the same but giving a subnet as allowed address
++                # pair, this should be fine as we treat only /32 and /128 IPs
++                # in allowed_address_pairs as Virtual IPs, there is no block
++                # anything when bigger CIDR is set as that don't break metadata
++                new_port = self._make_port(
+                     self.fmt, network['network']['id'],
+                     allowed_address_pairs=[{'ip_address': '10.0.0.2/26'}],
+-                    expected_res_status=exc.HTTPBadRequest.code,
+-                    arg_list=('allowed_address_pairs',))
++                    arg_list=('allowed_address_pairs',))['port']
+                 port3 = self._show('ports', port1['id'])['port']
+                 self.assertEqual(
+                     [{'ip_address': '10.0.0.3',
+                       'mac_address': port3['mac_address']}],
+                     port3['allowed_address_pairs'])
++                self.assertEqual(
++                    [{'ip_address': '10.0.0.2/26',
++                      'mac_address': new_port['mac_address']}],
++                    new_port['allowed_address_pairs'])
+ 
+ 
+ class OVNMechanismDriverTestCase(MechDriverSetupBase,
