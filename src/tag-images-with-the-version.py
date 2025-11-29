@@ -82,7 +82,13 @@ for image in client.images.list(filters=FILTERS):
         if name in configuration:
             best_key = name
         else:
-            best_key = name.split("-")[0]
+            # Try removing version suffixes like -v2, -v3 from the name
+            # e.g., prometheus-v2-server -> prometheus-server
+            name_without_version = sub(r"-v[0-9]+", "", name)
+            if name_without_version in configuration:
+                best_key = name_without_version
+            else:
+                best_key = name.split("-")[0]
 
         if best_key not in configuration:
             logger.error(f"Configuration for {name} ({best_key}) not found")
@@ -297,7 +303,7 @@ SBOM_IMAGE_TO_VERSION = {
     "hacluster": "hacluster",
     "hacluster_corosync": "hacluster-corosync",
     "placement": "placement-api",
-    "prometheus": "prometheus-v2-server",
+    "prometheus": "prometheus-server",
     "prometheus_alertmanager": "prometheus-alertmanager",
     "prometheus_blackbox_exporter": "prometheus-blackbox-exporter",
     "prometheus_cadvisor": "prometheus-cadvisor",
@@ -330,10 +336,15 @@ for image in flat_list_of_images:
     sbom_versions[name] = version
 
 for name in SBOM_IMAGE_TO_VERSION:
-    try:
-        sbom["versions"][name] = sbom_versions[SBOM_IMAGE_TO_VERSION[name]]
-    except KeyError:
-        pass
+    image_name = SBOM_IMAGE_TO_VERSION[name]
+    if image_name in sbom_versions:
+        sbom["versions"][name] = sbom_versions[image_name]
+    else:
+        # Try finding a version variant like prometheus-v2-server for prometheus-server
+        for sbom_name in sbom_versions:
+            if sub(r"-v[0-9]+", "", sbom_name) == image_name:
+                sbom["versions"][name] = sbom_versions[sbom_name]
+                break
 
 with open("images.yml", "w+") as fp:
     dump(sbom, fp, default_flow_style=False, explicit_start=True)

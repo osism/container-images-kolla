@@ -84,7 +84,7 @@ prometheus-openstack-exporter: bash -c 'sha256sum /opt/openstack-exporter/openst
 # ovn-exporter 1.0.4
 prometheus-ovn-exporter: /opt/ovn-exporter --version
 # prometheus, version 2.26.1 (branch: HEAD, revision: 6eeded0fdf760e81af75d9c44ce539ab77da4505)
-prometheus-v2-server: /opt/prometheus/prometheus --version
+prometheus: /opt/prometheus/prometheus --version
 proxysql: dpkg -s proxysql
 rabbitmq: dpkg -s rabbitmq-server
 redis: dpkg -s redis-server
