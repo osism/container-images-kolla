@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
+from datetime import datetime, timezone
 import os
 from packaging import version as packaging_version
 from re import findall, sub
@@ -248,7 +249,12 @@ with open("images.lst", "w+") as fp:
     for image in flat_list_of_images:
         fp.write(f"{image}\n")
 
-sbom = {"images": [], "versions": {}}
+sbom = {
+    "openstack_version": OPENSTACK_VERSION,
+    "created": datetime.now(timezone.utc).isoformat(),
+    "images": [],
+    "versions": {},
+}
 
 SBOM_IMAGE_TO_VERSION = {
     "aodh": "aodh-api",
