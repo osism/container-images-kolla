@@ -35,13 +35,14 @@ index 2af0243..5765ee8 100644
  ] %}
  
 diff --git a/docker/base/proxysql.repo b/docker/base/proxysql.repo
-index 938f565..3c09fa7 100644
+index 1d45963e0..a9069ffb5 100644
 --- a/docker/base/proxysql.repo
 +++ b/docker/base/proxysql.repo
-@@ -1,6 +1,6 @@
+@@ -1,7 +1,7 @@
  [proxysql]
  name = ProxySQL
--baseurl = https://repo.proxysql.com/ProxySQL/proxysql-2.7.x/almalinux/$releasever
+ # NOTE(mnasiadka): use 9 for both 9 and 10
+-baseurl = https://repo.proxysql.com/ProxySQL/proxysql-2.7.x/almalinux/9
 -gpgkey = https://repo.proxysql.com/ProxySQL/proxysql-2.7.x/repo_pub_key
 +baseurl = https://repo.proxysql.com/ProxySQL/proxysql-3.0.x/almalinux/$releasever
 +gpgkey = https://repo.proxysql.com/ProxySQL/proxysql-3.0.x/repo_pub_key
