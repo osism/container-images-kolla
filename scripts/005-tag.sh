@@ -51,7 +51,12 @@ docker images -f label="de.osism.release.openstack=${OPENSTACK_VERSION}" | tail 
         # http://stackoverflow.com/questions/12766406/how-to-get-the-first-part-of-the-string-in-bash
         project=${new_imagename%%-*}
 
-        new_imagename="$DOCKER_NAMESPACE/$new_imagename"
+        # For releases, add /release/$OPENSTACK_VERSION to the namespace
+        if [[ $IS_RELEASE == "True" ]]; then
+            new_imagename="$DOCKER_NAMESPACE/release/$OPENSTACK_VERSION/$new_imagename"
+        else
+            new_imagename="$DOCKER_NAMESPACE/$new_imagename"
+        fi
         if [[ ! -z $DOCKER_REGISTRY ]]; then
             new_imagename="$DOCKER_REGISTRY/$new_imagename"
         fi
@@ -89,9 +94,9 @@ python3 src/compare-sbom.py || exit 1
 
 if [[ $VERSION != "latest" ]]; then
     sbom_version="${VERSION:1:${#VERSION}-1}"
-    docker build -t $DOCKER_REGISTRY/$DOCKER_NAMESPACE/release/sbom:$sbom_version .
-    echo "$DOCKER_REGISTRY/$DOCKER_NAMESPACE/release/sbom:$sbom_version" >> $LSTFILE
-    echo "$DOCKER_REGISTRY/$DOCKER_NAMESPACE/release/sbom:$sbom_version" >> images.lst
+    docker build -t $DOCKER_REGISTRY/$DOCKER_NAMESPACE/release/$OPENSTACK_VERSION/sbom:$sbom_version .
+    echo "$DOCKER_REGISTRY/$DOCKER_NAMESPACE/release/$OPENSTACK_VERSION/sbom:$sbom_version" >> $LSTFILE
+    echo "$DOCKER_REGISTRY/$DOCKER_NAMESPACE/release/$OPENSTACK_VERSION/sbom:$sbom_version" >> images.lst
 else
     docker build -t $DOCKER_REGISTRY/$DOCKER_NAMESPACE/sbom:$OPENSTACK_VERSION .
     echo "$DOCKER_REGISTRY/$DOCKER_NAMESPACE/sbom:$OPENSTACK_VERSION" >> $LSTFILE

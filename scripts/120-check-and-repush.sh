@@ -245,8 +245,8 @@ main() {
     if [[ ! -f "$IMAGES_FILE" ]]; then
         log_error "Images file not found: $IMAGES_FILE"
         log_info "Expected format: one image per line, e.g.:"
-        log_info "  osism.harbor.regio.digital/kolla/release/sbom:0.20250928.0"
-        log_info "  osism.harbor.regio.digital/osism/nova-compute:2024.1"
+        log_info "  osism.harbor.regio.digital/kolla/release/2025.1/sbom:7.2.0"
+        log_info "  osism.harbor.regio.digital/kolla/release/2025.1/nova-compute:28.0.1.20251207"
         exit 1
     fi
 
@@ -449,8 +449,8 @@ usage() {
     echo
     echo "Images file format:"
     echo "  One image per line, e.g.:"
-    echo "  osism.harbor.regio.digital/kolla/release/sbom:0.20250928.0"
-    echo "  osism.harbor.regio.digital/osism/nova-compute:2024.1"
+    echo "  osism.harbor.regio.digital/kolla/release/2025.1/sbom:7.2.0"
+    echo "  osism.harbor.regio.digital/kolla/release/2025.1/nova-compute:28.0.1.20251207"
 }
 
 # Parse command line arguments
