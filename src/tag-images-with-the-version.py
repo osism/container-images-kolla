@@ -218,9 +218,9 @@ for image in client.images.list(filters=FILTERS):
 
                 # Move release images to a release subproject with OpenStack version
                 if IS_RELEASE == "True":
-                    target_tag = target_tag.replace(
-                        "/kolla/", f"/kolla/release/{OPENSTACK_VERSION}/"
-                    )
+                    release_namespace = f"/kolla/release/{OPENSTACK_VERSION}/"
+                    if release_namespace not in target_tag:
+                        target_tag = target_tag.replace("/kolla/", release_namespace)
 
                 logger.info(
                     f"Adding org.opencontainers.image.version='{target_version}' label to {tag}"
