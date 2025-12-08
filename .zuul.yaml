@@ -71,7 +71,7 @@
 
 - job:
     name: container-images-kolla-patch
-    nodeset: ubuntu-noble
+    nodeset: debian-bookworm
     pre-run: playbooks/pre.yml
     run: playbooks/patch.yml
     timeout: 10800
@@ -80,7 +80,7 @@
 
 - job:
     name: container-images-kolla-build
-    nodeset: ubuntu-noble-large
+    nodeset: debian-bookworm-large
     pre-run: playbooks/pre.yml
     run: playbooks/build.yml
     timeout: 10800
@@ -89,7 +89,7 @@
 
 - job:
     name: container-images-kolla-build-aarch64
-    nodeset: ubuntu-noble-large
+    nodeset: debian-bookworm-large
     pre-run: playbooks/pre.yml
     run: playbooks/build.yml
     timeout: 10800
