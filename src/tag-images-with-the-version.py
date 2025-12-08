@@ -216,9 +216,11 @@ for image in client.images.list(filters=FILTERS):
                         f"Tag postfix '{TAG_POSTFIX}. is defined, extended tag is {target_tag}."
                     )
 
-                # Move release images to a release subproject
+                # Move release images to a release subproject with OpenStack version
                 if IS_RELEASE == "True":
-                    target_tag = target_tag.replace("/kolla/", "/kolla/release/")
+                    target_tag = target_tag.replace(
+                        "/kolla/", f"/kolla/release/{OPENSTACK_VERSION}/"
+                    )
 
                 logger.info(
                     f"Adding org.opencontainers.image.version='{target_version}' label to {tag}"
