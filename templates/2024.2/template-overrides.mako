@@ -95,15 +95,12 @@ RUN curl -o /tmp/kolla-operations.tar.gz https://github.com/osism/kolla-operatio
 RUN python3 -m pip --no-cache-dir install keystone-keycloak-backend
 RUN apt-get update ${"\\"}
     && apt-get -y install --no-install-recommends ${"\\"}
-           libapache2-mod-shib ${"\\"}
            libapache2-mod-auth-openidc ${"\\"}
            libldap-common ${"\\"}
            libmemcached11 ${"\\"}
     && apt-get clean ${"\\"}
     && rm -rf /var/lib/apt/lists/* ${"\\"}
-    && a2enmod auth_openidc ${"\\"}
-    && a2dismod shib ${"\\"}
-    && rm -f /etc/apache2/conf-enabled/shib.conf
+    && a2enmod auth_openidc
 {% endblock %}
 
 {% block footer %}
