@@ -1,0 +1,89 @@
+commit 34c814da06802f6b23fd7a254c68d59e3b7a9b63
+Author: Doug Szumski <doug@stackhpc.com>
+Date:   Wed Oct 22 16:30:11 2025 +0100
+
+    Fix database connection check
+    
+    SQLAlchemy 2 arrived in the Dalmation release. This removed the concept
+    of 'Connectionless execution'. See [1] for further details.
+    
+    Prior to this change, if the connection to the database was interrupted,
+    the Octavia Health Worker would go into an infinite loop due to the removed
+    method / catch all exception handler.
+    
+    [1] https://docs.sqlalchemy.org/en/20/changelog/migration_20.html#migration-20-implicit-execution
+    Closes-Bug: #2129562
+    
+    Note: test_api.py was partially created by Claude Code
+    
+    Assisted-By: Claude Code
+    Change-Id: I5e5f3b8dc8b2a94de927c547b187f9634c572c27
+    Signed-off-by: Doug Szumski <doug@stackhpc.com>
+    Signed-off-by: Gregory Thiemonge <gthiemon@redhat.com>
+    (cherry picked from commit 6fb0d272c78a101fca395afd875241e43318434c)
+    (cherry picked from commit 7d17a6a873b86ca25fa9dd5e4a3dc20c3e1c7332)
+    (cherry picked from commit dbfb6485c9595bca141c37fab284997ac97ebee5)
+
+diff --git a/octavia/db/api.py b/octavia/db/api.py
+index 635df05a1..8b1b31610 100644
+--- a/octavia/db/api.py
++++ b/octavia/db/api.py
+@@ -66,7 +66,8 @@ def wait_for_connection(exit_event):
+     while down and not exit_event.is_set():
+         try:
+             LOG.debug('Trying to re-establish connection to database.')
+-            get_engine().scalar(select([1]))
++            with get_engine().connect() as conn:
++                conn.execute(select(1))
+             down = False
+             LOG.debug('Connection to database re-established.')
+         except Exception:
+diff --git a/octavia/tests/functional/db/test_api.py b/octavia/tests/functional/db/test_api.py
+new file mode 100644
+index 000000000..6f3cb3059
+--- /dev/null
++++ b/octavia/tests/functional/db/test_api.py
+@@ -0,0 +1,32 @@
++#    Copyright 2026 Red Hat
++#
++#    Licensed under the Apache License, Version 2.0 (the "License"); you may
++#    not use this file except in compliance with the License. You may obtain
++#    a copy of the License at
++#
++#         http://www.apache.org/licenses/LICENSE-2.0
++#
++#    Unless required by applicable law or agreed to in writing, software
++#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++#    License for the specific language governing permissions and limitations
++#    under the License.
++
++import threading
++
++from octavia.db import api as db_api
++from octavia.tests.functional.db import base
++
++
++class TestDBAPI(base.OctaviaDBTestBase):
++
++    def test_wait_for_connection_success(self):
++        exit_event = threading.Event()
++
++        # This should complete successfully without blocking
++        db_api.wait_for_connection(exit_event)
++
++        # Verify we can still execute queries after wait_for_connection
++        with db_api.get_engine().connect() as conn:
++            result = conn.execute(db_api.select(1))
++            self.assertIsNotNone(result)
+diff --git a/releasenotes/notes/fix-bug-2129562-b5a401824426ddbb.yaml b/releasenotes/notes/fix-bug-2129562-b5a401824426ddbb.yaml
+new file mode 100644
+index 000000000..b407aedb7
+--- /dev/null
++++ b/releasenotes/notes/fix-bug-2129562-b5a401824426ddbb.yaml
+@@ -0,0 +1,5 @@
++---
++fixes:
++  - |
++    Fixes infinite database connection retry loop in Octavia Health Worker.
++    `LP#2129562 <https://bugs.launchpad.net/octavia/+bug/2129562>`__
