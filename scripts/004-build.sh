@@ -45,7 +45,7 @@ elif [[ -z "$KOLLA_IMAGES" ]]; then
     PLATFORM="linux/amd64"
 fi
 
-if [[ "$OPENSTACK_VERSION" == "2024.1" || "$OPENSTACK_VERSION" == "2024.2" || "$OPENSTACK_VERSION" == "2025.1" ]]; then
+if [[ "$OPENSTACK_VERSION" == "2024.1" || "$OPENSTACK_VERSION" == "2024.2" || "$OPENSTACK_VERSION" == "2025.1" || "$OPENSTACK_VERSION" == "2025.2" ]]; then
     PLATFORM_OPTS="--platform $PLATFORM"
 fi
 
