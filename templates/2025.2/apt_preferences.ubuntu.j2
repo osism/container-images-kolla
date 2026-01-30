@@ -1,0 +1,18 @@
+Package: rabbitmq-server
+Pin: version 4.1.*
+Pin-Priority: 1000
+
+Package: openvswitch*
+Pin: version 3.5.*
+Pin-Priority: 1000
+
+Package: erlang*
+Pin: version 1:27.*
+Pin-Priority: 1000
+
+# Remove the pin for proxysql once
+# https://github.com/sysown/proxysql/pull/5277
+# is merged or otherwise resolved or worked around
+Package: proxysql*
+Pin: version 3.0.3
+Pin-Priority: 1000
