@@ -50,7 +50,11 @@ fi
 
 pushd $PROJECT_REPOSITORY_PATH > /dev/null
 if [[ "$OPENSTACK_VERSION" != "latest" ]]; then
-    git checkout origin/stable/$OPENSTACK_VERSION
+    if [[ "$OPENSTACK_VERSION" == "2024.1" ]]; then
+        git checkout origin/unmaintained/$OPENSTACK_VERSION
+    else
+        git checkout origin/stable/$OPENSTACK_VERSION
+    fi
 fi
 export HASH_KOLLA=$(git rev-parse --short HEAD)
 popd > /dev/null
