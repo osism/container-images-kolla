@@ -1,0 +1,47 @@
+commit ffecec3c557280eef82b60f0906ae20f821e10f5
+Author: Julia Kreger <juliaashleykreger@gmail.com>
+Date:   Mon Nov 4 09:12:15 2024 -0800
+
+    trivial: Fix policy scope restriction for automated cleaning
+
+    By default, the decision if to clean is a "system" decision,
+    and not necessarilly a "user" or "operator" decision. However
+    some operators may choose to have custom policies to enable
+    specific tenants to have additional rights without granting
+    special system scoped users.
+
+    This change just changes the labeling on the default rule to
+    permit it to match a project scoped user while leaving the
+    default rule in place. This slightly changes the resulting
+    error, but doesn't change the error code, and enables operators
+    to run with custom rules for this entry.
+
+    Change-Id: Ie963abcbff079664b8407499c3e943ad3fd8f315
+
+diff --git a/ironic/common/policy.py b/ironic/common/policy.py
+index ea890c73b..f96252f8d 100644
+--- a/ironic/common/policy.py
++++ b/ironic/common/policy.py
+@@ -1002,7 +1002,7 @@ node_policies = [
+     policy.DocumentedRuleDefault(
+         name='baremetal:node:disable_cleaning',
+         check_str=SYSTEM_ADMIN,
+-        scope_types=['system'],
++        scope_types=['system', 'project'],
+         description='Disable Node disk cleaning',
+         operations=[
+             {'path': '/nodes/{node_ident}', 'method': 'PATCH'}
+diff --git a/releasenotes/notes/change-scope-restriction-automated-clean-2f9f82058b5bad87.yaml b/releasenotes/notes/change-scope-restriction-automated-clean-2f9f82058b5bad87.yaml
+new file mode 100644
+index 000000000..792e817cc
+--- /dev/null
++++ b/releasenotes/notes/change-scope-restriction-automated-clean-2f9f82058b5bad87.yaml
+@@ -0,0 +1,8 @@
++---
++fixes:
++  - |
++    Fixes the policy scope checking for the RBAC Policy
++    ``baremetal:node:disable_cleaning``, which previously
++    restricted to ``system`` user scope. The scope restriction
++    has been revised to permit ``project`` scoped matching,
++    but the default RBAC policy has not been revised.
