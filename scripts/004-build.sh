@@ -40,9 +40,11 @@ if [[ "$BASE_ARCH" == "aarch64" ]]; then
     KOLLA_IMAGES="^fluentd ^cron ^nova-libvirt ^nova-ssh ^nova-compute ^neutron-metadata-agent ^ceilometer-compute ^ovn-controller ^openvswitch-vswitchd ^openvswitch-db-server ^kolla-toolbox ^nova-conductor"
     PLATFORM="linux/arm64"
     docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-elif [[ -z "$KOLLA_IMAGES" ]]; then
-    KOLLA_IMAGES="$(python3 src/get-projects-from-versions-file.py)"
+else
     PLATFORM="linux/amd64"
+    if [[ -z "$KOLLA_IMAGES" ]]; then
+        KOLLA_IMAGES="$(python3 src/get-projects-from-versions-file.py)"
+    fi
 fi
 
 if [[ "$OPENSTACK_VERSION" == "2024.1" || "$OPENSTACK_VERSION" == "2024.2" || "$OPENSTACK_VERSION" == "2025.1" ]]; then

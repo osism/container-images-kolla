@@ -7,8 +7,6 @@
     'fluent-plugin-grafana-loki',
 ] %}
 
-{% set openstack_base_pip_packages_append = ['pip', 'git+https://github.com/sapcc/openstack-audit-middleware.git'] %}
-
 {% set glance_base_pip_packages_append = ['boto3'] %}
 
 {% block nova_libvirt_footer %}
