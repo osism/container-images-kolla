@@ -1,0 +1,47 @@
+From 62a44faf6afe8eb0135c335c24842606907832d2 Mon Sep 17 00:00:00 2001
+From: cid <afonnepaulc@gmail.com>
+Date: Thu, 30 Jan 2025 10:54:17 +0100
+Subject: [PATCH] Log secure boot access failures at INFO level
+
+Handle Supermicro BMC `OemLicenseNotPassed` error.
+
+Story: 2011154
+Change-Id: I288099bf276357c884bdee798be5200dea0cf046
+---
+
+diff --git a/ironic/drivers/modules/redfish/management.py b/ironic/drivers/modules/redfish/management.py
+index 35f1123..b83ef13 100644
+--- a/ironic/drivers/modules/redfish/management.py
++++ b/ironic/drivers/modules/redfish/management.py
+@@ -1165,11 +1165,20 @@
+             runtime error.
+         :raises: UnsupportedDriverExtension if secure boot is
+                  not supported by the hardware.
+-        :returns: Boolean
++        :returns: Boolean or None if status cannot be retrieved
+         """
+         system = redfish_utils.get_system(task.node)
+         try:
+             return system.secure_boot.enabled
++        except sushy.exceptions.AccessError as e:
++            if 'OemLicenseNotPassed' in str(e):
++                # NOTE(cid): Supermicro gear requires a license to report
++                # secure boot status.
++                LOG.info("Secure boot status request through Redfish failed "
++                         "for node %(node)s: %(error)s",
++                         {'node': task.node.uuid, 'error': e})
++                return None
++            raise
+         except sushy.exceptions.MissingAttributeError:
+             raise exception.UnsupportedDriverExtension(
+                 driver=task.node.driver, extension='get_secure_boot_state')
+diff --git a/releasenotes/notes/reduce-secure-boot-noisy-exceptions-to-INFO-logs-24479c994d93de21.yaml b/releasenotes/notes/reduce-secure-boot-noisy-exceptions-to-INFO-logs-24479c994d93de21.yaml
+new file mode 100644
+index 0000000..ca8d472
+--- /dev/null
++++ b/releasenotes/notes/reduce-secure-boot-noisy-exceptions-to-INFO-logs-24479c994d93de21.yaml
+@@ -0,0 +1,4 @@
++---
++fixes:
++  - |
++    Log non-recoverable secure boot status check failures at INFO level.
