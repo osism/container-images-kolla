@@ -1,0 +1,94 @@
+From 7fd0df9c64e44cfd50bfca79ae019990c7d1fced Mon Sep 17 00:00:00 2001
+From: Jacob Anders <janders@redhat.com>
+Date: Tue, 6 Jan 2026 01:23:48 +1000
+Subject: [PATCH 4/5] Add db migration for hardware health monitoring via
+ management interface
+
+This cherry-pick is stripped down to only provide the database migration
+from this change, everything else is reverted and will only become
+available in 2026.1.
+
+Original commit message:
+
+Add hardware health monitoring via management interface
+
+Adds hardware health status monitoring for baremetal nodes. A new
+'health' field on the Node object (API microversion 1.109) exposes
+hardware health status reported by the BMC with values 'OK',
+'Warning', 'Critical', or None.
+
+Drivers can implement an optional get_node_health() method in their
+management interface to retrieve health status. The conductor
+automatically queries this during power state synchronization for all
+nodes. Drivers without support raise UnsupportedDriverExtension and
+are silently skipped.
+
+The Redfish management interface provides the first implementation,
+retrieving Status.Health from the System resource.
+
+The feature is enabled by default but can be disabled via the
+[conductor]/enable_health_monitoring configuration option.
+
+Change-Id: Id1142325fd2094e46f2c79c781aae2e230cc04aa
+Assisted-by: Claude (Anthropic) version 4.5
+Signed-off-by: Jacob Anders <jacob-anders-dev@proton.me>
+Partial-Bug: #2133522
+(cherry picked from commit f61755d81b55ede83f1e24ee85145903c264742d)
+---
+ .../9f8c7d6e5b4a_add_node_health_fields.py    | 31 +++++++++++++++++++
+ ironic/db/sqlalchemy/models.py                |  1 +
+ 2 files changed, 32 insertions(+)
+ create mode 100644 ironic/db/sqlalchemy/alembic/versions/9f8c7d6e5b4a_add_node_health_fields.py
+
+diff --git a/ironic/db/sqlalchemy/alembic/versions/9f8c7d6e5b4a_add_node_health_fields.py b/ironic/db/sqlalchemy/alembic/versions/9f8c7d6e5b4a_add_node_health_fields.py
+new file mode 100644
+index 000000000..51b75388b
+--- /dev/null
++++ b/ironic/db/sqlalchemy/alembic/versions/9f8c7d6e5b4a_add_node_health_fields.py
+@@ -0,0 +1,31 @@
++#    Licensed under the Apache License, Version 2.0 (the "License"); you may
++#    not use this file except in compliance with the License. You may obtain
++#    a copy of the License at
++#
++#         http://www.apache.org/licenses/LICENSE-2.0
++#
++#    Unless required by applicable law or agreed to in writing, software
++#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++#    License for the specific language governing permissions and limitations
++#    under the License.
++
++"""add node health field
++
++Revision ID: 9f8c7d6e5b4a
++Revises: 15e9d00367b0
++Create Date: 2025-11-11 12:00:00.000000
++
++"""
++
++from alembic import op
++import sqlalchemy as sa
++
++# revision identifiers, used by Alembic.
++revision = '9f8c7d6e5b4a'
++down_revision = '15e9d00367b0'
++
++
++def upgrade():
++    op.add_column('nodes', sa.Column('health', sa.String(length=32),
++                                     nullable=True))
+diff --git a/ironic/db/sqlalchemy/models.py b/ironic/db/sqlalchemy/models.py
+index 027c0d1f3..71a621fb5 100644
+--- a/ironic/db/sqlalchemy/models.py
++++ b/ironic/db/sqlalchemy/models.py
+@@ -221,6 +221,7 @@ class NodeBase(Base):
+     service_step = Column(db_types.JsonEncodedDict)
+     disable_power_off = Column(Boolean, nullable=True, default=False,
+                                server_default=false())
++    health = Column(String(32), nullable=True)
+ 
+ 
+ class Node(NodeBase):
+-- 
+2.47.3
+

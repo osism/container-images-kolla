@@ -1,0 +1,872 @@
+From ec0913a898205475063ef921459b1ae169d08a3c Mon Sep 17 00:00:00 2001
+From: Jay Faulkner <jay@jvf.cc>
+Date: Tue, 17 Jun 2025 13:50:17 -0700
+Subject: [PATCH 3/5] Add node.instance_name
+
+This adds node.instance_name as a top level field
+
+Additionally, to provide forwards-compatability for nova clients,
+we will automatically set node.instance_name if
+node.instance_info.display_name is being set.
+
+Tested the following in devstack, using manual CURL api calls:
+
+ - Viewing an instance_name via GET /v1/nodes/node-name
+ - Adding an instance_name
+ - Clearing instance name on undeploy
+ - Setting an instance_name via PATCH /v1/nodes/node-name
+ - Setting a instance_info/display_name and validating it sets instance_name
+ - Setting a instance_info/display_name when instance_name already exists and
+   validating it DOES NOT OVERRIDE existing instance_name
+ - node.instance_name not returned for API version < our micro version
+ - querying /v1/nodes with ?instance_name=somename
+ - (cid) Sort of fully tested integrated with nova by observing CI logs
+ - (jayf) Added missing comments around API versions, and added a reminder
+   comment
+
+Generated-By: Claude code
+Change-Id: Ic24b2e8dbe88c59f0df52a0f5581d48492ba8cd7
+Signed-off-by: Afonne-CID <afonnepaulc@gmail.com>
+Signed-off-by: Jay Faulkner <jay@jvf.cc>
+(cherry picked from commit bc463ebcbbc69ff28d87853bfe7796e88a8e17de)
+---
+ api-ref/source/baremetal-api-v1-nodes.inc     | 27 +++++-
+ api-ref/source/parameters.yaml                | 23 +++++
+ .../source/samples/node-create-response.json  |  1 +
+ .../source/samples/node-show-response.json    |  1 +
+ .../node-update-driver-info-response.json     |  1 +
+ .../samples/nodes-list-details-response.json  |  2 +
+ .../contributor/webapi-version-history.rst    |  8 ++
+ ironic/api/controllers/v1/node.py             | 35 ++++++-
+ ironic/api/controllers/v1/utils.py            | 15 +++
+ ironic/api/controllers/v1/versions.py         |  8 +-
+ ironic/common/release_mappings.py             |  4 +-
+ ironic/conductor/manager.py                   |  1 +
+ ironic/db/api.py                              |  1 +
+ ...0367b0_add_instance_name_field_to_nodes.py | 31 ++++++
+ ironic/db/sqlalchemy/api.py                   |  2 +-
+ ironic/db/sqlalchemy/models.py                |  1 +
+ ironic/objects/deployment.py                  |  1 +
+ ironic/objects/node.py                        |  9 +-
+ .../unit/api/controllers/v1/test_node.py      | 95 +++++++++++++++++++
+ ironic/tests/unit/conductor/test_manager.py   |  1 +
+ ironic/tests/unit/db/test_nodes.py            |  5 +
+ ironic/tests/unit/db/utils.py                 |  1 +
+ ironic/tests/unit/objects/test_objects.py     |  2 +-
+ ...-instance-name-field-23d6e3409f1f4736.yaml | 15 +++
+ 24 files changed, 276 insertions(+), 14 deletions(-)
+ create mode 100644 ironic/db/sqlalchemy/alembic/versions/15e9d00367b0_add_instance_name_field_to_nodes.py
+ create mode 100644 releasenotes/notes/node-instance-name-field-23d6e3409f1f4736.yaml
+
+diff --git a/api-ref/source/baremetal-api-v1-nodes.inc b/api-ref/source/baremetal-api-v1-nodes.inc
+index 94c6bcb6f..176cc1eb2 100644
+--- a/api-ref/source/baremetal-api-v1-nodes.inc
++++ b/api-ref/source/baremetal-api-v1-nodes.inc
+@@ -116,12 +116,15 @@ supplied when the Node is created, or the resource may be updated later.
+ .. versionadded:: 1.82
+   Introduced the ``shard`` field.
+ 
+-.. versionadded: 1.83
++.. versionadded:: 1.83
+   Introduced the ``parent_node`` field.
+ 
+-.. versionadded: 1.95
++.. versionadded:: 1.95
+   Introduced the ``disable_power_off`` field.
+ 
++.. versionadded:: 1.104
++  Introduced the ``instance_name`` field.
++
+ Normal response codes: 201
+ 
+ Error codes: 400,403,406
+@@ -160,6 +163,7 @@ Request
+     - chassis_uuid: req_chassis_uuid
+     - instance_info: req_instance_info
+     - instance_uuid: req_instance_uuid
++    - instance_name: req_instance_name
+     - maintenance: req_maintenance
+     - maintenance_reason: maintenance_reason
+     - network_data: network_data
+@@ -203,6 +207,7 @@ microversion 1.95.
+     - properties: n_properties
+     - instance_info: instance_info
+     - instance_uuid: instance_uuid
++    - instance_name: instance_name
+     - chassis_uuid: chassis_uuid
+     - extra: extra
+     - console_enabled: console_enabled
+@@ -314,6 +319,9 @@ provision state, and maintenance setting for each Node.
+   nodes to be enumerated, which are normally hidden as child nodes are not
+   normally intended for direct consumption by end users.
+ 
++.. versionadded:: 1.104
++  Introduced the ``instance_name`` query parameter and response field.
++
+ Normal response codes: 200
+ 
+ Error codes: 400,403,406
+@@ -324,6 +332,7 @@ Request
+ .. rest_parameters:: parameters.yaml
+ 
+    - instance_uuid: r_instance_uuid
++   - instance_name: r_instance_name
+    - maintenance: r_maintenance
+    - associated: r_associated
+    - provision_state: r_provision_state
+@@ -412,6 +421,10 @@ Nova instance, eg. with a request to ``v1/nodes/detail?instance_uuid={NOVA INSTA
+ .. versionadded:: 1.82
+   Introduced the ``shard`` field. Introduced the ``sharded`` request parameter.
+ 
++.. versionadded:: 1.104
++  Introduced the ``instance_name`` field.
++
++
+ Normal response codes: 200
+ 
+ Error codes: 400,403,406
+@@ -422,6 +435,7 @@ Request
+ .. rest_parameters:: parameters.yaml
+ 
+    - instance_uuid: r_instance_uuid
++   - instance_name: r_instance_name
+    - maintenance: r_maintenance
+    - fault: r_fault
+    - associated: r_associated
+@@ -462,6 +476,7 @@ Response
+     - properties: n_properties
+     - instance_info: instance_info
+     - instance_uuid: instance_uuid
++    - instance_name: instance_name
+     - chassis_uuid: chassis_uuid
+     - extra: extra
+     - console_enabled: console_enabled
+@@ -571,6 +586,9 @@ only the specified set.
+ .. versionadded:: 1.95
+   Introduced the ``disable_power_off`` field.
+ 
++.. versionadded:: 1.104
++  Introduced the ``instance_name`` field.
++
+ Normal response codes: 200
+ 
+ Error codes: 400,403,404,406
+@@ -605,6 +623,7 @@ Response
+     - properties: n_properties
+     - instance_info: instance_info
+     - instance_uuid: instance_uuid
++    - instance_name: instance_name
+     - chassis_uuid: chassis_uuid
+     - extra: extra
+     - console_enabled: console_enabled
+@@ -668,6 +687,9 @@ managed through sub-resources.
+ .. versionadded:: 1.82
+   Introduced the ability to set/unset a node's shard.
+ 
++.. versionadded:: 1.104
++  Introduced the ability to set/unset node's instance_name.
++
+ Normal response codes: 200
+ 
+ Error codes: 400,403,404,406,409
+@@ -708,6 +730,7 @@ Response
+     - properties: n_properties
+     - instance_info: instance_info
+     - instance_uuid: instance_uuid
++    - instance_name: instance_name
+     - chassis_uuid: chassis_uuid
+     - extra: extra
+     - console_enabled: console_enabled
+diff --git a/api-ref/source/parameters.yaml b/api-ref/source/parameters.yaml
+index 666c431e4..289acd60c 100644
+--- a/api-ref/source/parameters.yaml
++++ b/api-ref/source/parameters.yaml
+@@ -332,6 +332,13 @@ r_fault:
+   in: query
+   required: false
+   type: string
++r_instance_name:
++  description: |
++    Filter the list of returned nodes, and only return the node with this
++    specific instance name, or an empty set if not found.
++  in: query
++  required: false
++  type: string
+ r_instance_uuid:
+   description: |
+     Filter the list of returned nodes, and only return the node with this
+@@ -1288,6 +1295,14 @@ instance_info:
+   in: body
+   required: true
+   type: JSON
++instance_name:
++  description: |
++    A human-readable name for the instance deployed on this node. This is
++    automatically synchronized with the ``display_name`` from the node's
++    ``instance_info`` for backward compatibility with Nova.
++  in: body
++  required: false
++  type: string
+ instance_uuid:
+   description: |
+     UUID of the Nova instance associated with this Node.
+@@ -1890,6 +1905,14 @@ req_instance_info:
+   in: body
+   required: false
+   type: JSON
++req_instance_name:
++  description: |
++    A human-readable name for the instance deployed on this node. This is
++    automatically synchronized with the ``display_name`` from the node's
++    ``instance_info`` for backward compatibility with Nova.
++  in: body
++  required: false
++  type: string
+ req_instance_uuid:
+   description: |
+     UUID of the Nova instance associated with this Node.
+diff --git a/api-ref/source/samples/node-create-response.json b/api-ref/source/samples/node-create-response.json
+index 273d0709a..d0c4e8711 100644
+--- a/api-ref/source/samples/node-create-response.json
++++ b/api-ref/source/samples/node-create-response.json
+@@ -22,6 +22,7 @@
+   "inspection_started_at": null,
+   "instance_info": {},
+   "instance_uuid": null,
++  "instance_name": null,
+   "last_error": null,
+   "lessee": null,
+   "links": [
+diff --git a/api-ref/source/samples/node-show-response.json b/api-ref/source/samples/node-show-response.json
+index 68b7eacb9..2423327e1 100644
+--- a/api-ref/source/samples/node-show-response.json
++++ b/api-ref/source/samples/node-show-response.json
+@@ -25,6 +25,7 @@
+   "inspection_started_at": null,
+   "instance_info": {},
+   "instance_uuid": null,
++  "instance_name": null,
+   "last_error": null,
+   "lessee": null,
+   "links": [
+diff --git a/api-ref/source/samples/node-update-driver-info-response.json b/api-ref/source/samples/node-update-driver-info-response.json
+index 3655243ce..691d8fa45 100644
+--- a/api-ref/source/samples/node-update-driver-info-response.json
++++ b/api-ref/source/samples/node-update-driver-info-response.json
+@@ -26,6 +26,7 @@
+   "inspection_started_at": null,
+   "instance_info": {},
+   "instance_uuid": null,
++  "instance_name": null,
+   "last_error": null,
+   "lessee": null,
+   "links": [
+diff --git a/api-ref/source/samples/nodes-list-details-response.json b/api-ref/source/samples/nodes-list-details-response.json
+index 70451eee2..bbd65d513 100644
+--- a/api-ref/source/samples/nodes-list-details-response.json
++++ b/api-ref/source/samples/nodes-list-details-response.json
+@@ -27,6 +27,7 @@
+       "inspection_started_at": null,
+       "instance_info": {},
+       "instance_uuid": "5344a3e2-978a-444e-990a-cbf47c62ef88",
++      "instance_name": "my-test-instance",
+       "last_error": null,
+       "lessee": null,
+       "links": [
+@@ -133,6 +134,7 @@
+       "inspection_started_at": null,
+       "instance_info": {},
+       "instance_uuid": null,
++      "instance_name": null,
+       "last_error": null,
+       "lessee": null,
+       "links": [
+diff --git a/doc/source/contributor/webapi-version-history.rst b/doc/source/contributor/webapi-version-history.rst
+index c340b93df..50adde50a 100644
+--- a/doc/source/contributor/webapi-version-history.rst
++++ b/doc/source/contributor/webapi-version-history.rst
+@@ -2,6 +2,14 @@
+ REST API Version History
+ ========================
+ 
++1.104 (Gazpacho)
++------------------------
++
++Add a new ``instance_name`` field to the node resource. This field provides
++a human-readable name for the instance deployed on a node and is automatically
++synchronized with ``instance_info.display_name`` for backward compatibility
++with Nova.
++
+ 1.103 (Gazpacho)
+ -----------------------
+ 
+diff --git a/ironic/api/controllers/v1/node.py b/ironic/api/controllers/v1/node.py
+index 9d719de63..cd040d3c0 100644
+--- a/ironic/api/controllers/v1/node.py
++++ b/ironic/api/controllers/v1/node.py
+@@ -184,6 +184,8 @@ def node_schema():
+             'firmware_interface': {'type': ['string', 'null']},
+             'inspect_interface': {'type': ['string', 'null']},
+             'instance_info': {'type': ['object', 'null']},
++            'instance_name': {'type': ['string', 'null'], 'minLength': 1,
++                              'maxLength': 255},
+             'instance_uuid': {'type': ['string', 'null']},
+             'lessee': {'type': ['string', 'null']},
+             'management_interface': {'type': ['string', 'null']},
+@@ -278,6 +280,7 @@ PATCH_ALLOWED_FIELDS = [
+     'extra',
+     'inspect_interface',
+     'instance_info',
++    'instance_name',
+     'instance_uuid',
+     'lessee',
+     'maintenance',
+@@ -1585,6 +1588,7 @@ def _get_fields_for_node_query(fields=None):
+                     'inspection_started_at',
+                     'inspect_interface',
+                     'instance_info',
++                    'instance_name',
+                     'instance_uuid',
+                     'last_error',
+                     'lessee',
+@@ -2446,7 +2450,7 @@ class NodesController(rest.RestController):
+                               lessee=None, project=None,
+                               description_contains=None, shard=None,
+                               sharded=None, include_children=None,
+-                              parent_node=None):
++                              parent_node=None, instance_name=None):
+         if self.from_chassis and not chassis_uuid:
+             raise exception.MissingParameterValue(
+                 _("Chassis id not specified."))
+@@ -2487,6 +2491,7 @@ class NodesController(rest.RestController):
+             'project': project,
+             'description_contains': description_contains,
+             'retired': retired,
++            'instance_name': instance_name,
+             'instance_uuid': instance_uuid,
+             'sharded': sharded,
+             'include_children': include_children,
+@@ -2636,7 +2641,8 @@ class NodesController(rest.RestController):
+                    owner=args.string, description_contains=args.string,
+                    lessee=args.string, project=args.string,
+                    shard=args.string_list, sharded=args.boolean,
+-                   include_children=args.boolean, parent_node=args.string)
++                   include_children=args.boolean, parent_node=args.string,
++                   instance_name=args.string)
+     def get_all(self, chassis_uuid=None, instance_uuid=None, associated=None,
+                 maintenance=None, retired=None, provision_state=None,
+                 marker=None, limit=None, sort_key='id', sort_dir='asc',
+@@ -2644,7 +2650,7 @@ class NodesController(rest.RestController):
+                 conductor_group=None, detail=None, conductor=None,
+                 owner=None, description_contains=None, lessee=None,
+                 project=None, shard=None, sharded=None, include_children=None,
+-                parent_node=None):
++                parent_node=None, instance_name=None):
+         """Retrieve a list of nodes.
+ 
+         :param chassis_uuid: Optional UUID of a chassis, to get only nodes for
+@@ -2693,6 +2699,8 @@ class NodesController(rest.RestController):
+         :param sharded: Optional boolean whether to return a list of
+                         nodes with or without a shard set. May be combined
+                         with other parameters.
++        :param instance_name: Optional string value to get nodes with a
++                              matching instance_name
+         """
+         project = api_utils.check_list_policy('node', project)
+ 
+@@ -2710,6 +2718,7 @@ class NodesController(rest.RestController):
+         api_utils.check_allow_filter_by_shard(shard)
+         # Sharded is guarded by the same API version as shard
+         api_utils.check_allow_filter_by_shard(sharded)
++        api_utils.check_allow_filter_by_instance_name(instance_name)
+         api_utils.check_allow_child_node_params(
+             include_children=include_children,
+             parent_node=parent_node)
+@@ -2733,6 +2742,7 @@ class NodesController(rest.RestController):
+                                           project=project,
+                                           include_children=include_children,
+                                           parent_node=parent_node,
++                                          instance_name=instance_name,
+                                           **extra_args)
+ 
+     @METRICS.timer('NodesController.detail')
+@@ -2746,7 +2756,8 @@ class NodesController(rest.RestController):
+                    conductor_group=args.string, conductor=args.string,
+                    owner=args.string, description_contains=args.string,
+                    lessee=args.string, project=args.string,
+-                   shard=args.string_list, sharded=args.boolean)
++                   shard=args.string_list, sharded=args.boolean,
++                   instance_name=args.string)
+     def detail(self, chassis_uuid=None, instance_uuid=None, associated=None,
+                maintenance=None, retired=None, provision_state=None,
+                marker=None, limit=None, sort_key='id', sort_dir='asc',
+@@ -2754,7 +2765,7 @@ class NodesController(rest.RestController):
+                conductor_group=None, conductor=None, owner=None,
+                description_contains=None, lessee=None, project=None,
+                shard=None, sharded=None, include_children=None,
+-               parent_node=None):
++               parent_node=None, instance_name=None):
+         """Retrieve a list of nodes with detail.
+ 
+         :param chassis_uuid: Optional UUID of a chassis, to get only nodes for
+@@ -2798,6 +2809,8 @@ class NodesController(rest.RestController):
+         :param sharded: Optional boolean whether to return a list of
+                         nodes with or without a shard set. May be combined
+                         with other parameters.
++        :param instance_name: Optional string that sets an instance_name to
++                              search for
+         """
+         project = api_utils.check_list_policy('node', project)
+ 
+@@ -2818,6 +2831,7 @@ class NodesController(rest.RestController):
+         api_utils.check_allow_filter_by_shard(shard)
+         # Sharded is guarded by the same API version as shard
+         api_utils.check_allow_filter_by_shard(sharded)
++        api_utils.check_allow_filter_by_instance_name(instance_name)
+ 
+         extra_args = {'description_contains': description_contains}
+         return self._get_nodes_collection(chassis_uuid, instance_uuid,
+@@ -2835,6 +2849,7 @@ class NodesController(rest.RestController):
+                                           sharded=sharded,
+                                           include_children=include_children,
+                                           parent_node=parent_node,
++                                          instance_name=instance_name,
+                                           **extra_args)
+ 
+     @METRICS.timer('NodesController.validate')
+@@ -3064,6 +3079,7 @@ class NodesController(rest.RestController):
+             ('/properties', 'baremetal:node:update:properties'),
+             ('/chassis_uuid', 'baremetal:node:update:chassis_uuid'),
+             ('/instance_uuid', 'baremetal:node:update:instance_uuid'),
++            ('/instance_name', 'baremetal:node:update:instance_info'),
+             ('/lessee', 'baremetal:node:update:lessee'),
+             ('/owner', 'baremetal:node:update:owner'),
+             ('/driver', 'baremetal:node:update:driver_interfaces'),
+@@ -3215,6 +3231,15 @@ class NodesController(rest.RestController):
+             node_dict, node_patch_schema(), node_patch_validator)
+ 
+         self._update_changed_fields(node_dict, rpc_node)
++
++        # For forward compatibility, sync display_name from instance_info
++        # to instance_name if instance_name is not already set
++        changed_fields = rpc_node.obj_what_changed()
++        if ('instance_info' in changed_fields
++            and not rpc_node.instance_name
++            and rpc_node.instance_info.get('display_name')):
++            rpc_node.instance_name = rpc_node.instance_info['display_name']
++
+         # NOTE(tenbrae): we calculate the rpc topic here in case node.driver
+         #             has changed, so that update is sent to the
+         #             new conductor, not the old one which may fail to
+diff --git a/ironic/api/controllers/v1/utils.py b/ironic/api/controllers/v1/utils.py
+index 881c17c1b..afa219237 100644
+--- a/ironic/api/controllers/v1/utils.py
++++ b/ironic/api/controllers/v1/utils.py
+@@ -893,6 +893,7 @@ VERSIONED_FIELDS = {
+     'firmware_interface': versions.MINOR_86_FIRMWARE_INTERFACE,
+     'service_step': versions.MINOR_87_SERVICE,
+     'disable_power_off': versions.MINOR_95_DISABLE_POWER_OFF,
++    'instance_name': versions.MINOR_104_NODE_INSTANCE_NAME,
+ }
+ 
+ for field in V31_FIELDS:
+@@ -2279,3 +2280,17 @@ def allow_port_category():
+     Version 1.101 of the API added category field to the port object.
+     """
+     return api.request.version.minor >= versions.MINOR_101_PORT_CATEGORY
++
++
++def allow_node_instance_name():
++    """Check if instance_name is allowed for nodes.
++
++    Version 1.104 of the API added instance_name field to the node object.
++    """
++    return api.request.version.minor >= versions.MINOR_104_NODE_INSTANCE_NAME
++
++
++def check_allow_filter_by_instance_name(instance_name):
++    if instance_name is not None and not allow_node_instance_name():
++        raise exception.NotAcceptable(
++            _("instance_name is not acceptable in this API version"))
+diff --git a/ironic/api/controllers/v1/versions.py b/ironic/api/controllers/v1/versions.py
+index 6e2c64ff8..3257cf8f0 100644
+--- a/ironic/api/controllers/v1/versions.py
++++ b/ironic/api/controllers/v1/versions.py
+@@ -140,6 +140,9 @@ BASE_VERSION = 1
+ # v1.100: Add vendor field to port.
+ # v1.101: Add category field to port.
+ # v1.102: Add physical_network field to portgroup.
++# v1.103: Add category field to portgroup
++# v1.104: Add instance_name to node
++
+ 
+ MINOR_0_JUNO = 0
+ MINOR_1_INITIAL_VERSION = 1
+@@ -245,15 +248,18 @@ MINOR_100_PORT_VENDOR = 100
+ MINOR_101_PORT_CATEGORY = 101
+ MINOR_102_PORTGROUP_PHYSICAL_NETWORK = 102
+ MINOR_103_PORTGROUP_CATEGORY = 103
++MINOR_104_NODE_INSTANCE_NAME = 104
++
+ 
+ # When adding another version, update:
+ # - MINOR_MAX_VERSION
+ # - doc/source/contributor/webapi-version-history.rst with a detailed
+ #   explanation of what changed in the new version
+ # - common/release_mappings.py, RELEASE_MAPPING['master']['api']
++# - Add a comment describing the change above the list of consts
+ 
+ 
+-MINOR_MAX_VERSION = MINOR_103_PORTGROUP_CATEGORY
++MINOR_MAX_VERSION = MINOR_104_NODE_INSTANCE_NAME
+ 
+ # String representations of the minor and maximum versions
+ _MIN_VERSION_STRING = '{}.{}'.format(BASE_VERSION, MINOR_1_INITIAL_VERSION)
+diff --git a/ironic/common/release_mappings.py b/ironic/common/release_mappings.py
+index 37fcfe876..b5437469b 100644
+--- a/ironic/common/release_mappings.py
++++ b/ironic/common/release_mappings.py
+@@ -920,12 +920,12 @@ RELEASE_MAPPING = {
+     # make it below. To release, we will preserve a version matching
+     # the release as a separate block of text, like above.
+     'master': {
+-        'api': '1.103',
++        'api': '1.104',
+         'rpc': '1.62',
+         'objects': {
+             'Allocation': ['1.3', '1.2', '1.1'],
+             'BIOSSetting': ['1.2', '1.1'],
+-            'Node': ['1.42', '1.41'],
++            'Node': ['1.43', '1.42', '1.41'],
+             'NodeHistory': ['1.1', '1.0'],
+             'NodeInventory': ['1.1', '1.0'],
+             'Conductor': ['1.6', '1.5', '1.4'],
+diff --git a/ironic/conductor/manager.py b/ironic/conductor/manager.py
+index 43a6d893f..04fea078d 100644
+--- a/ironic/conductor/manager.py
++++ b/ironic/conductor/manager.py
+@@ -1157,6 +1157,7 @@ class ConductorManager(base_manager.BaseConductorManager):
+             # But we do need to clear the instance-related fields.
+             node.instance_info = {}
+             node.instance_uuid = None
++            node.instance_name = None
+             utils.wipe_deploy_internal_info(task)
+             node.del_driver_internal_info('instance')
+             node.del_driver_internal_info('root_uuid_or_disk_id')
+diff --git a/ironic/db/api.py b/ironic/db/api.py
+index 24bd70940..a7a54cd1e 100644
+--- a/ironic/db/api.py
++++ b/ironic/db/api.py
+@@ -64,6 +64,7 @@ class Connection(object, metaclass=abc.ABCMeta):
+                             nodes with inspection_started_at field before this
+                             interval in seconds
+                         :instance_uuid: uuid of instance
++                        :instance_name: name of instance
+                         :lessee: node's lessee (e.g. project ID)
+                         :maintenance: True | False
+                         :owner: node's owner (e.g. project ID)
+diff --git a/ironic/db/sqlalchemy/alembic/versions/15e9d00367b0_add_instance_name_field_to_nodes.py b/ironic/db/sqlalchemy/alembic/versions/15e9d00367b0_add_instance_name_field_to_nodes.py
+new file mode 100644
+index 000000000..9b41ad4c9
+--- /dev/null
++++ b/ironic/db/sqlalchemy/alembic/versions/15e9d00367b0_add_instance_name_field_to_nodes.py
+@@ -0,0 +1,31 @@
++#    Licensed under the Apache License, Version 2.0 (the "License"); you may
++#    not use this file except in compliance with the License. You may obtain
++#    a copy of the License at
++#
++#         http://www.apache.org/licenses/LICENSE-2.0
++#
++#    Unless required by applicable law or agreed to in writing, software
++#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++#    License for the specific language governing permissions and limitations
++#    under the License.
++
++"""add instance_name field to nodes
++
++Revision ID: 15e9d00367b0
++Revises: 1c14278d6e33
++Create Date: 2025-06-17 12:59:58.807596
++
++"""
++
++from alembic import op
++import sqlalchemy as sa
++
++# revision identifiers, used by Alembic.
++revision = '15e9d00367b0'
++down_revision = '763b2f62d215'
++
++
++def upgrade():
++    op.add_column('nodes', sa.Column('instance_name', sa.String(length=255),
++                                     nullable=True))
+diff --git a/ironic/db/sqlalchemy/api.py b/ironic/db/sqlalchemy/api.py
+index 94067aff8..708a63d45 100644
+--- a/ironic/db/sqlalchemy/api.py
++++ b/ironic/db/sqlalchemy/api.py
+@@ -480,7 +480,7 @@ class Connection(api.Connection):
+     _NODE_QUERY_FIELDS = {'console_enabled', 'maintenance', 'retired',
+                           'driver', 'resource_class', 'provision_state',
+                           'uuid', 'id', 'fault', 'conductor_group',
+-                          'owner', 'lessee', 'instance_uuid'}
++                          'owner', 'lessee', 'instance_uuid', 'instance_name'}
+     _NODE_IN_QUERY_FIELDS = {'%s_in' % field: field
+                              for field in ('uuid', 'provision_state', 'shard')}
+     _NODE_NON_NULL_FILTERS = {'associated': 'instance_uuid',
+diff --git a/ironic/db/sqlalchemy/models.py b/ironic/db/sqlalchemy/models.py
+index 56c64bc73..027c0d1f3 100644
+--- a/ironic/db/sqlalchemy/models.py
++++ b/ironic/db/sqlalchemy/models.py
+@@ -143,6 +143,7 @@ class NodeBase(Base):
+     #             filter on it more efficiently, even though it is
+     #             user-settable, and would otherwise be in node.properties.
+     instance_uuid = Column(String(36), nullable=True)
++    instance_name = Column(String(255), nullable=True)
+     name = Column(String(255), nullable=True)
+     chassis_id = Column(Integer, ForeignKey('chassis.id'), nullable=True)
+     power_state = Column(String(15), nullable=True)
+diff --git a/ironic/objects/deployment.py b/ironic/objects/deployment.py
+index e9fa9b20a..bf2b28a4b 100644
+--- a/ironic/objects/deployment.py
++++ b/ironic/objects/deployment.py
+@@ -219,6 +219,7 @@ class Deployment(base.IronicObject, object_base.VersionedObjectDictCompat):
+             assert node.uuid == self.node_uuid
+         node.instance_uuid = None
+         node.instance_info = {}
++        node.instance_name = None
+         node.save()
+         self._update_from_node_object(node)
+         self.obj_reset_changes()
+diff --git a/ironic/objects/node.py b/ironic/objects/node.py
+index 7ef1443a7..536ea535f 100644
+--- a/ironic/objects/node.py
++++ b/ironic/objects/node.py
+@@ -84,7 +84,8 @@ class Node(base.IronicObject, object_base.VersionedObjectDictCompat):
+     # Version 1.40: Add service_step field
+     # Version 1.41: Add disable_power_off field
+     # Version 1.42: Moves multiple methods to be remotable methods.
+-    VERSION = '1.42'
++    # Version 1.43: Add instance_name field
++    VERSION = '1.43'
+ 
+     dbapi = db_api.get_instance()
+ 
+@@ -185,6 +186,7 @@ class Node(base.IronicObject, object_base.VersionedObjectDictCompat):
+         'shard': object_fields.StringField(nullable=True),
+         'parent_node': object_fields.StringField(nullable=True),
+         'disable_power_off': objects.fields.BooleanField(nullable=True),
++        'instance_name': object_fields.StringField(nullable=True),
+     }
+ 
+     def as_dict(self, secure=False, mask_configdrive=True):
+@@ -634,6 +636,9 @@ class Node(base.IronicObject, object_base.VersionedObjectDictCompat):
+         Version 1.39: firmware_interface field was added. Its default value is
+             None. For versions prior to this, it should be set to None (or
+             removed).
++        Version 1.43: instance_name field was added. Its default value is
++            None. For versions prior to this, it should be set to None (or
++            removed).
+ 
+         :param target_version: the desired version of the object
+         :param remove_unavailable_fields: True to remove fields that are
+@@ -650,7 +655,7 @@ class Node(base.IronicObject, object_base.VersionedObjectDictCompat):
+                   ('owner', 30), ('allocation_id', 31), ('description', 32),
+                   ('retired_reason', 33), ('lessee', 34), ('boot_mode', 36),
+                   ('secure_boot', 36), ('shard', 37),
+-                  ('firmware_interface', 39)]
++                  ('firmware_interface', 39), ('instance_name', 43)]
+ 
+         for name, minor in fields:
+             self._adjust_field_to_version(name, None, target_version,
+diff --git a/ironic/tests/unit/api/controllers/v1/test_node.py b/ironic/tests/unit/api/controllers/v1/test_node.py
+index aa5591e3c..756df9736 100644
+--- a/ironic/tests/unit/api/controllers/v1/test_node.py
++++ b/ironic/tests/unit/api/controllers/v1/test_node.py
+@@ -176,6 +176,25 @@ class TestListNodes(test_api_base.BaseApiTest):
+             mock.call().__bool__(),
+         ])
+ 
++    def test_instance_name_field_with_api_version(self):
++        instance_name = 'test-instance-name'
++        obj_utils.create_test_node(self.context,
++                                   chassis_id=self.chassis.id,
++                                   instance_name=instance_name)
++        # Test with API version 1.104 - instance_name should be visible
++        data = self.get_json(
++            '/nodes?fields=uuid,instance_name',
++            headers={api_base.Version.string: '1.104'})
++        self.assertIn('instance_name', data['nodes'][0])
++        self.assertEqual(instance_name, data['nodes'][0]['instance_name'])
++
++        # Test with older API version - instance_name should not be visible
++        data = self.get_json(
++            '/nodes?fields=uuid,instance_name',
++            headers={api_base.Version.string: '1.99'},
++            expect_errors=True)
++        self.assertEqual(http_client.NOT_ACCEPTABLE, data.status_int)
++
+     def test_get_one(self):
+         node = obj_utils.create_test_node(self.context,
+                                           chassis_id=self.chassis.id)
+@@ -4488,6 +4507,82 @@ class TestPatch(test_api_base.BaseApiTest):
+              'baremetal:node:update'],
+             node.uuid, with_suffix=True)
+ 
++    @mock.patch.object(api_utils, 'check_multiple_node_policies_and_retrieve',
++                       autospec=True)
++    def test_patch_display_name_sets_instance_name_when_not_provided(
++            self, mock_cmnpar):
++        node = obj_utils.create_test_node(self.context,
++                                          uuid=uuidutils.generate_uuid())
++        mock_cmnpar.return_value = node
++        self.mock_update_node.return_value = node
++        headers = {api_base.Version.string: '1.104'}
++        display_name = 'my-display-name'
++        response = self.patch_json('/nodes/%s' % node.uuid,
++                                   [{'path': '/instance_info/display_name',
++                                     'value': display_name,
++                                     'op': 'add'}],
++                                   headers=headers)
++        self.assertEqual('application/json', response.content_type)
++        self.assertEqual(http_client.OK, response.status_code)
++        # Verify that update_node was called with instance_name set
++        # to the same value as display_name
++        self.mock_update_node.assert_called_once()
++        updated_node = self.mock_update_node.call_args.args[2]
++        self.assertEqual(display_name, updated_node.instance_name)
++
++    @mock.patch.object(api_utils, 'check_multiple_node_policies_and_retrieve',
++                       autospec=True)
++    def test_patch_display_name_does_not_override_instance_name(
++            self, mock_cmnpar):
++        existing_instance_name = 'existing-instance-name'
++        node = obj_utils.create_test_node(self.context,
++                                          uuid=uuidutils.generate_uuid(),
++                                          instance_name=existing_instance_name)
++        mock_cmnpar.return_value = node
++        self.mock_update_node.return_value = node
++        headers = {api_base.Version.string: '1.104'}
++        display_name = 'different-display-name'
++        response = self.patch_json('/nodes/%s' % node.uuid,
++                                   [{'path': '/instance_info/display_name',
++                                     'value': display_name,
++                                     'op': 'add'},
++                                    {'path': '/instance_name',
++                                     'value': existing_instance_name,
++                                     'op': 'replace'}],
++                                   headers=headers)
++        self.assertEqual('application/json', response.content_type)
++        self.assertEqual(http_client.OK, response.status_code)
++        # Verify that update_node was called with instance_name unchanged
++        self.mock_update_node.assert_called_once()
++        updated_node = self.mock_update_node.call_args.args[2]
++        self.assertEqual(existing_instance_name, updated_node.instance_name)
++
++    @mock.patch.object(api_utils, 'check_multiple_node_policies_and_retrieve',
++                       autospec=True)
++    def test_patch_display_name_preserves_existing_instance_name(
++            self, mock_cmnpar):
++        """display_name doesn't overwrite existing instance_name."""
++        existing_instance_name = 'existing-instance-name'
++        node = obj_utils.create_test_node(self.context,
++                                          uuid=uuidutils.generate_uuid(),
++                                          instance_name=existing_instance_name)
++        mock_cmnpar.return_value = node
++        self.mock_update_node.return_value = node
++        headers = {api_base.Version.string: '1.104'}
++        display_name = 'new-display-name'
++        # Only patch display_name, don't touch instance_name
++        response = self.patch_json('/nodes/%s' % node.uuid,
++                                   [{'path': '/instance_info/display_name',
++                                     'value': display_name,
++                                     'op': 'add'}],
++                                   headers=headers)
++        self.assertEqual('application/json', response.content_type)
++        self.assertEqual(http_client.OK, response.status_code)
++        # Verify that instance_name remains unchanged
++        self.mock_update_node.assert_called_once()
++        updated_node = self.mock_update_node.call_args.args[2]
++        self.assertEqual(existing_instance_name, updated_node.instance_name)
++
+ 
+ def _create_node_locally(node):
+     driver_factory.check_and_update_node_interfaces(node)
+diff --git a/ironic/tests/unit/conductor/test_manager.py b/ironic/tests/unit/conductor/test_manager.py
+index fb67633e0..d57ed5c1d 100644
+--- a/ironic/tests/unit/conductor/test_manager.py
++++ b/ironic/tests/unit/conductor/test_manager.py
+@@ -2508,6 +2508,7 @@ class DoNodeTearDownTestCase(mgr_utils.ServiceSetUpMixin, db_base.DbTestCase):
+         self.assertIsNone(node.instance_uuid)
+         self.assertIsNone(node.allocation_id)
+         self.assertIsNone(node.lessee)
++        self.assertIsNone(node.instance_name)
+         self.assertEqual({}, node.instance_info)
+         self.assertNotIn('instance', node.driver_internal_info)
+         self.assertIsNone(node.driver_internal_info['deploy_steps'])
+diff --git a/ironic/tests/unit/db/test_nodes.py b/ironic/tests/unit/db/test_nodes.py
+index 1b341d5fa..ff05432c1 100644
+--- a/ironic/tests/unit/db/test_nodes.py
++++ b/ironic/tests/unit/db/test_nodes.py
+@@ -125,6 +125,11 @@ class DbNodeTestCase(base.DbTestCase):
+                           self.dbapi.get_node_by_name,
+                           'spam-eggs-bacon-spam')
+ 
++    def test_create_node_with_instance_name(self):
++        instance_name = 'test-instance-name'
++        node = utils.create_test_node(instance_name=instance_name)
++        self.assertEqual(instance_name, node.instance_name)
++
+     def test_get_nodeinfo_list_defaults(self):
+         node_id_list = []
+         for i in range(1, 6):
+diff --git a/ironic/tests/unit/db/utils.py b/ironic/tests/unit/db/utils.py
+index 8bbd21fe3..48061fe13 100644
+--- a/ironic/tests/unit/db/utils.py
++++ b/ironic/tests/unit/db/utils.py
+@@ -197,6 +197,7 @@ def get_test_node(**kw):
+         'provision_updated_at': kw.get('provision_updated_at'),
+         'last_error': kw.get('last_error'),
+         'instance_uuid': kw.get('instance_uuid'),
++        'instance_name': kw.get('instance_name'),
+         'instance_info': kw.get('instance_info', fake_instance_info),
+         'driver': kw.get('driver', 'fake-hardware'),
+         'driver_info': kw.get('driver_info', fake_driver_info),
+diff --git a/ironic/tests/unit/objects/test_objects.py b/ironic/tests/unit/objects/test_objects.py
+index 532bb403b..1ebc7214f 100644
+--- a/ironic/tests/unit/objects/test_objects.py
++++ b/ironic/tests/unit/objects/test_objects.py
+@@ -675,7 +675,7 @@ class TestObject(_LocalTest, _TestObject):
+ # version bump. It is an MD5 hash of the object fields and remotable methods.
+ # The fingerprint values should only be changed if there is a version bump.
+ expected_object_fingerprints = {
+-    'Node': '1.42-a1d3e6011e3cdb27aafa9353b7c0b6d4',
++    'Node': '1.43-cb09f9a8f82f8fb9d55691acf46ef861',
+     'MyObj': '1.5-9459d30d6954bffc7a9afd347a807ca6',
+     'Chassis': '1.4-fe427272d8bad232a8d46e996a5ca42a',
+     'Port': '1.15-013610c0fe2e370b14f4304e0d8aeb3a',
+diff --git a/releasenotes/notes/node-instance-name-field-23d6e3409f1f4736.yaml b/releasenotes/notes/node-instance-name-field-23d6e3409f1f4736.yaml
+new file mode 100644
+index 000000000..68425be0f
+--- /dev/null
++++ b/releasenotes/notes/node-instance-name-field-23d6e3409f1f4736.yaml
+@@ -0,0 +1,15 @@
++---
++features:
++  - |
++    Adds a new ``instance_name`` field to Ironic nodes. This field can be used
++    to store the display name of the Nova instance that is associated with the
++    node, matching the constraints and format of Nova's ``display_name`` field.
++    The field supports strings up to 255 characters with minimum length of 1
++    character when not null.
++
++    The ``instance_name`` field is automatically cleared when instance data
++    is cleared during node teardown operations. For forward compatibility,
++    when Nova or other API clients update ``instance_info`` with a
++    ``display_name`` value, that value is automatically copied to the
++    ``instance_name`` field if ``instance_name`` is not explicitly being set
++    in the same request.
+-- 
+2.47.3
+

@@ -1,0 +1,964 @@
+From 11b5ae83c158078dfaae5ec709104e98e846f144 Mon Sep 17 00:00:00 2001
+From: Clif Houck <me@clifhouck.com>
+Date: Mon, 21 Jul 2025 15:49:26 -0500
+Subject: [PATCH 1/5] Add a new 'physical_network' field to the Portgroup
+ object
+
+Adds a new physical_network field to the portgroup object.
+
+Adds logic to forbid changing Port.physical_network when said Port is
+already part of a Portgroup. Adds logic to Portgroup to cascade
+Portgroup.physical_network changes/updates to member Ports of the
+Portgroup.
+
+Adds RPC call to update physical_network on Portgroup.
+
+Foundational work for first milestone of trait based port scheduling.
+
+Depends-On: https://review.opendev.org/c/openstack/ironic-tempest-plugin/+/955799
+Change-Id: I5a9d9c19182b232bc1b8446644cab0bf6d68d139
+Signed-off-by: Clif Houck <me@clifhouck.com>
+(cherry picked from commit 4a4ea08fce2c82e53fc76104df012e192532ac44)
+---
+ .../source/baremetal-api-v1-portgroups.inc    | 17 +++++
+ api-ref/source/parameters.yaml                |  8 +-
+ .../samples/portgroup-create-response.json    |  1 +
+ .../portgroup-list-detail-response.json       |  1 +
+ .../samples/portgroup-update-response.json    |  1 +
+ doc/source/admin/networking.rst               |  8 +-
+ doc/source/admin/portgroups.rst               |  7 +-
+ .../contributor/webapi-version-history.rst    |  5 ++
+ ironic/api/controllers/v1/port.py             | 11 ++-
+ ironic/api/controllers/v1/portgroup.py        | 38 +++++++++-
+ ironic/api/controllers/v1/utils.py            | 10 +++
+ ironic/api/controllers/v1/versions.py         |  4 +-
+ ironic/common/release_mappings.py             |  6 +-
+ ironic/conductor/manager.py                   | 28 ++++++-
+ ironic/conductor/rpcapi.py                    | 16 +++-
+ ...4f9e2_add_physical_network_to_portgroup.py | 31 ++++++++
+ ironic/db/sqlalchemy/models.py                |  1 +
+ ironic/objects/portgroup.py                   | 75 ++++++++++++++++++-
+ .../unit/api/controllers/v1/test_port.py      | 23 ++++++
+ .../unit/api/controllers/v1/test_portgroup.py | 16 ++++
+ ironic/tests/unit/conductor/test_manager.py   | 39 ++++++++++
+ ironic/tests/unit/db/test_portgroups.py       | 29 +++++++
+ ironic/tests/unit/db/utils.py                 |  1 +
+ ironic/tests/unit/objects/test_objects.py     |  4 +-
+ ironic/tests/unit/objects/test_portgroup.py   | 39 ++++++++++
+ ...oup-physical_network-ea6df85c3e7a18ea.yaml |  7 ++
+ 26 files changed, 400 insertions(+), 26 deletions(-)
+ create mode 100644 ironic/db/sqlalchemy/alembic/versions/d0821744f9e2_add_physical_network_to_portgroup.py
+ create mode 100644 releasenotes/notes/portgroup-physical_network-ea6df85c3e7a18ea.yaml
+
+diff --git a/api-ref/source/baremetal-api-v1-portgroups.inc b/api-ref/source/baremetal-api-v1-portgroups.inc
+index 3b2489222..74171755f 100644
+--- a/api-ref/source/baremetal-api-v1-portgroups.inc
++++ b/api-ref/source/baremetal-api-v1-portgroups.inc
+@@ -77,6 +77,9 @@ Creates a new Portgroup resource.
+ This method requires a Node UUID and the physical hardware address for the
+ Portgroup (MAC address in most cases).
+ 
++.. versionadded:: 1.102
++  Added the ``physical_network`` field.
++
+ Normal response code: 201
+ 
+ Error codes: 400,401,403,404
+@@ -94,6 +97,7 @@ Request
+     - properties: req_portgroup_properties
+     - extra: req_extra
+     - uuid: req_uuid
++    - physical_network: req_physical_network
+ 
+ **Example Portgroup creation request:**
+ 
+@@ -118,6 +122,7 @@ Response
+     - updated_at: updated_at
+     - links: links
+     - ports: pg_ports
++    - physical_network: physical_network
+ 
+ **Example Portgroup creation response:**
+ 
+@@ -132,6 +137,9 @@ List Detailed Portgroups
+ 
+ Return a list of bare metal Portgroups, with detailed information.
+ 
++.. versionadded:: 1.102
++  Added the ``physical_network`` field.
++
+ Normal response code: 200
+ 
+ Error codes: 400,401,403,404
+@@ -167,6 +175,7 @@ Response
+     - updated_at: updated_at
+     - links: links
+     - ports: pg_ports
++    - physical_network: physical_network
+ 
+ **Example detailed Portgroup list response:**
+ 
+@@ -181,6 +190,9 @@ Show Portgroup Details
+ 
+ Show details for the given Portgroup.
+ 
++.. versionadded:: 1.102
++  Added the ``physical_network`` field.
++
+ Normal response code: 200
+ 
+ Error codes: 400,401,403,404
+@@ -211,6 +223,7 @@ Response
+     - updated_at: updated_at
+     - links: links
+     - ports: pg_ports
++    - physical_network: physical_network
+ 
+ **Example Portgroup details:**
+ 
+@@ -225,6 +238,9 @@ Update a Portgroup
+ 
+ Update a Portgroup.
+ 
++.. versionadded:: 1.102
++  Added the ``physical_network`` field.
++
+ Normal response code: 200
+ 
+ Error codes: 400,401,403,404
+@@ -262,6 +278,7 @@ Response
+     - updated_at: updated_at
+     - links: links
+     - ports: pg_ports
++    - physical_network: physical_network
+ 
+ **Example Portgroup update response:**
+ 
+diff --git a/api-ref/source/parameters.yaml b/api-ref/source/parameters.yaml
+index 95feeb8d4..659a76525 100644
+--- a/api-ref/source/parameters.yaml
++++ b/api-ref/source/parameters.yaml
+@@ -1556,8 +1556,8 @@ pg_ports:
+   type: array
+ physical_network:
+   description: |
+-    The name of the physical network to which a port is connected. May be
+-    empty.
++    The name of the physical network to which a port or portgroup is
++    connected. May be empty.
+   in: body
+   required: true
+   type: string
+@@ -1969,8 +1969,8 @@ req_persistent:
+   type: boolean
+ req_physical_network:
+   description: |
+-    The name of the physical network to which a port is connected. May be
+-    empty.
++    The name of the physical network to which a port or portgroup is connected.
++    May be empty.
+   in: body
+   required: false
+   type: string
+diff --git a/api-ref/source/samples/portgroup-create-response.json b/api-ref/source/samples/portgroup-create-response.json
+index 35e58e3d3..a48ba6247 100644
+--- a/api-ref/source/samples/portgroup-create-response.json
++++ b/api-ref/source/samples/portgroup-create-response.json
+@@ -26,6 +26,7 @@
+       "rel": "bookmark"
+     }
+   ],
++  "physical_network": "physnet1",
+   "properties": {},
+   "standalone_ports_supported": true,
+   "updated_at": null,
+diff --git a/api-ref/source/samples/portgroup-list-detail-response.json b/api-ref/source/samples/portgroup-list-detail-response.json
+index 90789fc5e..c814c58e8 100644
+--- a/api-ref/source/samples/portgroup-list-detail-response.json
++++ b/api-ref/source/samples/portgroup-list-detail-response.json
+@@ -28,6 +28,7 @@
+           "rel": "bookmark"
+         }
+       ],
++      "physical_network": "physnet1",
+       "properties": {},
+       "standalone_ports_supported": true,
+       "updated_at": null,
+diff --git a/api-ref/source/samples/portgroup-update-response.json b/api-ref/source/samples/portgroup-update-response.json
+index 5847a1847..e17888dda 100644
+--- a/api-ref/source/samples/portgroup-update-response.json
++++ b/api-ref/source/samples/portgroup-update-response.json
+@@ -26,6 +26,7 @@
+       "rel": "bookmark"
+     }
+   ],
++  "physical_network": "physnet1",
+   "properties": {},
+   "standalone_ports_supported": true,
+   "updated_at": "2016-08-18T22:28:49.653974+00:00",
+diff --git a/doc/source/admin/networking.rst b/doc/source/admin/networking.rst
+index e38a6ee14..c5cb50305 100644
+--- a/doc/source/admin/networking.rst
++++ b/doc/source/admin/networking.rst
+@@ -269,9 +269,9 @@ in Neutron for the networking-baremetal integration to properly reconcile
+ the port. This has to be a name (not a UUID) since physical networks are
+ configured in Neutron by name.
+ 
+-The physical network of a port group is defined by the physical network of its
+-constituent ports. The Ironic service ensures that all ports in a port
+-group have the same value in their physical network field.
++The physical network of a port group is explicitly defined and
++constituent ports should match. The Ironic service ensures that all ports
++in a port group have the same value in their physical network field.
+ 
+ The ``physical_network`` setting is used to have divided network fabrics which
+ may carry different sets of traffic, and is intended to help model the reality
+@@ -434,7 +434,7 @@ Physnet Mapping
+ ---------------
+ 
+ When using physnet mapping, it is critical for proper instance scheduling for
+-network resources to be informed of the physical network mappins which
++network resources to be informed of the physical network mappings which
+ are represented in relation to the hosts in the deployment.
+ 
+ This takes the form of the ``ironic-neutron-agent`` which operators should
+diff --git a/doc/source/admin/portgroups.rst b/doc/source/admin/portgroups.rst
+index fb40cfc6b..493b165b2 100644
+--- a/doc/source/admin/portgroups.rst
++++ b/doc/source/admin/portgroups.rst
+@@ -31,9 +31,10 @@ Physical networks
+ If any port in a port group has a physical network, then all ports in
+ that port group must have the same physical network.
+ 
+-In order to change the physical network of the ports in a port group, all ports
+-must first be removed from the port group, before changing their physical
+-networks (to the same value), then adding them back to the port group.
++Changing the physical network of a port group will cause the new value to be
++propagated to each member port of the group. The physical network of an
++individual port cannot be changed in isolation while it belongs to a
++port group.
+ 
+ See :ref:`physical networks <multitenancy-physnets>` for further information on
+ using physical networks in the Bare Metal service.
+diff --git a/doc/source/contributor/webapi-version-history.rst b/doc/source/contributor/webapi-version-history.rst
+index fe74f8358..5c3a1048a 100644
+--- a/doc/source/contributor/webapi-version-history.rst
++++ b/doc/source/contributor/webapi-version-history.rst
+@@ -2,6 +2,11 @@
+ REST API Version History
+ ========================
+ 
++1.102 (Gazpacho)
++-----------------------
++
++Add a 'physical_network' field to the Portgroup object.
++
+ 1.101 (Flamingo)
+ -----------------------
+ 
+diff --git a/ironic/api/controllers/v1/port.py b/ironic/api/controllers/v1/port.py
+index 5b1e8cc44..b28acb460 100644
+--- a/ironic/api/controllers/v1/port.py
++++ b/ironic/api/controllers/v1/port.py
+@@ -818,8 +818,15 @@ class PortsController(rest.RestController):
+         if (api_utils.is_path_updated(patch, '/physical_network')
+             and rpc_port['physical_network'] is not None
+                 and not rpc_port['physical_network']):
+-            raise exception.Invalid('A non-empty value is required when '
+-                                    'setting physical_network')
++            raise exception.Invalid(_('A non-empty value is required when '
++                                      'setting physical_network'))
++
++        if (api_utils.allow_portgroup_physical_network()
++            and api_utils.is_path_updated(patch, '/physical_network')
++            and portgroup is not None):
++            raise exception.Invalid(
++                _('physical_network cannot be changed while the port belongs '
++                  'to a portgroup.'))
+ 
+         notify_extra = {'node_uuid': rpc_node.uuid,
+                         'portgroup_uuid': portgroup and portgroup.uuid or None}
+diff --git a/ironic/api/controllers/v1/portgroup.py b/ironic/api/controllers/v1/portgroup.py
+index f22cc8fcc..3a72ee170 100644
+--- a/ironic/api/controllers/v1/portgroup.py
++++ b/ironic/api/controllers/v1/portgroup.py
+@@ -41,6 +41,7 @@ PORTGROUP_SCHEMA = {
+         'mode': {'type': ['string', 'null']},
+         'name': {'type': ['string', 'null']},
+         'node_uuid': {'type': 'string'},
++        'physical_network': {'type': ['string', 'null'], 'maxLength': 64},
+         'properties': {'type': ['object', 'null']},
+         'standalone_ports_supported': {'type': ['string', 'boolean', 'null']},
+         'uuid': {'type': ['string', 'null']},
+@@ -74,10 +75,34 @@ PATCH_ALLOWED_FIELDS = [
+     'name',
+     'node_uuid',
+     'properties',
+-    'standalone_ports_supported'
++    'standalone_ports_supported',
++    'physical_network'
+ ]
+ 
+ 
++def hide_fields_in_newer_versions(portgroup):
++    # if requested version is < 1.26, hide mode and properties
++    if not api_utils.allow_portgroup_mode_properties():
++        portgroup.pop('mode', None)
++        portgroup.pop('properties', None)
++    # if requested version is < 1.102, hide physical_network
++    if not api_utils.allow_portgroup_physical_network():
++        portgroup.pop('physical_network', None)
++
++
++def portgroup_sanitize(portgroup, fields=None):
++    """Removes sensitive and unrequested data.
++
++    Will only keep the fields specified in the ``fields`` parameter.
++
++    :param fields:
++        list of fields to preserve, or ``None`` to preserve them all
++    :type fields: list of str
++    """
++    hide_fields_in_newer_versions(portgroup)
++    api_utils.sanitize_dict(portgroup, fields)
++
++
+ def convert_with_links(rpc_portgroup, fields=None, sanitize=True):
+     """Add links to the portgroup."""
+     portgroup = api_utils.object_to_dict(
+@@ -91,7 +116,8 @@ def convert_with_links(rpc_portgroup, fields=None, sanitize=True):
+             'name',
+             'properties',
+             'standalone_ports_supported',
+-            'node_uuid'
++            'node_uuid',
++            'physical_network'
+         )
+     )
+     url = api.request.public_url
+@@ -108,7 +134,7 @@ def convert_with_links(rpc_portgroup, fields=None, sanitize=True):
+     if not sanitize:
+         return portgroup
+ 
+-    api_utils.sanitize_dict(portgroup, fields)
++    portgroup_sanitize(portgroup, fields)
+ 
+     return portgroup
+ 
+@@ -531,6 +557,12 @@ class PortgroupsController(pecan.rest.RestController):
+             new_portgroup = api.request.rpcapi.update_portgroup(
+                 context, rpc_portgroup, topic)
+ 
++            if api_utils.is_path_updated(patch, '/physical_network'):
++                new_physical_network = \
++                    api_utils.get_patch_values(patch, '/physical_network')[0]
++                api.request.rpcapi.update_portgroup_physical_network(
++                    context, rpc_portgroup, new_physical_network, topic)
++
+         api_portgroup = convert_with_links(new_portgroup)
+         notify.emit_end_notification(context, new_portgroup, 'update',
+                                      node_uuid=rpc_node.uuid)
+diff --git a/ironic/api/controllers/v1/utils.py b/ironic/api/controllers/v1/utils.py
+index c657b4030..8e235fac4 100644
+--- a/ironic/api/controllers/v1/utils.py
++++ b/ironic/api/controllers/v1/utils.py
+@@ -1289,6 +1289,16 @@ def allow_portgroup_mode_properties():
+             >= versions.MINOR_26_PORTGROUP_MODE_PROPERTIES)
+ 
+ 
++def allow_portgroup_physical_network():
++    """Check if physical_network can be added to/queried from a portgroup.
++
++    Version 1.102 of the API added physical_network field to portgroup
++    object.
++    """
++    return (api.request.version.minor
++            >= versions.MINOR_102_PORTGROUP_PHYSICAL_NETWORK)
++
++
+ def allow_vifs_subcontroller():
+     """Check if node/vifs can be used.
+ 
+diff --git a/ironic/api/controllers/v1/versions.py b/ironic/api/controllers/v1/versions.py
+index 04886a7a2..20f4861a9 100644
+--- a/ironic/api/controllers/v1/versions.py
++++ b/ironic/api/controllers/v1/versions.py
+@@ -139,6 +139,7 @@ BASE_VERSION = 1
+ # v1.99: Add conductor group filtering to port and portgroup list
+ # v1.100: Add vendor field to port.
+ # v1.101: Add category field to port.
++# v1.102: Add physical_network field to portgroup.
+ 
+ MINOR_0_JUNO = 0
+ MINOR_1_INITIAL_VERSION = 1
+@@ -242,6 +243,7 @@ MINOR_98_SUPPORT_SPECIAL_CHAR_IN_ATTRIBUTES = 98
+ MINOR_99_PORT_PORTGROUP_CONDUCTOR_GROUP_FILTER = 99
+ MINOR_100_PORT_VENDOR = 100
+ MINOR_101_PORT_CATEGORY = 101
++MINOR_102_PORTGROUP_PHYSICAL_NETWORK = 102
+ 
+ # When adding another version, update:
+ # - MINOR_MAX_VERSION
+@@ -250,7 +252,7 @@ MINOR_101_PORT_CATEGORY = 101
+ # - common/release_mappings.py, RELEASE_MAPPING['master']['api']
+ 
+ 
+-MINOR_MAX_VERSION = MINOR_101_PORT_CATEGORY
++MINOR_MAX_VERSION = MINOR_102_PORTGROUP_PHYSICAL_NETWORK
+ 
+ # String representations of the minor and maximum versions
+ _MIN_VERSION_STRING = '{}.{}'.format(BASE_VERSION, MINOR_1_INITIAL_VERSION)
+diff --git a/ironic/common/release_mappings.py b/ironic/common/release_mappings.py
+index 0dcbff83f..829af04ca 100644
+--- a/ironic/common/release_mappings.py
++++ b/ironic/common/release_mappings.py
+@@ -920,8 +920,8 @@ RELEASE_MAPPING = {
+     # make it below. To release, we will preserve a version matching
+     # the release as a separate block of text, like above.
+     'master': {
+-        'api': '1.101',
+-        'rpc': '1.61',
++        'api': '1.102',
++        'rpc': '1.62',
+         'objects': {
+             'Allocation': ['1.3', '1.2', '1.1'],
+             'BIOSSetting': ['1.2', '1.1'],
+@@ -933,7 +933,7 @@ RELEASE_MAPPING = {
+             'Deployment': ['1.1', '1.0'],
+             'DeployTemplate': ['1.2', '1.1'],
+             'Port': ['1.15', '1.14', '1.13', '1.12'],
+-            'Portgroup': ['1.6', '1.5'],
++            'Portgroup': ['1.7', '1.6', '1.5'],
+             'Trait': ['1.1', '1.0'],
+             'TraitList': ['1.2', '1.1', '1.0'],
+             'VolumeConnector': ['1.1', '1.0'],
+diff --git a/ironic/conductor/manager.py b/ironic/conductor/manager.py
+index dd491c53a..43a6d893f 100644
+--- a/ironic/conductor/manager.py
++++ b/ironic/conductor/manager.py
+@@ -100,7 +100,7 @@ class ConductorManager(base_manager.BaseConductorManager):
+     # NOTE(rloo): This must be in sync with rpcapi.ConductorAPI's.
+     # NOTE(pas-ha): This also must be in sync with
+     #               ironic.common.release_mappings.RELEASE_MAPPING['master']
+-    RPC_API_VERSION = '1.61'
++    RPC_API_VERSION = '1.62'
+ 
+     target = messaging.Target(version=RPC_API_VERSION)
+ 
+@@ -2353,6 +2353,32 @@ class ConductorManager(base_manager.BaseConductorManager):
+                      'The node associated with the portgroup was %(node)s',
+                      {'portgroup': portgroup.uuid, 'node': task.node.uuid})
+ 
++    @METRICS.timer('ConductorManager.update_portgroup_physical_network')
++    @messaging.expected_exceptions(exception.NodeLocked,
++                                   exception.NodeNotFound)
++    def update_portgroup_physical_network(self, context, portgroup,
++                                          new_physical_network):
++        """Update the physical_network for a given portgroup and its ports.
++
++        :param context: request context.
++        :param portgroup: portgroup object
++        :raises: NodeLocked if node is locked by another conductor.
++        :raises: NodeNotFound if the node associated with the portgroup does
++                 not exist.
++
++        """
++        LOG.debug('RPC update_portgroup_physical_network called for '
++                  'portgroup %(portgroup)s',
++                  {'portgroup': portgroup.uuid})
++        purpose = 'portgroup physical_network update'
++        with task_manager.acquire(context, portgroup.node_id,
++                                  purpose=purpose) as task:
++            portgroup.update_physical_network(new_physical_network,
++                                              context=context)
++            LOG.info('Successfully updated portgroup %(portgroup)s. '
++                     'The node associated with the portgroup was %(node)s',
++                     {'portgroup': portgroup.uuid, 'node': task.node.uuid})
++
+     @METRICS.timer('ConductorManager.destroy_volume_connector')
+     @messaging.expected_exceptions(exception.NodeLocked,
+                                    exception.NodeNotFound,
+diff --git a/ironic/conductor/rpcapi.py b/ironic/conductor/rpcapi.py
+index 8200f4757..79be254eb 100644
+--- a/ironic/conductor/rpcapi.py
++++ b/ironic/conductor/rpcapi.py
+@@ -160,12 +160,13 @@ class ConductorAPI(object):
+     |    1.59 - Added support for attaching/detaching virtual media
+     |    1.60 - Added continue_node_service
+     |    1.61 - Added get virtual media support
++    |    1.62 - Added update_portgroup_physical_network
+     """
+ 
+     # NOTE(rloo): This must be in sync with manager.ConductorManager's.
+     # NOTE(pas-ha): This also must be in sync with
+     #               ironic.common.release_mappings.RELEASE_MAPPING['master']
+-    RPC_API_VERSION = '1.61'
++    RPC_API_VERSION = '1.62'
+ 
+     def __init__(self, topic=None):
+         super(ConductorAPI, self).__init__()
+@@ -1525,3 +1526,16 @@ class ConductorAPI(object):
+         return cctxt.call(
+             context, 'get_virtual_media',
+             node_id=node_id)
++
++    def update_portgroup_physical_network(self, context, portgroup_obj,
++                                          new_physical_network, topic=None):
++        """Update the physical_network for a given portgroup and its ports.
++
++        :param context: request context.
++        :param topic: RPC topic. Defaults to self.topic.
++        :raises: NodeLocked if node is locked by another conductor.
++        """
++        cctxt = self._prepare_call(topic=topic, version='1.62')
++        return cctxt.call(context, 'update_portgroup_physical_network',
++                          portgroup=portgroup_obj,
++                          new_physical_network=new_physical_network)
+diff --git a/ironic/db/sqlalchemy/alembic/versions/d0821744f9e2_add_physical_network_to_portgroup.py b/ironic/db/sqlalchemy/alembic/versions/d0821744f9e2_add_physical_network_to_portgroup.py
+new file mode 100644
+index 000000000..bb1e5214d
+--- /dev/null
++++ b/ironic/db/sqlalchemy/alembic/versions/d0821744f9e2_add_physical_network_to_portgroup.py
+@@ -0,0 +1,31 @@
++#    Licensed under the Apache License, Version 2.0 (the "License"); you may
++#    not use this file except in compliance with the License. You may obtain
++#    a copy of the License at
++#
++#         http://www.apache.org/licenses/LICENSE-2.0
++#
++#    Unless required by applicable law or agreed to in writing, software
++#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++#    License for the specific language governing permissions and limitations
++#    under the License.
++
++"""add physical_network attribute to portgroup object
++
++Revision ID: d0821744f9e2
++Revises: 3ef27505c9fb
++Create Date: 2025-07-22 19:17:52.446170
++
++"""
++
++from alembic import op
++import sqlalchemy as sa
++
++# revision identifiers, used by Alembic.
++revision = 'd0821744f9e2'
++down_revision = '3ef27505c9fb'
++
++
++def upgrade():
++    op.add_column('portgroups', sa.Column('physical_network',
++                                          sa.String(length=64), nullable=True))
+diff --git a/ironic/db/sqlalchemy/models.py b/ironic/db/sqlalchemy/models.py
+index d41f0191c..3ff1464ee 100644
+--- a/ironic/db/sqlalchemy/models.py
++++ b/ironic/db/sqlalchemy/models.py
+@@ -302,6 +302,7 @@ class Portgroup(Base):
+     standalone_ports_supported = Column(Boolean, default=True)
+     mode = Column(String(255))
+     properties = Column(db_types.JsonEncodedDict)
++    physical_network = Column(String(64), nullable=True)
+ 
+     _node_uuid = orm.relationship(
+         "Node",
+diff --git a/ironic/objects/portgroup.py b/ironic/objects/portgroup.py
+index 662e074d6..6a854ffc8 100644
+--- a/ironic/objects/portgroup.py
++++ b/ironic/objects/portgroup.py
+@@ -25,6 +25,7 @@ from ironic.db import api as dbapi
+ from ironic.objects import base
+ from ironic.objects import fields as object_fields
+ from ironic.objects import notification
++from ironic.objects import Port
+ 
+ 
+ @base.IronicObjectRegistry.register
+@@ -38,7 +39,8 @@ class Portgroup(base.IronicObject, object_base.VersionedObjectDictCompat):
+     #              change)
+     # Version 1.5: Add node_uuid field
+     # Version 1.6: Relevant methods changed to be remotable methods.
+-    VERSION = '1.6'
++    # Version 1.7: Add physical_network field
++    VERSION = '1.7'
+ 
+     dbapi = dbapi.get_instance()
+ 
+@@ -54,8 +56,38 @@ class Portgroup(base.IronicObject, object_base.VersionedObjectDictCompat):
+         'standalone_ports_supported': object_fields.BooleanField(),
+         'mode': object_fields.StringField(nullable=True),
+         'properties': object_fields.FlexibleDictField(nullable=True),
++        'physical_network': object_fields.StringField(nullable=True),
+     }
+ 
++    # TODO(clif): Abstract this, already exists in Port object.
++    def _convert_field_by_version(self, field_name, introduced_version,
++                                  target_version,
++                                  remove_unavailable_fields=True,
++                                  default_value=None):
++        """Convert a field based on version compatibility.
++
++        :param field_name: Name of the field to convert
++        :param introduced_version: Version tuple when the field was introduced
++        :param target_version: Target version to convert to
++        :param remove_unavailable_fields: Whether to remove fields not in
++            target version
++        :param default_value: Default value to set if field is not set
++        """
++        field_is_set = self.obj_attr_is_set(field_name)
++        if target_version >= introduced_version:
++            # Target version supports this field. Set it to its default
++            # value if it is not set.
++            if not field_is_set:
++                setattr(self, field_name, default_value)
++        elif field_is_set:
++            # Target version does not support this field, and it is set.
++            if remove_unavailable_fields:
++                # (De)serialising: remove unavailable fields.
++                delattr(self, field_name)
++            elif getattr(self, field_name) is not default_value:
++                # DB: set unavailable fields to their default.
++                setattr(self, field_name, default_value)
++
+     def _convert_to_version(self, target_version,
+                             remove_unavailable_fields=True):
+         """Convert to the target version.
+@@ -69,6 +101,12 @@ class Portgroup(base.IronicObject, object_base.VersionedObjectDictCompat):
+             .extra value to internal_info. There is nothing to do here when
+             downgrading to an older version.
+ 
++        Version 1.5: remove node_uuid for unsupported versions if
++            remove_unavailable_fields is True.
++
++        Version 1.7: remove physical_network for unsupported versions if
++            remove_unavailable_fields is True.
++
+         :param target_version: the desired version of the object
+         :param remove_unavailable_fields: True to remove fields that are
+             unavailable in the target version; set this to True when
+@@ -87,6 +125,15 @@ class Portgroup(base.IronicObject, object_base.VersionedObjectDictCompat):
+                         internal_info['tenant_vif_port_id'] = vif
+                         self.internal_info = internal_info
+ 
++        # Convert the node_uuid field.
++        self._convert_field_by_version('node_uuid', (1, 5), target_version,
++                                       remove_unavailable_fields)
++
++        # Convert the physical_network field.
++        self._convert_field_by_version('physical_network', (1, 7),
++                                       target_version,
++                                       remove_unavailable_fields)
++
+     @object_base.remotable_classmethod
+     def get(cls, context, portgroup_ident):
+         """Find a portgroup based on its id, uuid, name or address.
+@@ -303,6 +350,27 @@ class Portgroup(base.IronicObject, object_base.VersionedObjectDictCompat):
+         self.obj_refresh(current)
+         self.obj_reset_changes()
+ 
++    @object_base.remotable
++    def update_physical_network(self, new_physical_network, context=None):
++        """Updates the phyiscal_network for this Portgroup and its Ports.
++
++        :param context: Security context. NOTE: This should only
++                        be used internally by the indirection_api.
++                        Unfortunately, RPC requires context as the first
++                        argument, even though we don't use it.
++                        A context should be set when instantiating the
++                        object, e.g.: Portgroup(context)
++        :raises: PortgroupNotFound
++
++        """
++        self.physical_network = new_physical_network
++        self.save(context=context)
++
++        for p in Port.list_by_portgroup_id(context, self.id):
++            if new_physical_network != p.physical_network:
++                p.physical_network = new_physical_network
++                p.save(context=context)
++
+ 
+ @base.IronicObjectRegistry.register
+ class PortgroupCRUDNotification(notification.NotificationBase):
+@@ -318,7 +386,8 @@ class PortgroupCRUDNotification(notification.NotificationBase):
+ @base.IronicObjectRegistry.register
+ class PortgroupCRUDPayload(notification.NotificationPayloadBase):
+     # Version 1.0: Initial version
+-    VERSION = '1.0'
++    # Version 1.1: Add physical_network field
++    VERSION = '1.1'
+ 
+     SCHEMA = {
+         'address': ('portgroup', 'address'),
+@@ -326,6 +395,7 @@ class PortgroupCRUDPayload(notification.NotificationPayloadBase):
+         'mode': ('portgroup', 'mode'),
+         'name': ('portgroup', 'name'),
+         'properties': ('portgroup', 'properties'),
++        'physical_network': ('portgroup', 'physical_network'),
+         'standalone_ports_supported': ('portgroup',
+                                        'standalone_ports_supported'),
+         'created_at': ('portgroup', 'created_at'),
+@@ -339,6 +409,7 @@ class PortgroupCRUDPayload(notification.NotificationPayloadBase):
+         'mode': object_fields.StringField(nullable=True),
+         'name': object_fields.StringField(nullable=True),
+         'node_uuid': object_fields.UUIDField(),
++        'physical_network': object_fields.StringField(nullable=True),
+         'properties': object_fields.FlexibleDictField(nullable=True),
+         'standalone_ports_supported': object_fields.BooleanField(
+             nullable=True),
+diff --git a/ironic/tests/unit/api/controllers/v1/test_port.py b/ironic/tests/unit/api/controllers/v1/test_port.py
+index 92d298830..fc8617ebd 100644
+--- a/ironic/tests/unit/api/controllers/v1/test_port.py
++++ b/ironic/tests/unit/api/controllers/v1/test_port.py
+@@ -1895,6 +1895,29 @@ class TestPatch(test_api_base.BaseApiTest):
+         self.assertEqual(http_client.BAD_REQUEST, response.status_int)
+         self.assertIn('non-empty value', response.json['error_message'])
+ 
++    def test_cannot_update_physical_network_when_part_of_portgroup(
++            self, mock_upd):
++        physnet = 'new_physnet'
++        self.portgroup = obj_utils.create_test_portgroup(self.context,
++                                                         node_id=self.node.id)
++        self.port = obj_utils.create_test_port(self.context,
++                                               uuid=uuidutils.generate_uuid(),
++                                               address='52:54:00:cf:2d:32',
++                                               node_id=self.node.id,
++                                               portgroup_id=self.portgroup.id,
++                                               physical_network='old_physnet')
++        headers = {api_base.Version.string: versions.max_version_string()}
++        response = self.patch_json('/ports/%s' % self.port.uuid,
++                                   [{'path': '/physical_network',
++                                     'value': physnet,
++                                     'op': 'replace'}],
++                                   expect_errors=True,
++                                   headers=headers)
++        self.assertEqual('application/json', response.content_type)
++        self.assertEqual(http_client.BAD_REQUEST, response.status_int)
++        self.assertIn('port belongs to a portgroup',
++                      response.json['error_message'])
++
+     def test_portgroups_subresource_patch(self, mock_upd):
+         portgroup = obj_utils.create_test_portgroup(self.context,
+                                                     node_id=self.node.id)
+diff --git a/ironic/tests/unit/api/controllers/v1/test_portgroup.py b/ironic/tests/unit/api/controllers/v1/test_portgroup.py
+index c8d84a8a2..760123e32 100644
+--- a/ironic/tests/unit/api/controllers/v1/test_portgroup.py
++++ b/ironic/tests/unit/api/controllers/v1/test_portgroup.py
+@@ -1106,6 +1106,22 @@ class TestPatch(test_api_base.BaseApiTest):
+         self._test_update_portgroup_mode_properties_bad_api_version(
+             [{'path': '/properties/abc', 'op': 'add', 'value': 123}], mock_upd)
+ 
++    @mock.patch.object(rpcapi.ConductorAPI,
++                       'update_portgroup_physical_network', autospec=True)
++    def test_update_portgroup_physical_network(self, mock_upgpn, mock_upd):
++        mock_upd.return_value = self.portgroup
++        mock_upd.return_value.physical_network = 'test'
++        response = self.patch_json('/portgroups/%s' % self.portgroup.uuid,
++                                   [{'path': '/physical_network',
++                                     'op': 'replace',
++                                     'value': 'test'}],
++                                   headers=self.headers)
++        self.assertEqual('application/json', response.content_type)
++        self.assertEqual(http_client.OK, response.status_code)
++        self.assertEqual('test', response.json['physical_network'])
++        mock_upgpn.assert_called_once_with(
++            mock.ANY, mock.ANY, mock.ANY, 'test', 'test-topic')
++
+     def test_remove_mode_not_allowed(self, mock_upd):
+         mock_upd.return_value = self.portgroup
+         response = self.patch_json('/portgroups/%s' % self.portgroup.uuid,
+diff --git a/ironic/tests/unit/conductor/test_manager.py b/ironic/tests/unit/conductor/test_manager.py
+index f337da583..fb67633e0 100644
+--- a/ironic/tests/unit/conductor/test_manager.py
++++ b/ironic/tests/unit/conductor/test_manager.py
+@@ -7687,6 +7687,45 @@ class DestroyPortgroupTestCase(mgr_utils.ServiceSetUpMixin,
+         self.assertEqual(exception.NodeLocked, exc.exc_info[0])
+ 
+ 
++@mgr_utils.mock_record_keepalive
++class UpdatePortgroupPhysicalNetworkTestCase(mgr_utils.ServiceSetUpMixin,
++                                             db_base.DbTestCase):
++    def test_update_portgroup_physical_network(self):
++        node = obj_utils.create_test_node(self.context, driver='fake-hardware')
++        portgroup = obj_utils.create_test_portgroup(
++            self.context, physical_network='old_network', node_id=node.id)
++
++        ports = []
++        for i in range(0, 5):
++            ports.append(
++                obj_utils.create_test_port(self.context,
++                                           uuid=uuidutils.generate_uuid(),
++                                           physical_network='old_network',
++                                           address=f"52:54:00:cf:2d:0{i}",
++                                           node_id=node.id,
++                                           portgroup_id=portgroup.id))
++
++        self.service.update_portgroup_physical_network(
++            self.context, portgroup, 'new_physnet')
++
++        self.assertEqual(portgroup.physical_network, 'new_physnet')
++        for i in range(0, 5):
++            ports[i].refresh(self.context)
++            self.assertEqual(portgroup.physical_network,
++                             ports[i].physical_network)
++
++    def test_update_portgroup_physical_nework_node_locked(self):
++        node = obj_utils.create_test_node(self.context, driver='fake-hardware',
++                                          reservation='fake-reserv')
++        portgroup = obj_utils.create_test_portgroup(self.context,
++                                                    node_id=node.id)
++        exc = self.assertRaises(messaging.rpc.ExpectedException,
++                                self.service.update_portgroup_physical_network,
++                                self.context, portgroup, 'new_physnet')
++        # Compare true exception hidden by @messaging.expected_exceptions
++        self.assertEqual(exception.NodeLocked, exc.exc_info[0])
++
++
+ @mgr_utils.mock_record_keepalive
+ @mock.patch.object(manager.ConductorManager, '_fail_if_in_state',
+                    autospec=True)
+diff --git a/ironic/tests/unit/db/test_portgroups.py b/ironic/tests/unit/db/test_portgroups.py
+index fc7835d21..1707f487c 100644
+--- a/ironic/tests/unit/db/test_portgroups.py
++++ b/ironic/tests/unit/db/test_portgroups.py
+@@ -246,3 +246,32 @@ class DbportgroupTestCase(base.DbTestCase):
+         self.assertEqual('active-backup', res.mode)
+         res = self.dbapi.get_portgroup_by_name(name)
+         self.assertEqual('802.3ad', res.mode)
++
++    def test_create_portgroup_with_physical_network(self):
++        physical_network = 'physnet_alpha'
++        portgroup1 = db_utils.create_test_portgroup(
++            puuid=uuidutils.generate_uuid(),
++            name=uuidutils.generate_uuid(),
++            node_id=self.node.id,
++            address='aa:bb:cc:dd:ee:ff',
++            physical_network=physical_network)
++        portgroup2 = db_utils.create_test_portgroup(
++            puuid=uuidutils.generate_uuid(),
++            name=uuidutils.generate_uuid(),
++            node_id=self.node.id,
++            address='aa:bb:cc:dd:ee:fa',
++            physical_network=physical_network)
++        self.assertEqual(physical_network, portgroup1.physical_network)
++        self.assertEqual(physical_network, portgroup2.physical_network)
++
++        new_physical_network = 'physnet_beta'
++        updated_portgroup = self.dbapi.update_portgroup(
++            portgroup1.id, {'physical_network': new_physical_network})
++
++        self.assertEqual(new_physical_network,
++                         updated_portgroup.physical_network)
++
++        retrieved_portgroup1 = self.dbapi.get_portgroup_by_uuid(
++            portgroup1.uuid)
++        self.assertEqual(new_physical_network,
++                         retrieved_portgroup1.physical_network)
+diff --git a/ironic/tests/unit/db/utils.py b/ironic/tests/unit/db/utils.py
+index 906efe62d..aadade41b 100644
+--- a/ironic/tests/unit/db/utils.py
++++ b/ironic/tests/unit/db/utils.py
+@@ -467,6 +467,7 @@ def get_test_portgroup(**kw):
+                                              True),
+         'mode': kw.get('mode'),
+         'properties': kw.get('properties', {}),
++        'physical_network': kw.get('physical_network', None)
+     }
+ 
+ 
+diff --git a/ironic/tests/unit/objects/test_objects.py b/ironic/tests/unit/objects/test_objects.py
+index a780fdb14..2e6e250a6 100644
+--- a/ironic/tests/unit/objects/test_objects.py
++++ b/ironic/tests/unit/objects/test_objects.py
+@@ -679,7 +679,7 @@ expected_object_fingerprints = {
+     'MyObj': '1.5-9459d30d6954bffc7a9afd347a807ca6',
+     'Chassis': '1.4-fe427272d8bad232a8d46e996a5ca42a',
+     'Port': '1.15-013610c0fe2e370b14f4304e0d8aeb3a',
+-    'Portgroup': '1.6-ada5300518c2262766121a4333d92df3',
++    'Portgroup': '1.7-555d0e0b2015dcbdcfad491b4160212c',
+     'Conductor': '1.6-ed00540fae97aa1c9982f9017c6e8b68',
+     'EventType': '1.1-aa2ba1afd38553e3880c267404e8d370',
+     'NotificationPublisher': '1.0-51a09397d6c0687771fb5be9a999605d',
+@@ -703,7 +703,7 @@ expected_object_fingerprints = {
+     'NodeMaintenanceNotification': '1.0-59acc533c11d306f149846f922739c15',
+     'NodeConsoleNotification': '1.0-59acc533c11d306f149846f922739c15',
+     'PortgroupCRUDNotification': '1.0-59acc533c11d306f149846f922739c15',
+-    'PortgroupCRUDPayload': '1.0-b73c1fecf0cef3aa56bbe3c7e2275018',
++    'PortgroupCRUDPayload': '1.1-912eff0ef1619960aaf308ee806e104e',
+     'VolumeConnectorCRUDNotification': '1.0-59acc533c11d306f149846f922739c15',
+     'VolumeConnectorCRUDPayload': '1.0-5e8dbb41e05b6149d8f7bfd4daff9339',
+     'VolumeTargetCRUDNotification': '1.0-59acc533c11d306f149846f922739c15',
+diff --git a/ironic/tests/unit/objects/test_portgroup.py b/ironic/tests/unit/objects/test_portgroup.py
+index 7e844dac7..42e17e23f 100644
+--- a/ironic/tests/unit/objects/test_portgroup.py
++++ b/ironic/tests/unit/objects/test_portgroup.py
+@@ -13,6 +13,7 @@
+ import datetime
+ from unittest import mock
+ 
++from oslo_utils import uuidutils
+ from testtools import matchers
+ 
+ from ironic.common import exception
+@@ -171,6 +172,44 @@ class TestPortgroupObject(db_base.DbTestCase, obj_utils.SchemasTestMixIn):
+         self._check_payload_schemas(objects.portgroup,
+                                     objects.Portgroup.fields)
+ 
++    def test_update_physical_network(self):
++        node = obj_utils.create_test_node(self.context)
++        portgroup = obj_utils.create_test_portgroup(self.context,
++                                                    physical_network='old',
++                                                    node_id=node.id)
++        unaffected_portgroup = obj_utils.create_test_portgroup(
++            self.context, name='unaffected', physical_network='old',
++            uuid=uuidutils.generate_uuid(),
++            address='52:ff:00:cf:2d:01',
++            node_id=node.id)
++
++        ports = []
++        for i in range(0, 5):
++            ports.append(obj_utils.create_test_port(
++                self.context,
++                uuid=uuidutils.generate_uuid(),
++                address=f"52:54:00:cf:2d:0{i}",
++                node_id=node.id,
++                physical_network='old',
++                portgroup_id=portgroup.id))
++
++        unaffected_port = obj_utils.create_test_port(
++            self.context,
++            uuid=uuidutils.generate_uuid(),
++            address="52:54:00:cf:2d:05",
++            node_id=node.id,
++            physical_network='old',
++            portgroup_id=unaffected_portgroup.id)
++
++        portgroup.update_physical_network('new_physnet', self.context)
++        self.assertEqual(portgroup.physical_network, 'new_physnet')
++        for i in range(0, 5):
++            ports[i].refresh()
++            self.assertEqual(ports[i].physical_network, 'new_physnet')
++
++        self.assertEqual(unaffected_portgroup.physical_network, 'old')
++        self.assertEqual(unaffected_port.physical_network, 'old')
++
+ 
+ class TestConvertToVersion(db_base.DbTestCase):
+ 
+diff --git a/releasenotes/notes/portgroup-physical_network-ea6df85c3e7a18ea.yaml b/releasenotes/notes/portgroup-physical_network-ea6df85c3e7a18ea.yaml
+new file mode 100644
+index 000000000..28b90417b
+--- /dev/null
++++ b/releasenotes/notes/portgroup-physical_network-ea6df85c3e7a18ea.yaml
+@@ -0,0 +1,7 @@
++---
++features:
++  - |
++    A new "physical_network" field has been added to the Portgroup object. This
++    field is semantically the same as the "physical_network" Port field.
++    This will allow portgroups to be scheduled by physical network, similar
++    to ports, in a future change.
+-- 
+2.47.3
+
