@@ -1,0 +1,517 @@
+From 8538d6358c92d98dc2a5795636793900a067acd6 Mon Sep 17 00:00:00 2001
+From: Clif Houck <me@clifhouck.com>
+Date: Wed, 23 Jul 2025 12:18:03 -0500
+Subject: [PATCH 2/5] Add a new 'category' field to the Portgroup object
+
+Adds a new category field to the portgroup object. Foundational
+work for first milestone of trait based port scheduling.
+
+Depends-On: https://review.opendev.org/c/openstack/ironic-tempest-plugin/+/955799
+Change-Id: I5100144a330602996c27ed18d2bbde09be6e9571
+Signed-off-by: Clif Houck <me@clifhouck.com>
+(cherry picked from commit 7a67d4f18319ca0230c99ca2679f94a2cd9c5950)
+---
+ .../source/baremetal-api-v1-portgroups.inc    | 17 ++++++++++
+ api-ref/source/parameters.yaml                | 14 +++++++++
+ .../samples/portgroup-create-response.json    |  1 +
+ .../portgroup-list-detail-response.json       |  1 +
+ .../samples/portgroup-update-response.json    |  1 +
+ .../contributor/webapi-version-history.rst    |  5 +++
+ ironic/api/controllers/v1/portgroup.py        | 10 ++++--
+ ironic/api/controllers/v1/utils.py            | 10 ++++++
+ ironic/api/controllers/v1/versions.py         |  3 +-
+ ironic/common/release_mappings.py             |  4 +--
+ ...15_add_category_attribute_to_portgroup_.py | 31 +++++++++++++++++++
+ ironic/db/sqlalchemy/models.py                |  1 +
+ ironic/objects/portgroup.py                   | 16 ++++++++--
+ ironic/tests/unit/db/test_portgroups.py       | 29 +++++++++++++++++
+ ironic/tests/unit/db/utils.py                 |  5 +--
+ ironic/tests/unit/objects/test_objects.py     |  4 +--
+ .../portgroup-category-fdaa78f038ad9380.yaml  |  6 ++++
+ 17 files changed, 147 insertions(+), 11 deletions(-)
+ create mode 100644 ironic/db/sqlalchemy/alembic/versions/763b2f62d215_add_category_attribute_to_portgroup_.py
+ create mode 100644 releasenotes/notes/portgroup-category-fdaa78f038ad9380.yaml
+
+diff --git a/api-ref/source/baremetal-api-v1-portgroups.inc b/api-ref/source/baremetal-api-v1-portgroups.inc
+index 74171755f..696def333 100644
+--- a/api-ref/source/baremetal-api-v1-portgroups.inc
++++ b/api-ref/source/baremetal-api-v1-portgroups.inc
+@@ -80,6 +80,9 @@ Portgroup (MAC address in most cases).
+ .. versionadded:: 1.102
+   Added the ``physical_network`` field.
+ 
++.. versionadded:: 1.103
++  Added the ``category`` field.
++
+ Normal response code: 201
+ 
+ Error codes: 400,401,403,404
+@@ -98,6 +101,7 @@ Request
+     - extra: req_extra
+     - uuid: req_uuid
+     - physical_network: req_physical_network
++    - category : req_portgroup_category
+ 
+ **Example Portgroup creation request:**
+ 
+@@ -123,6 +127,7 @@ Response
+     - links: links
+     - ports: pg_ports
+     - physical_network: physical_network
++    - category : portgroup_category
+ 
+ **Example Portgroup creation response:**
+ 
+@@ -140,6 +145,9 @@ Return a list of bare metal Portgroups, with detailed information.
+ .. versionadded:: 1.102
+   Added the ``physical_network`` field.
+ 
++.. versionadded:: 1.103
++  Added the ``category`` field.
++
+ Normal response code: 200
+ 
+ Error codes: 400,401,403,404
+@@ -176,6 +184,7 @@ Response
+     - links: links
+     - ports: pg_ports
+     - physical_network: physical_network
++    - category: portgroup_category
+ 
+ **Example detailed Portgroup list response:**
+ 
+@@ -193,6 +202,9 @@ Show details for the given Portgroup.
+ .. versionadded:: 1.102
+   Added the ``physical_network`` field.
+ 
++.. versionadded:: 1.103
++  Added the ``category`` field.
++
+ Normal response code: 200
+ 
+ Error codes: 400,401,403,404
+@@ -224,6 +236,7 @@ Response
+     - links: links
+     - ports: pg_ports
+     - physical_network: physical_network
++    - category: portgroup_category
+ 
+ **Example Portgroup details:**
+ 
+@@ -241,6 +254,9 @@ Update a Portgroup.
+ .. versionadded:: 1.102
+   Added the ``physical_network`` field.
+ 
++.. versionadded:: 1.103
++  Added the ``category`` field.
++
+ Normal response code: 200
+ 
+ Error codes: 400,401,403,404
+@@ -279,6 +295,7 @@ Response
+     - links: links
+     - ports: pg_ports
+     - physical_network: physical_network
++    - category: portgroup_category
+ 
+ **Example Portgroup update response:**
+ 
+diff --git a/api-ref/source/parameters.yaml b/api-ref/source/parameters.yaml
+index 659a76525..666c431e4 100644
+--- a/api-ref/source/parameters.yaml
++++ b/api-ref/source/parameters.yaml
+@@ -1599,6 +1599,13 @@ portgroup_address:
+   in: body
+   required: false
+   type: string
++portgroup_category:
++  description: |
++    Category of the network Portgroup. Helps to further differentiate the
++    Portgroup.
++  in: body
++  required: false
++  type: string
+ portgroup_internal_info:
+   description: |
+     Internal metadata set and stored by the Portgroup. This field is read-only.
+@@ -2012,6 +2019,13 @@ req_portgroup_address:
+   in: body
+   required: false
+   type: string
++req_portgroup_category:
++  description: |
++    Category of the network Portgroup. Helps to further differentiate the
++    Portgroup.
++  in: body
++  required: false
++  type: string
+ req_portgroup_mode:
+   description: |
+     Mode of the port group. For possible values, refer to
+diff --git a/api-ref/source/samples/portgroup-create-response.json b/api-ref/source/samples/portgroup-create-response.json
+index a48ba6247..094e37baa 100644
+--- a/api-ref/source/samples/portgroup-create-response.json
++++ b/api-ref/source/samples/portgroup-create-response.json
+@@ -1,5 +1,6 @@
+ {
+   "address": "11:11:11:11:11:11",
++  "category": "hypernet",
+   "created_at": "2016-08-18T22:28:48.643434+11:11",
+   "extra": {},
+   "internal_info": {},
+diff --git a/api-ref/source/samples/portgroup-list-detail-response.json b/api-ref/source/samples/portgroup-list-detail-response.json
+index c814c58e8..f30400b43 100644
+--- a/api-ref/source/samples/portgroup-list-detail-response.json
++++ b/api-ref/source/samples/portgroup-list-detail-response.json
+@@ -2,6 +2,7 @@
+   "portgroups": [
+     {
+       "address": "11:11:11:11:11:11",
++      "category": "hypernet",
+       "created_at": "2016-08-18T22:28:48.643434+11:11",
+       "extra": {},
+       "internal_info": {},
+diff --git a/api-ref/source/samples/portgroup-update-response.json b/api-ref/source/samples/portgroup-update-response.json
+index e17888dda..041509b0b 100644
+--- a/api-ref/source/samples/portgroup-update-response.json
++++ b/api-ref/source/samples/portgroup-update-response.json
+@@ -1,5 +1,6 @@
+ {
+   "address": "22:22:22:22:22:22",
++  "category": "hypernet",
+   "created_at": "2016-08-18T22:28:48.643434+11:11",
+   "extra": {},
+   "internal_info": {},
+diff --git a/doc/source/contributor/webapi-version-history.rst b/doc/source/contributor/webapi-version-history.rst
+index 5c3a1048a..c340b93df 100644
+--- a/doc/source/contributor/webapi-version-history.rst
++++ b/doc/source/contributor/webapi-version-history.rst
+@@ -2,6 +2,11 @@
+ REST API Version History
+ ========================
+ 
++1.103 (Gazpacho)
++-----------------------
++
++Add a 'category' field to the Portgroup object.
++
+ 1.102 (Gazpacho)
+ -----------------------
+ 
+diff --git a/ironic/api/controllers/v1/portgroup.py b/ironic/api/controllers/v1/portgroup.py
+index 3a72ee170..47da30e48 100644
+--- a/ironic/api/controllers/v1/portgroup.py
++++ b/ironic/api/controllers/v1/portgroup.py
+@@ -37,6 +37,7 @@ PORTGROUP_SCHEMA = {
+     'type': 'object',
+     'properties': {
+         'address': {'type': ['string', 'null']},
++        'category': {'type': ['string', 'null'], 'maxLength': 80},
+         'extra': {'type': ['object', 'null']},
+         'mode': {'type': ['string', 'null']},
+         'name': {'type': ['string', 'null']},
+@@ -76,7 +77,8 @@ PATCH_ALLOWED_FIELDS = [
+     'node_uuid',
+     'properties',
+     'standalone_ports_supported',
+-    'physical_network'
++    'physical_network',
++    'category'
+ ]
+ 
+ 
+@@ -88,6 +90,9 @@ def hide_fields_in_newer_versions(portgroup):
+     # if requested version is < 1.102, hide physical_network
+     if not api_utils.allow_portgroup_physical_network():
+         portgroup.pop('physical_network', None)
++    # if requested version is < 1.103, hide category
++    if not api_utils.allow_portgroup_category():
++        portgroup.pop('category', None)
+ 
+ 
+ def portgroup_sanitize(portgroup, fields=None):
+@@ -117,7 +122,8 @@ def convert_with_links(rpc_portgroup, fields=None, sanitize=True):
+             'properties',
+             'standalone_ports_supported',
+             'node_uuid',
+-            'physical_network'
++            'physical_network',
++            'category'
+         )
+     )
+     url = api.request.public_url
+diff --git a/ironic/api/controllers/v1/utils.py b/ironic/api/controllers/v1/utils.py
+index 8e235fac4..881c17c1b 100644
+--- a/ironic/api/controllers/v1/utils.py
++++ b/ironic/api/controllers/v1/utils.py
+@@ -1299,6 +1299,16 @@ def allow_portgroup_physical_network():
+             >= versions.MINOR_102_PORTGROUP_PHYSICAL_NETWORK)
+ 
+ 
++def allow_portgroup_category():
++    """Check if category can be added to/queried from a portgroup.
++
++    Version 1.103 of the API added category field to portgroup
++    object.
++    """
++    return (api.request.version.minor
++            >= versions.MINOR_103_PORTGROUP_CATEGORY)
++
++
+ def allow_vifs_subcontroller():
+     """Check if node/vifs can be used.
+ 
+diff --git a/ironic/api/controllers/v1/versions.py b/ironic/api/controllers/v1/versions.py
+index 20f4861a9..6e2c64ff8 100644
+--- a/ironic/api/controllers/v1/versions.py
++++ b/ironic/api/controllers/v1/versions.py
+@@ -244,6 +244,7 @@ MINOR_99_PORT_PORTGROUP_CONDUCTOR_GROUP_FILTER = 99
+ MINOR_100_PORT_VENDOR = 100
+ MINOR_101_PORT_CATEGORY = 101
+ MINOR_102_PORTGROUP_PHYSICAL_NETWORK = 102
++MINOR_103_PORTGROUP_CATEGORY = 103
+ 
+ # When adding another version, update:
+ # - MINOR_MAX_VERSION
+@@ -252,7 +253,7 @@ MINOR_102_PORTGROUP_PHYSICAL_NETWORK = 102
+ # - common/release_mappings.py, RELEASE_MAPPING['master']['api']
+ 
+ 
+-MINOR_MAX_VERSION = MINOR_102_PORTGROUP_PHYSICAL_NETWORK
++MINOR_MAX_VERSION = MINOR_103_PORTGROUP_CATEGORY
+ 
+ # String representations of the minor and maximum versions
+ _MIN_VERSION_STRING = '{}.{}'.format(BASE_VERSION, MINOR_1_INITIAL_VERSION)
+diff --git a/ironic/common/release_mappings.py b/ironic/common/release_mappings.py
+index 829af04ca..37fcfe876 100644
+--- a/ironic/common/release_mappings.py
++++ b/ironic/common/release_mappings.py
+@@ -920,7 +920,7 @@ RELEASE_MAPPING = {
+     # make it below. To release, we will preserve a version matching
+     # the release as a separate block of text, like above.
+     'master': {
+-        'api': '1.102',
++        'api': '1.103',
+         'rpc': '1.62',
+         'objects': {
+             'Allocation': ['1.3', '1.2', '1.1'],
+@@ -933,7 +933,7 @@ RELEASE_MAPPING = {
+             'Deployment': ['1.1', '1.0'],
+             'DeployTemplate': ['1.2', '1.1'],
+             'Port': ['1.15', '1.14', '1.13', '1.12'],
+-            'Portgroup': ['1.7', '1.6', '1.5'],
++            'Portgroup': ['1.8', '1.7', '1.6', '1.5'],
+             'Trait': ['1.1', '1.0'],
+             'TraitList': ['1.2', '1.1', '1.0'],
+             'VolumeConnector': ['1.1', '1.0'],
+diff --git a/ironic/db/sqlalchemy/alembic/versions/763b2f62d215_add_category_attribute_to_portgroup_.py b/ironic/db/sqlalchemy/alembic/versions/763b2f62d215_add_category_attribute_to_portgroup_.py
+new file mode 100644
+index 000000000..f0689c4ea
+--- /dev/null
++++ b/ironic/db/sqlalchemy/alembic/versions/763b2f62d215_add_category_attribute_to_portgroup_.py
+@@ -0,0 +1,31 @@
++#    Licensed under the Apache License, Version 2.0 (the "License"); you may
++#    not use this file except in compliance with the License. You may obtain
++#    a copy of the License at
++#
++#         http://www.apache.org/licenses/LICENSE-2.0
++#
++#    Unless required by applicable law or agreed to in writing, software
++#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++#    License for the specific language governing permissions and limitations
++#    under the License.
++
++"""add category attribute to portgroup object
++
++Revision ID: 763b2f62d215
++Revises: d0821744f9e2
++Create Date: 2025-07-23 20:52:17.341663
++
++"""
++
++from alembic import op
++import sqlalchemy as sa
++
++# revision identifiers, used by Alembic.
++revision = '763b2f62d215'
++down_revision = 'd0821744f9e2'
++
++
++def upgrade():
++    op.add_column('portgroups', sa.Column('category', sa.String(length=80),
++                                          nullable=True))
+diff --git a/ironic/db/sqlalchemy/models.py b/ironic/db/sqlalchemy/models.py
+index 3ff1464ee..56c64bc73 100644
+--- a/ironic/db/sqlalchemy/models.py
++++ b/ironic/db/sqlalchemy/models.py
+@@ -303,6 +303,7 @@ class Portgroup(Base):
+     mode = Column(String(255))
+     properties = Column(db_types.JsonEncodedDict)
+     physical_network = Column(String(64), nullable=True)
++    category = Column(String(80), nullable=True)
+ 
+     _node_uuid = orm.relationship(
+         "Node",
+diff --git a/ironic/objects/portgroup.py b/ironic/objects/portgroup.py
+index 6a854ffc8..7d3dbbe4f 100644
+--- a/ironic/objects/portgroup.py
++++ b/ironic/objects/portgroup.py
+@@ -40,7 +40,8 @@ class Portgroup(base.IronicObject, object_base.VersionedObjectDictCompat):
+     # Version 1.5: Add node_uuid field
+     # Version 1.6: Relevant methods changed to be remotable methods.
+     # Version 1.7: Add physical_network field
+-    VERSION = '1.7'
++    # Version 1.8: Add category field
++    VERSION = '1.8'
+ 
+     dbapi = dbapi.get_instance()
+ 
+@@ -57,6 +58,7 @@ class Portgroup(base.IronicObject, object_base.VersionedObjectDictCompat):
+         'mode': object_fields.StringField(nullable=True),
+         'properties': object_fields.FlexibleDictField(nullable=True),
+         'physical_network': object_fields.StringField(nullable=True),
++        'category': object_fields.StringField(nullable=True),
+     }
+ 
+     # TODO(clif): Abstract this, already exists in Port object.
+@@ -107,6 +109,9 @@ class Portgroup(base.IronicObject, object_base.VersionedObjectDictCompat):
+         Version 1.7: remove physical_network for unsupported versions if
+             remove_unavailable_fields is True.
+ 
++        Version 1.8: remove category for unsupported versions if
++            remove_unavailable_fields is True.
++
+         :param target_version: the desired version of the object
+         :param remove_unavailable_fields: True to remove fields that are
+             unavailable in the target version; set this to True when
+@@ -134,6 +139,10 @@ class Portgroup(base.IronicObject, object_base.VersionedObjectDictCompat):
+                                        target_version,
+                                        remove_unavailable_fields)
+ 
++        # Convert the category field.
++        self._convert_field_by_version('category', (1, 8), target_version,
++                                       remove_unavailable_fields)
++
+     @object_base.remotable_classmethod
+     def get(cls, context, portgroup_ident):
+         """Find a portgroup based on its id, uuid, name or address.
+@@ -387,10 +396,12 @@ class PortgroupCRUDNotification(notification.NotificationBase):
+ class PortgroupCRUDPayload(notification.NotificationPayloadBase):
+     # Version 1.0: Initial version
+     # Version 1.1: Add physical_network field
+-    VERSION = '1.1'
++    # Version 1.2: Add category field
++    VERSION = '1.2'
+ 
+     SCHEMA = {
+         'address': ('portgroup', 'address'),
++        'category': ('portgroup', 'category'),
+         'extra': ('portgroup', 'extra'),
+         'mode': ('portgroup', 'mode'),
+         'name': ('portgroup', 'name'),
+@@ -405,6 +416,7 @@ class PortgroupCRUDPayload(notification.NotificationPayloadBase):
+ 
+     fields = {
+         'address': object_fields.MACAddressField(nullable=True),
++        'category': object_fields.StringField(nullable=True),
+         'extra': object_fields.FlexibleDictField(nullable=True),
+         'mode': object_fields.StringField(nullable=True),
+         'name': object_fields.StringField(nullable=True),
+diff --git a/ironic/tests/unit/db/test_portgroups.py b/ironic/tests/unit/db/test_portgroups.py
+index 1707f487c..ad1e1cf09 100644
+--- a/ironic/tests/unit/db/test_portgroups.py
++++ b/ironic/tests/unit/db/test_portgroups.py
+@@ -275,3 +275,32 @@ class DbportgroupTestCase(base.DbTestCase):
+             portgroup1.uuid)
+         self.assertEqual(new_physical_network,
+                          retrieved_portgroup1.physical_network)
++
++    def test_create_portgroup_with_category(self):
++        category = 'hypernet'
++        portgroup1 = db_utils.create_test_portgroup(
++            puuid=uuidutils.generate_uuid(),
++            name=uuidutils.generate_uuid(),
++            node_id=self.node.id,
++            address='aa:bb:cc:dd:ee:ff',
++            category=category)
++        portgroup2 = db_utils.create_test_portgroup(
++            puuid=uuidutils.generate_uuid(),
++            name=uuidutils.generate_uuid(),
++            node_id=self.node.id,
++            address='aa:bb:cc:dd:ee:fa',
++            category=category)
++        self.assertEqual(category, portgroup1.category)
++        self.assertEqual(category, portgroup2.category)
++
++        new_category = 'ultranet'
++        updated_portgroup = self.dbapi.update_portgroup(
++            portgroup1.id, {'category': new_category})
++
++        self.assertEqual(new_category,
++                         updated_portgroup.category)
++
++        retrieved_portgroup1 = self.dbapi.get_portgroup_by_uuid(
++            portgroup1.uuid)
++        self.assertEqual(new_category,
++                         retrieved_portgroup1.category)
+diff --git a/ironic/tests/unit/db/utils.py b/ironic/tests/unit/db/utils.py
+index aadade41b..8bbd21fe3 100644
+--- a/ironic/tests/unit/db/utils.py
++++ b/ironic/tests/unit/db/utils.py
+@@ -290,7 +290,7 @@ def get_test_port(**kw):
+         'name': kw.get('name'),
+         'description': kw.get('description'),
+         'vendor': kw.get('vendor'),
+-        'category': kw.get('category'),
++        'category': kw.get('category')
+     }
+ 
+ 
+@@ -467,7 +467,8 @@ def get_test_portgroup(**kw):
+                                              True),
+         'mode': kw.get('mode'),
+         'properties': kw.get('properties', {}),
+-        'physical_network': kw.get('physical_network', None)
++        'physical_network': kw.get('physical_network'),
++        'category': kw.get('category')
+     }
+ 
+ 
+diff --git a/ironic/tests/unit/objects/test_objects.py b/ironic/tests/unit/objects/test_objects.py
+index 2e6e250a6..532bb403b 100644
+--- a/ironic/tests/unit/objects/test_objects.py
++++ b/ironic/tests/unit/objects/test_objects.py
+@@ -679,7 +679,7 @@ expected_object_fingerprints = {
+     'MyObj': '1.5-9459d30d6954bffc7a9afd347a807ca6',
+     'Chassis': '1.4-fe427272d8bad232a8d46e996a5ca42a',
+     'Port': '1.15-013610c0fe2e370b14f4304e0d8aeb3a',
+-    'Portgroup': '1.7-555d0e0b2015dcbdcfad491b4160212c',
++    'Portgroup': '1.8-c931f147ebe450b7c91cc51acfc59472',
+     'Conductor': '1.6-ed00540fae97aa1c9982f9017c6e8b68',
+     'EventType': '1.1-aa2ba1afd38553e3880c267404e8d370',
+     'NotificationPublisher': '1.0-51a09397d6c0687771fb5be9a999605d',
+@@ -703,7 +703,7 @@ expected_object_fingerprints = {
+     'NodeMaintenanceNotification': '1.0-59acc533c11d306f149846f922739c15',
+     'NodeConsoleNotification': '1.0-59acc533c11d306f149846f922739c15',
+     'PortgroupCRUDNotification': '1.0-59acc533c11d306f149846f922739c15',
+-    'PortgroupCRUDPayload': '1.1-912eff0ef1619960aaf308ee806e104e',
++    'PortgroupCRUDPayload': '1.2-ea41e2dfcd5817ec4d3f9768e3f26c6e',
+     'VolumeConnectorCRUDNotification': '1.0-59acc533c11d306f149846f922739c15',
+     'VolumeConnectorCRUDPayload': '1.0-5e8dbb41e05b6149d8f7bfd4daff9339',
+     'VolumeTargetCRUDNotification': '1.0-59acc533c11d306f149846f922739c15',
+diff --git a/releasenotes/notes/portgroup-category-fdaa78f038ad9380.yaml b/releasenotes/notes/portgroup-category-fdaa78f038ad9380.yaml
+new file mode 100644
+index 000000000..de6420a65
+--- /dev/null
++++ b/releasenotes/notes/portgroup-category-fdaa78f038ad9380.yaml
+@@ -0,0 +1,6 @@
++---
++features:
++  - |
++    A new "category" field has been added to the Portgroup object. This field
++    is meant to help distinguish between different Portgroups. Relevant to
++    trait based port scheduling feature.
+-- 
+2.47.3
+
