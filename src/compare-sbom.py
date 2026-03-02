@@ -28,7 +28,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from docker import DockerClient
 from docker.errors import DockerException, ImageNotFound, APIError
@@ -207,7 +207,7 @@ def load_sbom_from_file(file_path: Path) -> Dict:
         sys.exit(2)
 
 
-def load_sbom_from_container(image_ref: str) -> Dict:
+def load_sbom_from_container(image_ref: str) -> Optional[Dict]:
     """
     Pull container image and extract SBOM file.
 
@@ -215,10 +215,10 @@ def load_sbom_from_container(image_ref: str) -> Dict:
         image_ref: Container image reference (e.g., "registry.osism.cloud/kolla/sbom:2025.1")
 
     Returns:
-        Parsed SBOM data dictionary
+        Parsed SBOM data dictionary, or None if the image does not exist
 
     Raises:
-        SystemExit: If container operations fail
+        SystemExit: If container operations fail (other than missing image)
     """
     logger.info(f"Pulling container image: {image_ref}")
 
@@ -235,9 +235,12 @@ def load_sbom_from_container(image_ref: str) -> Dict:
         client.images.pull(image_ref)
         logger.success(f"Successfully pulled {image_ref}")
     except ImageNotFound:
-        logger.error(f"Image not found: {image_ref}")
-        sys.exit(2)
+        logger.warning(f"Image not found: {image_ref}")
+        return None
     except APIError as e:
+        if e.response is not None and e.response.status_code == 404:
+            logger.warning(f"Image not found: {image_ref}")
+            return None
         logger.error(f"Docker API error while pulling image: {e}")
         sys.exit(2)
     except Exception as e:
@@ -541,6 +544,10 @@ Exit codes:
             logger.error(f"Unexpected error loading remote SBOM: {e}")
             sys.exit(2)
 
+        if remote is None:
+            logger.error(f"Remote SBOM image not found: {args.remote_image}")
+            sys.exit(2)
+
         list_sbom(remote)
         logger.info("")
         logger.success("Remote SBOM listing complete")
@@ -563,6 +570,14 @@ Exit codes:
     except Exception as e:
         logger.error(f"Unexpected error loading SBOMs: {e}")
         sys.exit(2)
+
+    if remote is None:
+        logger.warning(
+            f"No remote SBOM found ({args.remote_image}). "
+            "This is expected for the first build of a new branch. "
+            "Skipping comparison."
+        )
+        sys.exit(0)
 
     # Get excluded images from commit message
     excluded_images = get_excluded_images_from_commit()
