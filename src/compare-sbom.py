@@ -241,6 +241,9 @@ def load_sbom_from_container(image_ref: str) -> Optional[Dict]:
         if e.response is not None and e.response.status_code == 404:
             logger.warning(f"Image not found: {image_ref}")
             return None
+        if "not found" in str(e).lower():
+            logger.warning(f"Image not found: {image_ref}")
+            return None
         logger.error(f"Docker API error while pulling image: {e}")
         sys.exit(2)
     except Exception as e:
