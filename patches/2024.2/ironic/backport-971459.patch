@@ -1,0 +1,84 @@
+From 4878fdf9e9232c18b41913e6dba55ec1497f686a Mon Sep 17 00:00:00 2001
+From: sdmitriev1 <sdmitriev1@gmail.com>
+Date: Thu, 18 Dec 2025 11:48:23 -0600
+Subject: [PATCH] Allow node lookup for in-band servicing
+
+Add `SERVICEWAIT` state to the list of the lookup allowed states.
+
+Closes-Bug: #2136818
+Change-Id: Iec6406506f9e3f1aac1be9c81ed1bb282ee81047
+Signed-off-by: sdmitriev1 <sdmitriev1@gmail.com>
+---
+ ironic/common/states.py                       |  3 ++-
+ .../unit/api/controllers/v1/test_ramdisk.py   | 26 +++++++++++++++++++
+ .../notes/bug-2136818-9285f09043204290.yaml   |  7 +++++
+ 3 files changed, 35 insertions(+), 1 deletion(-)
+ create mode 100644 releasenotes/notes/bug-2136818-9285f09043204290.yaml
+
+diff --git a/ironic/common/states.py b/ironic/common/states.py
+index 56558f5a5..1deb51e2e 100644
+--- a/ironic/common/states.py
++++ b/ironic/common/states.py
+@@ -285,7 +285,8 @@ to fail state.
+ """
+ 
+ _LOOKUP_ALLOWED_STATES = (DEPLOYING, DEPLOYWAIT, CLEANING, CLEANWAIT,
+-                          INSPECTING, INSPECTWAIT, RESCUING, RESCUEWAIT)
++                          INSPECTING, INSPECTWAIT, RESCUING, RESCUEWAIT,
++                          SERVICEWAIT)
+ LOOKUP_ALLOWED_STATES = frozenset(_LOOKUP_ALLOWED_STATES)
+ 
+ """States when API lookups are normally allowed for nodes."""
+diff --git a/ironic/tests/unit/api/controllers/v1/test_ramdisk.py b/ironic/tests/unit/api/controllers/v1/test_ramdisk.py
+index 5b19f4315..7fea6702c 100644
+--- a/ironic/tests/unit/api/controllers/v1/test_ramdisk.py
++++ b/ironic/tests/unit/api/controllers/v1/test_ramdisk.py
+@@ -213,6 +213,32 @@ class TestLookup(test_api_base.BaseApiTest):
+                 headers={api_base.Version.string: str(api_v1.max_version())})
+             self.assertEqual(self.node.uuid, data['node']['uuid'])
+ 
++    def test_service_state_lookup(self):
++        """Test lookup in servicing states."""
++        self._set_secret_mock(self.node, 'qwerty')
++        for provision_state in states.SERVICING_STATES:
++            self.node.provision_state = provision_state
++            self.node.save()
++            lookup_params = (
++                '/lookup?addresses=%s&node_uuid=%s' %
++                (','.join(self.addresses), self.node.uuid)
++            )
++            headers = {
++                api_base.Version.string: str(api_v1.max_version())
++            }
++            if provision_state == states.SERVICEWAIT:
++                response = self.get_json(
++                    lookup_params,
++                    headers=headers
++                )
++                self.assertEqual(self.node.uuid, response['node']['uuid'])
++            else:
++                response = self.get_json(
++                    lookup_params,
++                    headers=headers,
++                    expect_errors=True
++                )
++                self.assertEqual(http_client.NOT_FOUND, response.status_int)
+ 
+ @mock.patch.object(rpcapi.ConductorAPI, 'get_topic_for',
+                    lambda *n: 'test-topic')
+diff --git a/releasenotes/notes/bug-2136818-9285f09043204290.yaml b/releasenotes/notes/bug-2136818-9285f09043204290.yaml
+new file mode 100644
+index 000000000..49f296340
+--- /dev/null
++++ b/releasenotes/notes/bug-2136818-9285f09043204290.yaml
+@@ -0,0 +1,7 @@
++---
++fixes:
++  - |
++    Fix bug where Ironic fails to execute in-band servicing steps.
++    This issue was caused by a prohibited "service wait" state during node lookup,
++    which prevented execution of in-band servicing steps. For more details,
++    refer to the bug report #2136818 https://bugs.launchpad.net/ironic/+bug/2136818
+-- 
+2.53.0
+
