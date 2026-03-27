@@ -22,7 +22,7 @@ hacluster-corosync: dpkg -s corosync
 hacluster: dpkg -s pacemaker-common
 haproxy-ssh: dpkg -s openssh-server
 haproxy: dpkg -s haproxy
-heat: pip3 show heat
+heat: pip3 show openstack-heat
 horizon: pip3 show horizon
 influxdb: dpkg -s influxdb
 ironic: pip3 show ironic
@@ -99,6 +99,6 @@ storm: /opt/storm/bin/storm version
 swift: pip3 show swift
 tgtd: dpkg -s tgt
 trove: pip3 show trove
-watcher: pip3 show watcher
+watcher: pip3 show python-watcher
 # /opt/zookeeper/zookeeper-3.4.13.jar
 zookeeper: find /opt/zookeeper -maxdepth 1 -name 'zookeeper-*.jar'
