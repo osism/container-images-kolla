@@ -262,6 +262,7 @@ SBOM_IMAGE_TO_VERSION = {
     "aodh": "aodh-api",
     "barbican": "barbican-api",
     "bifrost": "bifrost-deploy",
+    "blazar": "blazar-api",
     "ceilometer": "ceilometer-central",
     "cinder": "cinder-api",
     "cloudkitty": "cloudkitty-api",
@@ -275,6 +276,7 @@ SBOM_IMAGE_TO_VERSION = {
     "fluentd": "fluentd",
     "glance": "glance-api",
     "gnocchi": "gnocchi-api",
+    "heat": "heat-api",
     "grafana": "grafana",
     "haproxy": "haproxy",
     "haproxy_ssh": "haproxy-ssh",
@@ -335,6 +337,7 @@ SBOM_IMAGE_TO_VERSION = {
     "swift": "swift-object",
     "tgtd": "tgtd",
     "trove": "trove-api",
+    "watcher": "watcher-api",
 }
 
 sbom_versions = {}
