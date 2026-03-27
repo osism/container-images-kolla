@@ -2,6 +2,7 @@
 aodh: pip3 show aodh
 barbican: pip3 show barbican
 bifrost: pip3 show bifrost
+blazar: pip3 show blazar
 ceilometer: pip3 show ceilometer
 cinder: pip3 show cinder
 cloudkitty: pip3 show cloudkitty
@@ -21,6 +22,7 @@ hacluster-corosync: dpkg -s corosync
 hacluster: dpkg -s pacemaker-common
 haproxy-ssh: dpkg -s openssh-server
 haproxy: dpkg -s haproxy
+heat: pip3 show heat
 horizon: pip3 show horizon
 influxdb: dpkg -s influxdb
 ironic: pip3 show ironic
