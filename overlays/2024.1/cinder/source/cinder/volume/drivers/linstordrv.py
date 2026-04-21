@@ -18,6 +18,7 @@
 See https://docs.linbit.com/docs/users-guide-9.0/#ch-openstack-linstor
 for more details.
 """
+
 import contextlib
 import functools
 import socket

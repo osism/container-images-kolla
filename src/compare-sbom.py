@@ -36,7 +36,6 @@ from loguru import logger
 from packaging.version import Version, InvalidVersion
 from yaml import safe_load, YAMLError
 
-
 # Configure logger
 logger.remove()
 log_fmt = (
