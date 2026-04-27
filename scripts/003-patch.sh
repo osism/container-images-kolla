@@ -27,6 +27,8 @@ export OPENSTACK_VERSION
 
 mkdir -p tarballs
 
+ping -c2 tarballs.opendev.org
+
 for tarball in $(grep '# tarball' $KOLLA_CONF_FILE | awk '{ print $4 }'); do
     pushd tarballs > /dev/null
 
@@ -37,7 +39,7 @@ for tarball in $(grep '# tarball' $KOLLA_CONF_FILE | awk '{ print $4 }'); do
     fi
 
     echo Download $tarball
-    wget --no-verbose $tarball
+    wget --no-verbose --tries=3 $tarball || exit 2
 
     if [[ $tarball == *"gnocchi"* && ! $filename == *"gnocchi"* ]]; then
         mv $filename gnocchi-$filename
