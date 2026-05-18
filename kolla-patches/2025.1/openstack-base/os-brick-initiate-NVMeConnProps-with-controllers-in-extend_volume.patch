@@ -1,0 +1,118 @@
+From ad8cbe087ca7fb1dacc693a36f02ac94d352256d Mon Sep 17 00:00:00 2001
+From: Jan Horstmann <horstmann@osism.tech>
+Date: Thu, 5 Feb 2026 12:01:55 +0100
+Subject: [PATCH] Initiate NVMeConnProps with controllers in extend_volume
+
+Device paths may not be retrieved in all situations when controllers
+are not identified for the targets of NVMeConnProps in extend_volume().
+
+Closes-Bug: #2140543
+
+Change-Id: Ie6ee1e8d45d914b0fd17679a61d131cb7ce9853d
+Signed-off-by: Jan Horstmann <horstmann@osism.tech>
+---
+ os_brick/initiator/connectors/nvmeof.py       |  3 ++-
+ .../tests/initiator/connectors/test_nvmeof.py | 19 ++++++++++++++++---
+ .../notes/bug-2140543-ceb7c0517cc796bf.yaml   |  5 +++++
+ 3 files changed, 23 insertions(+), 4 deletions(-)
+ create mode 100644 releasenotes/notes/bug-2140543-ceb7c0517cc796bf.yaml
+
+diff --git a/os_brick/initiator/connectors/nvmeof.py /var/lib/kolla/venv/lib/python3.12/site-packages/os_brick/initiator/connectors/nvmeof.py
+deleted file mode 100644
+index ab4f9c2..052dd34 100644
+--- a/os_brick/initiator/connectors/nvmeof.py
++++ /var/lib/kolla/venv/lib/python3.12/site-packages/os_brick/initiator/connectors/nvmeof.py
+@@ -1225,7 +1225,8 @@ class NVMeOFConnector(base.BaseLinuxConnector):
+         # NOTE: Cannot use NVMeOFConnProps's decorator to create instance from
+         # conn props because "connect_volume_undo_prepare_result" must be the
+         # first decorator and it expects a dictionary.
+-        conn_props = NVMeOFConnProps(connection_properties)
++        conn_props = NVMeOFConnProps(connection_properties,
++                                     find_controllers=True)
+         try:
+             device_path = self.get_volume_paths(conn_props)[0]
+         except IndexError:
+diff --git a/os_brick/tests/initiator/connectors/test_nvmeof.py /var/lib/kolla/venv/lib/python3.12/site-packages/os_brick/tests/initiator/connectors/test_nvmeof.py
+deleted file mode 100644
+index d3834de..aa6f278 100644
+--- a/os_brick/tests/initiator/connectors/test_nvmeof.py
++++ /var/lib/kolla/venv/lib/python3.12/site-packages/os_brick/tests/initiator/connectors/test_nvmeof.py
+@@ -1233,13 +1233,15 @@ class NVMeOFConnectorTestCase(test_connector.ConnectorTestCase):
+         self.assertIsNone(res_nsze)
+         self.assertIsNone(res_size)
+
++    @mock.patch.object(nvmeof.Target, 'set_portals_controllers')
+     @mock.patch.object(nvmeof, 'blk_property')
+     @mock.patch.object(nvmeof.NVMeOFConnector, '_get_sizes_from_lba')
+     @mock.patch.object(nvmeof.NVMeOFConnector, '_execute')
+     @mock.patch.object(nvmeof.NVMeOFConnector, 'get_volume_paths')
+     @mock.patch('os_brick.utils.get_device_size')
+     def test_extend_volume_unreplicated(self, mock_device_size, mock_paths,
+-                                        mock_exec, mock_lba, mock_property):
++                                        mock_exec, mock_lba, mock_property,
++                                        mock_set_ctrls):
+         """Uses nvme to get expected size and waits until sysfs shows it."""
+         new_size = 3221225472
+         new_nsze = int(new_size / 512)  # nsze is size / block-size
+@@ -1267,7 +1269,11 @@ class NVMeOFConnectorTestCase(test_connector.ConnectorTestCase):
+         mock_property.assert_has_calls([mock.call('size', 'nvme0n1'),
+                                         mock.call('size', 'nvme0n1')])
+         mock_device_size.assert_not_called()
++        retries = 3
++        self.assertEqual(retries, mock_set_ctrls.call_count)
++        mock_set_ctrls.assert_has_calls(retries * [mock.call()])
+
++    @mock.patch.object(nvmeof.Target, 'set_portals_controllers')
+     @mock.patch.object(nvmeof.NVMeOFConnector, 'rescan')
+     @mock.patch.object(nvmeof, 'blk_property')
+     @mock.patch.object(nvmeof.NVMeOFConnector, '_get_sizes_from_lba')
+@@ -1276,7 +1282,7 @@ class NVMeOFConnectorTestCase(test_connector.ConnectorTestCase):
+     @mock.patch('os_brick.utils.get_device_size')
+     def test_extend_volume_unreplicated_nvme_fails(
+             self, mock_device_size, mock_paths, mock_exec, mock_lba,
+-            mock_property, mock_rescan):
++            mock_property, mock_rescan, mock_set_ctrls):
+         """nvme command fails, so it rescans, waits, and reads size."""
+         dev_path = '/dev/nvme0n1'
+         mock_device_size.return_value = 100
+@@ -1296,12 +1302,16 @@ class NVMeOFConnectorTestCase(test_connector.ConnectorTestCase):
+         mock_property.assert_not_called()
+         mock_rescan.assert_called_once_with('nvme0')
+         mock_device_size.assert_called_with(self.connector, '/dev/nvme0n1')
++        retries = 3
++        self.assertEqual(retries, mock_set_ctrls.call_count)
++        mock_set_ctrls.assert_has_calls(retries * [mock.call()])
+
++    @mock.patch.object(nvmeof.Target, 'set_portals_controllers')
+     @mock.patch.object(nvmeof.NVMeOFConnector, 'get_volume_paths')
+     @mock.patch.object(nvmeof.NVMeOFConnector, 'run_mdadm')
+     @mock.patch('os_brick.utils.get_device_size')
+     def test_extend_volume_replicated(
+-            self, mock_device_size, mock_mdadm, mock_paths):
++            self, mock_device_size, mock_mdadm, mock_paths, mock_set_ctrls):
+         device_path = '/dev/md/' + connection_properties['alias']
+         mock_paths.return_value = [device_path]
+         mock_device_size.return_value = 100
+@@ -1314,6 +1324,9 @@ class NVMeOFConnectorTestCase(test_connector.ConnectorTestCase):
+         mock_mdadm.assert_called_with(
+             ('mdadm', '--grow', '--size', 'max', device_path))
+         mock_device_size.assert_called_with(self.connector, device_path)
++        retries = 3
++        self.assertEqual(retries, mock_set_ctrls.call_count)
++        mock_set_ctrls.assert_has_calls(retries * [mock.call()])
+
+     @mock.patch.object(nvmeof.Target, 'find_device')
+     @mock.patch.object(nvmeof.Target, 'set_portals_controllers')
+diff --git a/releasenotes/notes/bug-2140543-ceb7c0517cc796bf.yaml /var/lib/kolla/venv/lib/python3.12/site-packages/releasenotes/notes/bug-2140543-ceb7c0517cc796bf.yaml
+new file mode 100644
+index 0000000..ee0bc7c
+--- /dev/null
++++ /var/lib/kolla/venv/lib/python3.12/site-packages/releasenotes/notes/bug-2140543-ceb7c0517cc796bf.yaml
+@@ -0,0 +1,5 @@
++---
++fixes:
++  - |
++    `Bug #2140543 <https://bugs.launchpad.net/os-brick/+bug/2140543>`_: Fix
++    nvmeof fails to get device path in extend_volume.
+--
+2.54.0
