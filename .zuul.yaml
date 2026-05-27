@@ -69,10 +69,6 @@
     name: semaphore-container-images-kolla-push-2025.1
     max: 1
 
-- semaphore:
-    name: semaphore-container-images-kolla-push-2024.2-aarch64
-    max: 1
-
 - job:
     name: container-images-kolla-patch
     nodeset: ubuntu-noble
@@ -90,16 +86,6 @@
     timeout: 10800
     vars:
       docker_namespace: kolla
-
-- job:
-    name: container-images-kolla-build-aarch64
-    nodeset: ubuntu-noble-large
-    pre-run: playbooks/pre.yml
-    run: playbooks/build.yml
-    timeout: 10800
-    vars:
-      base_arch: aarch64
-      docker_namespace: kolla/aarch64
 
 - job:
     name: container-images-kolla-patch-2024.1
@@ -158,13 +144,6 @@
       push_images: false
 
 - job:
-    name: container-images-kolla-build-2024.2-aarch64
-    parent: container-images-kolla-build-aarch64
-    vars:
-      version_openstack: "2024.2"
-      push_images: false
-
-- job:
     name: container-images-kolla-push-2024.1
     parent: container-images-kolla-build
     semaphores:
@@ -217,19 +196,6 @@
         pass-to-parent: true
 
 - job:
-    name: container-images-kolla-push-2024.2-aarch64
-    parent: container-images-kolla-build-aarch64
-    semaphores:
-      - name: semaphore-container-images-kolla-push-2024.2-aarch64
-    vars:
-      version_openstack: "2024.2"
-      push_images: true
-    secrets:
-      - name: secret
-        secret: SECRET_CONTAINER_IMAGES_KOLLA
-        pass-to-parent: true
-
-- job:
     name: container-images-kolla-release
     parent: container-images-kolla-build
     vars:
@@ -257,7 +223,6 @@
         - container-images-kolla-build-2024.2
         - container-images-kolla-build-2025.1
         - container-images-kolla-build-2025.2
-        # - container-images-kolla-build-2024.2-aarch64
     periodic-daily:
       jobs:
         - flake8
@@ -269,7 +234,6 @@
         - container-images-kolla-push-2024.2
         - container-images-kolla-push-2025.1
         - container-images-kolla-push-2025.2
-        # - container-images-kolla-push-2024.2-aarch64
     post:
       jobs:
         - container-images-kolla-push-2024.1:
@@ -280,8 +244,6 @@
             branches: main
         - container-images-kolla-push-2025.2:
             branches: main
-        # - container-images-kolla-push-2024.2-aarch64:
-        #     branches: main
     tag:
       jobs:
         - container-images-kolla-release
