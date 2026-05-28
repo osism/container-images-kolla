@@ -1,0 +1,1508 @@
+From f18fda559604bc2668faa4fefe27c3b3c6eccc6c Mon Sep 17 00:00:00 2001
+From: Grzegorz Grasza <xek@redhat.com>
+Date: Thu, 23 Apr 2026 10:13:20 +0200
+Subject: [PATCH 08/12] Enforce delegation project boundary for delegated
+ tokens
+
+Delegated tokens (trusts, application credentials, OAuth1 access tokens)
+are scoped to a single project at delegation time. This must be enforced
+thoroughly while granting the API access to Keystone resources that
+might be also bound to a single project. Without this it is possible to
+gain different access (using trust to see application credentials for a
+different project, reuse the MFA seed, etc).
+
+* Credentials CRUD (/v3/credentials)
+
+  All five CRUD operations verified ownership via user_id but did not bind
+  credential.project_id to the delegating token's project scope.
+
+  Fix: _check_credential_project_scope() - no-op for non-delegated tokens,
+  raises ForbiddenAction on project mismatch. For list, out-of-scope
+  credentials are silently filtered.
+
+  Credentials with project_id=None (TOTP/MFA bindings) are treated as
+  out-of-scope for any delegated token: they are user-level secrets with no
+  project anchor, and a delegated token should never be able to enumerate,
+  read, or mutate them - doing so would allow a stolen delegation token to
+  exfiltrate or destroy a user's MFA binding.
+
+* OS-EC2 credential CRUD (/v3/users/{id}/credentials/OS-EC2)
+
+  POST accepted any tenant_id from a delegated token. GET and DELETE had
+  no delegation check at all.
+
+  Fix: _check_delegation_for_ec2() enforces the project boundary;
+  list silently filters.
+
+  Additionally, pre-existing OAuth1 access-token-backed EC2 credentials
+  with a mismatched project_id could be used at auth-time (POST /v3/ec2tokens)
+  to obtain a cross-project token. Added a check in EC2_S3_Resource.py that
+  cred_data['project_id'] matches access_token['project_id'] before issuing
+  the token. The trust branch does not need this check - the token provider
+  uses the trust's project regardless of the credential's project_id.
+
+* OS-OAUTH1 access token management (/v3/users/{id}/OS-OAUTH1/access_tokens)
+
+  GET and DELETE had no delegation check. List blocked trust/OAuth but not
+  app-cred tokens.
+
+  Fix: _block_delegated_token() raises Forbidden for any delegation type
+  on list, get, and delete.
+
+* Application credential management (/v3/users/{id}/application_credentials)
+
+  Trust-scoped and OAuth1 tokens had no guard on the application credential
+  and access rule management APIs. An impersonating trust could LIST, CREATE,
+  or DELETE application credentials, creating a persistent backdoor that
+  outlives the trust's own expiry. App credential tokens are intentionally
+  excluded - the unrestricted/restricted distinction is handled separately by
+  _check_unrestricted_application_credential.
+
+  Fix: _block_delegated_token_app_creds() raises Forbidden for trust-scoped
+  and OAuth1 tokens on all six app credential and access rule endpoints.
+
+Closes-Bug: #2150089
+Related-Bug: #2149789
+Related-Bug: #2149775
+Assisted-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+Change-Id: Iaaa0ec713a0a5e062acc3209d6010982899d8f6f
+Signed-off-by: Grzegorz Grasza <xek@redhat.com>
+Signed-off-by: Artem Goncharov <artem.goncharov@gmail.com>
+(cherry picked from commit 16582e5192be354e26ebef4badca1213ddc4dc07)
+---
+ keystone/api/_shared/EC2_S3_Resource.py       |   7 +
+ keystone/api/credentials.py                   |  58 ++-
+ keystone/api/users.py                         | 127 +++++-
+ keystone/conf/security_compliance.py          |  69 ++-
+ .../unit/test_v3_application_credential.py    | 328 ++++++++++++++-
+ keystone/tests/unit/test_v3_credential.py     | 392 ++++++++++++++++++
+ keystone/tests/unit/test_v3_oauth1.py         | 112 +++++
+ .../notes/bug-2150089-e91b592c948e5771.yaml   |  35 ++
+ 8 files changed, 1099 insertions(+), 29 deletions(-)
+ create mode 100644 releasenotes/notes/bug-2150089-e91b592c948e5771.yaml
+
+diff --git a/keystone/api/_shared/EC2_S3_Resource.py b/keystone/api/_shared/EC2_S3_Resource.py
+index 80ef7fc35..5e6f3c062 100644
+--- a/keystone/api/_shared/EC2_S3_Resource.py
++++ b/keystone/api/_shared/EC2_S3_Resource.py
+@@ -166,6 +166,13 @@ class ResourceBase(ks_flask.ResourceBase):
+             access_token = PROVIDERS.oauth_api.get_access_token(
+                 cred_data['access_token_id'])
+             roles = jsonutils.loads(access_token['role_ids'])
++            if cred_data['project_id'] != access_token['project_id']:
++                raise ks_exceptions.Unauthorized(
++                    _(
++                        'EC2 credential project does not match the '
++                        'OAuth1 access token project.'
++                    )
++                )
+             auth_context = {'access_token_id': cred_data['access_token_id']}
+         else:
+             roles = PROVIDERS.assignment_api.get_roles_for_user_and_project(
+diff --git a/keystone/api/credentials.py b/keystone/api/credentials.py
+index 068e9860a..6b0c0317a 100644
+--- a/keystone/api/credentials.py
++++ b/keystone/api/credentials.py
+@@ -42,6 +42,48 @@ def _check_unrestricted_application_credential(token):
+             raise exception.ForbiddenAction(action=action)
+ 
+ 
++def _check_credential_project_scope(token, oslo_context, credential):
++    """Enforce project boundary for delegated tokens.
++
++    Non-delegated tokens (password, totp, etc.) are not restricted here --
++    an admin with a regular token can legitimately manage credentials across
++    projects. Delegated tokens (trusts, application credentials, OAuth1) are
++    always bound to a single project at delegation time; only credentials
++    whose project_id exactly matches the token's project scope are in bounds.
++
++    Credentials with project_id=None (e.g. TOTP/MFA bindings) are treated as
++    out-of-scope for any delegated token: they are user-level secrets with no
++    project anchor, and a delegated token should never be able to enumerate,
++    read, or mutate them -- doing so would allow a stolen delegation token to
++    exfiltrate or destroy a user's MFA binding.
++    """
++    trust_id = getattr(oslo_context, 'trust_id', None)
++    app_cred_id = getattr(token, 'application_credential_id', None)
++    access_token_id = getattr(token, 'access_token_id', None)
++
++    if not (trust_id or app_cred_id or access_token_id):
++        return
++
++    token_project_id = oslo_context.project_id
++    cred_project_id = credential.get('project_id')
++
++    if cred_project_id != token_project_id:
++        if CONF.security_compliance.allow_insecure_admin_trust_cross_project_credentials_access:
++            # When insecure cross-project access is enabled, still restrict to
++            # admin-role delegated tokens only. See LP#2150089.
++            try:
++                ENFORCER.enforce_call(action='admin_required')
++                return
++            except Exception:
++                pass
++        raise exception.ForbiddenAction(
++            action=_(
++                'Credential project does not match the '
++                'project scope of the delegated token'
++            )
++        )
++
++
+ def _build_target_enforcement():
+     target = {}
+     try:
+@@ -122,6 +164,7 @@ class CredentialResource(ks_flask.ResourceBase):
+         # If the request was filtered, make sure to return only the
+         # credentials specific to that user. This makes it so that users with
+         # roles on projects can't see credentials that aren't theirs.
++        token = self.auth_context['token']
+         filtered_refs = []
+         for ref in refs:
+             # Check each credential again to make sure the user has access to
+@@ -134,8 +177,9 @@ class CredentialResource(ks_flask.ResourceBase):
+                     action='identity:get_credential',
+                     target_attr={'credential': cred}
+                 )
++                _check_credential_project_scope(token, self.oslo_context, cred)
+                 filtered_refs.append(ref)
+-            except exception.Forbidden:
++            except (exception.Forbidden, exception.ForbiddenAction):
+                 pass
+         refs = filtered_refs
+         refs = [self._blob_to_json(r) for r in refs]
+@@ -147,6 +191,9 @@ class CredentialResource(ks_flask.ResourceBase):
+             build_target=_build_target_enforcement
+         )
+         credential = PROVIDERS.credential_api.get_credential(credential_id)
++        _check_credential_project_scope(
++            self.auth_context['token'], self.oslo_context, credential
++        )
+         return self.wrap_member(self._blob_to_json(credential))
+ 
+     def get(self, credential_id=None):
+@@ -172,6 +219,7 @@ class CredentialResource(ks_flask.ResourceBase):
+         trust_id = getattr(self.oslo_context, 'trust_id', None)
+         app_cred_id = getattr(token, 'application_credential_id', None)
+         access_token_id = getattr(token, 'access_token_id', None)
++        _check_credential_project_scope(token, self.oslo_context, credential)
+         if (
+             app_cred_id is not None
+             and credential.get('type', '').lower() == 'ec2'
+@@ -213,7 +261,9 @@ class CredentialResource(ks_flask.ResourceBase):
+             build_target=_build_target_enforcement
+         )
+         current = PROVIDERS.credential_api.get_credential(credential_id)
+-
++        _check_credential_project_scope(
++            self.auth_context['token'], self.oslo_context, current
++        )
+         credential = self.request_body_json.get('credential', {})
+         validation.lazy_validate(schema.credential_update, credential)
+         self._validate_blob_update_keys(current.copy(), credential.copy())
+@@ -233,6 +283,10 @@ class CredentialResource(ks_flask.ResourceBase):
+             action='identity:delete_credential',
+             build_target=_build_target_enforcement
+         )
++        credential = PROVIDERS.credential_api.get_credential(credential_id)
++        _check_credential_project_scope(
++            self.auth_context['token'], self.oslo_context, credential
++        )
+ 
+         return (PROVIDERS.credential_api.delete_credential(
+             credential_id, initiator=self.audit_initiator),
+diff --git a/keystone/api/users.py b/keystone/api/users.py
+index 41c0c5011..eb7b1366e 100644
+--- a/keystone/api/users.py
++++ b/keystone/api/users.py
+@@ -92,6 +92,76 @@ def _check_unrestricted_application_credential(token):
+             raise ks_exception.ForbiddenAction(action=action)
+ 
+ 
++def _is_delegated_token(oslo_context, token):
++    """Return True if the token is any form of delegation."""
++    trust_id = getattr(oslo_context, 'trust_id', None)
++    app_cred_id = getattr(token, 'application_credential_id', None)
++    access_token_id = getattr(token, 'access_token_id', None)
++    return bool(trust_id or app_cred_id or access_token_id)
++
++
++def _check_delegation_for_ec2(oslo_context, token, project_id):
++    """For delegated tokens raise unless project_id exactly matches scope.
++
++    Credentials with project_id=None (user-scoped secrets such as TOTP) are
++    treated as out-of-scope: a delegated token must not read or modify them.
++    """
++    if not _is_delegated_token(oslo_context, token):
++        return
++    if project_id != oslo_context.project_id:
++        raise ks_exception.ForbiddenAction(
++            action=_(
++                'EC2 credential project does not match the '
++                'project scope of the delegated token'
++            )
++        )
++
++
++def _block_delegated_token(oslo_context, token):
++    """Raise Forbidden if the token is any form of delegation."""
++    if oslo_context.is_delegated_auth:
++        raise ks_exception.Forbidden(
++            _(
++                'Cannot manage OAuth access tokens with a token '
++                'issued via delegation.'
++            )
++        )
++    if 'application_credential' in token.methods:
++        raise ks_exception.Forbidden(
++            _(
++                'Cannot manage OAuth access tokens with a token '
++                'issued via delegation.'
++            )
++        )
++
++
++def _block_delegated_token_app_creds(oslo_context, token):
++    """Raise Forbidden if the token is a trust or OAuth1 delegation.
++
++    Trust-scoped and OAuth1 access token-scoped tokens must not be used to
++    create, list, read, or delete application credentials or access rules.
++    Creating an application credential via such a token produces a persistent
++    credential that outlives the delegation's expiry or scope, providing a
++    backdoor that breaks the accountability model: the trust-scoped token
++    carries the full delegation chain enabling audit, but a derived application
++    credential does not.
++
++    Application credential tokens are intentionally excluded from this check.
++    The unrestricted/restricted distinction for application credentials is a
++    documented feature handled separately by
++    _check_unrestricted_application_credential.
++    """
++    trust_id = getattr(oslo_context, 'trust_id', None)
++    access_token_id = getattr(token, 'access_token_id', None)
++    if trust_id or access_token_id:
++        raise ks_exception.Forbidden(
++            _(
++                'Cannot manage application credentials with a token '
++                'issued via delegation.'
++            )
++        )
++
++
+ def _build_user_target_enforcement():
+     target = {}
+     try:
+@@ -372,11 +442,18 @@ class UserOSEC2CredentialsResourceListCreate(_UserOSEC2CredBaseResource):
+         ENFORCER.enforce_call(action='identity:ec2_list_credentials')
+         PROVIDERS.identity_api.get_user(user_id)
+         credential_refs = PROVIDERS.credential_api.list_credentials_for_user(
+-            user_id, type=CRED_TYPE_EC2)
+-        collection_refs = [
+-            _convert_v3_to_ec2_credential(cred)
+-            for cred in credential_refs
+-        ]
++            user_id, type=CRED_TYPE_EC2
++        )
++        token = self.auth_context['token']
++        collection_refs = []
++        for cred in credential_refs:
++            try:
++                _check_delegation_for_ec2(
++                    self.oslo_context, token, cred.get('project_id')
++                )
++            except (ks_exception.Forbidden, ks_exception.ForbiddenAction):
++                continue
++            collection_refs.append(_convert_v3_to_ec2_credential(cred))
+         return self.wrap_collection(collection_refs)
+ 
+     def post(self, user_id):
+@@ -393,6 +470,7 @@ class UserOSEC2CredentialsResourceListCreate(_UserOSEC2CredBaseResource):
+         PROVIDERS.identity_api.get_user(user_id)
+         tenant_id = self.request_body_json.get('tenant_id')
+         PROVIDERS.resource_api.get_project(tenant_id)
++        _check_delegation_for_ec2(self.oslo_context, token, tenant_id)
+         blob = dict(
+             access=uuid.uuid4().hex,
+             secret=uuid.uuid4().hex,
+@@ -413,12 +491,12 @@ class UserOSEC2CredentialsResourceListCreate(_UserOSEC2CredBaseResource):
+ 
+ class UserOSEC2CredentialsResourceGetDelete(_UserOSEC2CredBaseResource):
+     @staticmethod
+-    def _get_cred_data(credential_id):
++    def _get_raw_cred(credential_id):
+         cred = PROVIDERS.credential_api.get_credential(credential_id)
+         if not cred or cred['type'] != CRED_TYPE_EC2:
+             raise ks_exception.Unauthorized(
+                 message=_('EC2 access key not found.'))
+-        return _convert_v3_to_ec2_credential(cred)
++        return cred
+ 
+     def get(self, user_id, credential_id):
+         """Get a specific EC2 credential.
+@@ -431,8 +509,13 @@ class UserOSEC2CredentialsResourceGetDelete(_UserOSEC2CredBaseResource):
+             build_target=func)
+         PROVIDERS.identity_api.get_user(user_id)
+         ec2_cred_id = utils.hash_access_key(credential_id)
+-        cred_data = self._get_cred_data(ec2_cred_id)
+-        return self.wrap_member(cred_data)
++        cred = self._get_raw_cred(ec2_cred_id)
++        _check_delegation_for_ec2(
++            self.oslo_context,
++            self.auth_context['token'],
++            cred.get('project_id'),
++        )
++        return self.wrap_member(_convert_v3_to_ec2_credential(cred))
+ 
+     def delete(self, user_id, credential_id):
+         """Delete a specific EC2 credential.
+@@ -444,7 +527,12 @@ class UserOSEC2CredentialsResourceGetDelete(_UserOSEC2CredBaseResource):
+                               build_target=func)
+         PROVIDERS.identity_api.get_user(user_id)
+         ec2_cred_id = utils.hash_access_key(credential_id)
+-        self._get_cred_data(ec2_cred_id)
++        cred = self._get_raw_cred(ec2_cred_id)
++        _check_delegation_for_ec2(
++            self.oslo_context,
++            self.auth_context['token'],
++            cred.get('project_id'),
++        )
+         PROVIDERS.credential_api.delete_credential(ec2_cred_id)
+         return None, http.client.NO_CONTENT
+ 
+@@ -473,10 +561,7 @@ class OAuth1ListAccessTokensResource(_OAuth1ResourceBase):
+         GET /v3/users/{user_id}/OS-OAUTH1/access_tokens
+         """
+         ENFORCER.enforce_call(action='identity:list_access_tokens')
+-        if self.oslo_context.is_delegated_auth:
+-            raise ks_exception.Forbidden(
+-                _('Cannot list request tokens with a token '
+-                  'issued via delegation.'))
++        _block_delegated_token(self.oslo_context, self.auth_context['token'])
+         refs = PROVIDERS.oauth_api.list_access_tokens(user_id)
+         formatted_refs = ([_format_token_entity(x) for x in refs])
+         return self.wrap_collection(formatted_refs)
+@@ -489,6 +574,7 @@ class OAuth1AccessTokenCRUDResource(_OAuth1ResourceBase):
+         GET/HEAD /v3/users/{user_id}/OS-OAUTH1/access_tokens/{access_token_id}
+         """
+         ENFORCER.enforce_call(action='identity:get_access_token')
++        _block_delegated_token(self.oslo_context, self.auth_context['token'])
+         access_token = PROVIDERS.oauth_api.get_access_token(access_token_id)
+         if access_token['authorizing_user_id'] != user_id:
+             raise ks_exception.NotFound()
+@@ -503,6 +589,7 @@ class OAuth1AccessTokenCRUDResource(_OAuth1ResourceBase):
+         ENFORCER.enforce_call(
+             action='identity:ec2_delete_credential',
+             build_target=_build_enforcer_target_data_owner_and_user_id_match)
++        _block_delegated_token(self.oslo_context, self.auth_context['token'])
+         access_token = PROVIDERS.oauth_api.get_access_token(access_token_id)
+         reason = (
+             'Invalidating the token cache because an access token for '
+@@ -637,6 +724,8 @@ class UserAppCredListCreateResource(ks_flask.ResourceBase):
+         filters = ('name',)
+         ENFORCER.enforce_call(action='identity:list_application_credentials',
+                               filters=filters)
++        token = self.auth_context['token']
++        _block_delegated_token_app_creds(self.oslo_context, token)
+         app_cred_api = PROVIDERS.application_credential_api
+         hints = self.build_driver_hints(filters)
+         refs = app_cred_api.list_application_credentials(user_id, hints=hints)
+@@ -653,6 +742,7 @@ class UserAppCredListCreateResource(ks_flask.ResourceBase):
+         validation.lazy_validate(app_cred_schema.application_credential_create,
+                                  app_cred_data)
+         token = self.auth_context['token']
++        _block_delegated_token_app_creds(self.oslo_context, token)
+         _check_unrestricted_application_credential(token)
+         if self.oslo_context.user_id != user_id:
+             action = _('Cannot create an application credential for another '
+@@ -708,6 +798,8 @@ class UserAppCredGetDeleteResource(ks_flask.ResourceBase):
+             action='identity:get_application_credential',
+             target_attr=target,
+         )
++        token = self.auth_context['token']
++        _block_delegated_token_app_creds(self.oslo_context, token)
+         ref = PROVIDERS.application_credential_api.get_application_credential(
+             application_credential_id)
+         return self.wrap_member(ref)
+@@ -724,6 +816,7 @@ class UserAppCredGetDeleteResource(ks_flask.ResourceBase):
+             target_attr=target
+         )
+         token = self.auth_context['token']
++        _block_delegated_token_app_creds(self.oslo_context, token)
+         _check_unrestricted_application_credential(token)
+         PROVIDERS.application_credential_api.delete_application_credential(
+             application_credential_id, initiator=self.audit_initiator)
+@@ -743,6 +836,8 @@ class UserAccessRuleListResource(ks_flask.ResourceBase):
+         ENFORCER.enforce_call(action='identity:list_access_rules',
+                               filters=filters,
+                               build_target=_build_user_target_enforcement)
++        token = self.auth_context['token']
++        _block_delegated_token_app_creds(self.oslo_context, token)
+         app_cred_api = PROVIDERS.application_credential_api
+         hints = self.build_driver_hints(filters)
+         refs = app_cred_api.list_access_rules_for_user(user_id, hints=hints)
+@@ -763,6 +858,8 @@ class UserAccessRuleGetDeleteResource(ks_flask.ResourceBase):
+             action='identity:get_access_rule',
+             build_target=_build_user_target_enforcement
+         )
++        token = self.auth_context['token']
++        _block_delegated_token_app_creds(self.oslo_context, token)
+         ref = PROVIDERS.application_credential_api.get_access_rule(
+             access_rule_id)
+         return self.wrap_member(ref)
+@@ -776,6 +873,8 @@ class UserAccessRuleGetDeleteResource(ks_flask.ResourceBase):
+             action='identity:delete_access_rule',
+             build_target=_build_user_target_enforcement
+         )
++        token = self.auth_context['token']
++        _block_delegated_token_app_creds(self.oslo_context, token)
+         PROVIDERS.application_credential_api.delete_access_rule(
+             access_rule_id, initiator=self.audit_initiator)
+         return None, http.client.NO_CONTENT
+diff --git a/keystone/conf/security_compliance.py b/keystone/conf/security_compliance.py
+index 686a957d2..2c7a74505 100644
+--- a/keystone/conf/security_compliance.py
++++ b/keystone/conf/security_compliance.py
+@@ -125,6 +125,71 @@ applicable with the `sql` backend for the `[identity] driver`.
+ """))
+ 
+ 
++allow_insecure_admin_trust_cross_project_credentials_access = cfg.BoolOpt(
++    'allow_insecure_admin_trust_cross_project_credentials_access',
++    default=False,
++    deprecated_for_removal=True,
++    deprecated_reason=utils.fmt(
++        """
++Migrate automated workflows that use admin-role trusts to access credentials
++across multiple projects (e.g. Mistral cron triggers) to use non-delegated
++service account credentials instead, then remove this option.
++"""
++    ),
++    deprecated_since='2026.1',
++    help=utils.fmt(
++        """
++INSECURE: When enabled, admin-role delegated tokens (trusts, application
++credentials, OAuth1 access tokens) are allowed to access credentials outside
++their project scope. By default (False), delegated tokens can only access
++credentials whose project_id matches the token's project scope, preventing
++cross-project lateral movement via a compromised delegation token.
++
++Enable this only if you have automated workflows (e.g. Mistral cron triggers)
++that use admin-role trusts to access credentials across multiple projects and
++cannot be migrated to use non-delegated service account credentials. Enabling
++this option weakens the isolation guarantee provided by the delegation boundary
++fix for LP#2150089. This option is deprecated and will be removed in a future
++release.
++"""
++    ),
++)
++
++
++allow_insecure_application_credential_trust_escalation = cfg.BoolOpt(
++    'allow_insecure_application_credential_trust_escalation',
++    default=False,
++    deprecated_for_removal=True,
++    deprecated_reason=utils.fmt(
++        """
++Migrate workflows where application credentials create trusts to use OIDC
++federation flows (v3oidcclientcredentials, v3oidcdeviceauthz) instead, then
++remove this option.
++"""
++    ),
++    deprecated_since='2026.1',
++    help=utils.fmt(
++        """
++INSECURE: When enabled, application credential tokens (including restricted
++ones) are allowed to create, delete, and list trusts. By default (False),
++application credential tokens are blocked from all trust operations regardless
++of the unrestricted flag, because allowing an application credential to
++bootstrap a trust creates a new delegation context. A trust-scoped token
++produced from that trust can then access authentication material (EC2
++credentials, TOTP seeds) and operate entirely outside the delegation chain,
++breaking the audit trail. The 'unrestricted' flag governs credential
++management, not trust management.
++
++Enable this only if you have workflows where application credentials must
++create trusts (e.g. Heat stacks authenticated via application credentials).
++Use OIDC federation flows (v3oidcclientcredentials, v3oidcdeviceauthz) as the
++proper long-term alternative. This option is deprecated and will be removed
++in a future release.
++"""
++    ),
++)
++
++
+ GROUP_NAME = __name__.split('.')[-1]
+ ALL_OPTS = [
+     disable_user_account_days_inactive,
+@@ -135,7 +200,9 @@ ALL_OPTS = [
+     minimum_password_age,
+     password_regex,
+     password_regex_description,
+-    change_password_upon_first_use
++    change_password_upon_first_use,
++    allow_insecure_admin_trust_cross_project_credentials_access,
++    allow_insecure_application_credential_trust_escalation,
+ ]
+ 
+ 
+diff --git a/keystone/tests/unit/test_v3_application_credential.py b/keystone/tests/unit/test_v3_application_credential.py
+index e581d0dbf..1de466ff9 100644
+--- a/keystone/tests/unit/test_v3_application_credential.py
++++ b/keystone/tests/unit/test_v3_application_credential.py
+@@ -12,6 +12,7 @@
+ 
+ import datetime
+ from testtools import matchers
++import unittest
+ import uuid
+ 
+ import http.client
+@@ -211,7 +212,6 @@ class ApplicationCredentialTestCase(test_v3.RestfulTestCase):
+             self.user_id, self.project_id, second_role['id'])
+         with self.test_client() as c:
+             pw_token = self.get_scoped_token()
+-            # create a self-trust - only the roles are important for this test
+             trust_ref = unit.new_trust_ref(
+                 trustor_user_id=self.user_id,
+                 trustee_user_id=self.user_id,
+@@ -228,14 +228,26 @@ class ApplicationCredentialTestCase(test_v3.RestfulTestCase):
+             trust_token = self.v3_create_token(
+                 trust_auth).headers['X-Subject-Token']
+             app_cred = self._app_cred_body(roles=[{'id': self.role_id}])
+-            # only the roles from the trust token should be allowed, even if
+-            # the user has the role assigned on the project
+-            c.post('/v3/users/%s/application_credentials' % self.user_id,
+-                   headers={'X-Auth-Token': trust_token},
+-                   json=app_cred,
+-                   expected_status_code=http.client.BAD_REQUEST)
++            # Trust-scoped tokens are entirely blocked from managing
++            # application credentials (LP#2150089).
++            c.post(
++                f'/v3/users/{self.user_id}/application_credentials',
++                headers={'X-Auth-Token': trust_token},
++                json=app_cred,
++                expected_status_code=http.client.FORBIDDEN,
++            )
+ 
+     def test_create_application_credential_allow_recursion(self):
++        """Unrestricted app credential token can create new credentials.
++
++        The `unrestricted` flag is a documented (unsafe) feature that allows
++        an application credential token to create additional application
++        credentials. This must continue to work -- restricted application
++        credentials are blocked by _check_unrestricted_application_credential,
++        but unrestricted ones are explicitly opted-in to this behaviour.
++        Trust-scoped and OAuth1 tokens are separately blocked by
++        _block_delegated_token_app_creds (LP#2150089).
++        """
+         with self.test_client() as c:
+             roles = [{'id': self.role_id}]
+             app_cred_body_1 = self._app_cred_body(roles=roles)
+@@ -554,6 +566,12 @@ class ApplicationCredentialTestCase(test_v3.RestfulTestCase):
+                      headers={'X-Auth-Token': token})
+ 
+     def test_delete_application_credential_allow_recursion(self):
++        """Unrestricted app credential token can delete credentials.
++
++        The `unrestricted` flag allows an application credential token to
++        delete application credentials. Trust-scoped and OAuth1 tokens are
++        separately blocked by _block_delegated_token_app_creds (LP#2150089).
++        """
+         with self.test_client() as c:
+             roles = [{'id': self.role_id}]
+             app_cred_body = self._app_cred_body(roles=roles)
+@@ -598,8 +616,294 @@ class ApplicationCredentialTestCase(test_v3.RestfulTestCase):
+             # need to be rolled into the base MEMBER_PATH_FMT
+             member_path = '/v3%s' % MEMBER_PATH_FMT % {
+                 'user_id': self.user_id,
+-                'app_cred_id': app_cred_id}
+-            c.patch(member_path,
+-                    json=app_cred_body,
+-                    expected_status_code=http.client.METHOD_NOT_ALLOWED,
+-                    headers={'X-Auth-Token': token})
++                'app_cred_id': app_cred_id,
++            }
++            c.patch(
++                member_path,
++                json=app_cred_body,
++                expected_status_code=http.client.METHOD_NOT_ALLOWED,
++                headers={'X-Auth-Token': token},
++            )
++
++    def _get_trust_token(self, c, pw_token):
++        """Return a trust-scoped token for self.user_id on self.project_id."""
++        trust_ref = unit.new_trust_ref(
++            trustor_user_id=self.user_id,
++            trustee_user_id=self.user_id,
++            project_id=self.project_id,
++            role_ids=[self.role_id],
++        )
++        resp = c.post(
++            '/v3/OS-TRUST/trusts',
++            headers={'X-Auth-Token': pw_token},
++            json={'trust': trust_ref},
++        )
++        trust_id = resp.json['trust']['id']
++        trust_auth = self.build_authentication_request(
++            user_id=self.user_id,
++            password=self.user['password'],
++            trust_id=trust_id,
++        )
++        return self.v3_create_token(trust_auth).headers['X-Subject-Token']
++
++    def test_delegation_guard_trust_list_app_creds(self):
++        """Trust-scoped token cannot list application credentials (LP#2150089).
++
++        Previously GET /v3/users/{id}/application_credentials had no delegation
++        guard at all; any trust-scoped token could enumerate the user's
++        application credentials.
++        """
++        with self.test_client() as c:
++            pw_token = self.get_scoped_token()
++            trust_token = self._get_trust_token(c, pw_token)
++            c.get(
++                f'/v3/users/{self.user_id}/application_credentials',
++                headers={'X-Auth-Token': trust_token},
++                expected_status_code=http.client.FORBIDDEN,
++            )
++
++    def test_delegation_guard_trust_get_app_cred(self):
++        """Trust-scoped token cannot read a specific application credential.
++
++        Previously GET /v3/users/{id}/application_credentials/{id} had no
++        delegation guard at all (LP#2150089).
++        """
++        with self.test_client() as c:
++            pw_token = self.get_scoped_token()
++            roles = [{'id': self.role_id}]
++            resp = c.post(
++                f'/v3/users/{self.user_id}/application_credentials',
++                json=self._app_cred_body(roles=roles),
++                expected_status_code=http.client.CREATED,
++                headers={'X-Auth-Token': pw_token},
++            )
++            app_cred_id = resp.json['application_credential']['id']
++            trust_token = self._get_trust_token(c, pw_token)
++            member_path = f'/v3{MEMBER_PATH_FMT}' % {
++                'user_id': self.user_id,
++                'app_cred_id': app_cred_id,
++            }
++            c.get(
++                member_path,
++                headers={'X-Auth-Token': trust_token},
++                expected_status_code=http.client.FORBIDDEN,
++            )
++
++    def test_delegation_guard_trust_delete_app_cred(self):
++        """Trust-scoped token cannot delete an application credential.
++
++        Previously DELETE /v3/users/{id}/application_credentials/{id} only
++        checked for restricted app-cred tokens; trust-scoped tokens had no
++        guard (LP#2150089).
++        """
++        with self.test_client() as c:
++            pw_token = self.get_scoped_token()
++            roles = [{'id': self.role_id}]
++            resp = c.post(
++                f'/v3/users/{self.user_id}/application_credentials',
++                json=self._app_cred_body(roles=roles),
++                expected_status_code=http.client.CREATED,
++                headers={'X-Auth-Token': pw_token},
++            )
++            app_cred_id = resp.json['application_credential']['id']
++            trust_token = self._get_trust_token(c, pw_token)
++            member_path = f'/v3{MEMBER_PATH_FMT}' % {
++                'user_id': self.user_id,
++                'app_cred_id': app_cred_id,
++            }
++            c.delete(
++                member_path,
++                headers={'X-Auth-Token': trust_token},
++                expected_status_code=http.client.FORBIDDEN,
++            )
++
++    def test_delegation_guard_trust_list_access_rules(self):
++        """Trust-scoped token cannot list access rules (LP#2150089)."""
++        access_rules = [
++            {'path': '/v3/projects', 'method': 'GET', 'service': 'identity'}
++        ]
++        with self.test_client() as c:
++            pw_token = self.get_scoped_token()
++            roles = [{'id': self.role_id}]
++            c.post(
++                f'/v3/users/{self.user_id}/application_credentials',
++                json=self._app_cred_body(
++                    roles=roles, access_rules=access_rules
++                ),
++                expected_status_code=http.client.CREATED,
++                headers={'X-Auth-Token': pw_token},
++            )
++            trust_token = self._get_trust_token(c, pw_token)
++            c.get(
++                f'/v3/users/{self.user_id}/access_rules',
++                headers={'X-Auth-Token': trust_token},
++                expected_status_code=http.client.FORBIDDEN,
++            )
++
++    def test_delegation_guard_trust_get_access_rule(self):
++        """Trust-scoped token cannot read a specific access rule (LP#2150089)."""
++        access_rules = [
++            {'path': '/v3/projects', 'method': 'GET', 'service': 'identity'}
++        ]
++        with self.test_client() as c:
++            pw_token = self.get_scoped_token()
++            roles = [{'id': self.role_id}]
++            resp = c.post(
++                f'/v3/users/{self.user_id}/application_credentials',
++                json=self._app_cred_body(
++                    roles=roles, access_rules=access_rules
++                ),
++                expected_status_code=http.client.CREATED,
++                headers={'X-Auth-Token': pw_token},
++            )
++            access_rule_id = resp.json['application_credential'][
++                'access_rules'
++            ][0]['id']
++            trust_token = self._get_trust_token(c, pw_token)
++            c.get(
++                f'/v3/users/{self.user_id}/access_rules/{access_rule_id}',
++                headers={'X-Auth-Token': trust_token},
++                expected_status_code=http.client.FORBIDDEN,
++            )
++
++    def test_delegation_guard_trust_delete_access_rule(self):
++        """Trust-scoped token cannot delete an access rule (LP#2150089)."""
++        access_rules = [
++            {'path': '/v3/projects', 'method': 'GET', 'service': 'identity'}
++        ]
++        with self.test_client() as c:
++            pw_token = self.get_scoped_token()
++            roles = [{'id': self.role_id}]
++            resp = c.post(
++                f'/v3/users/{self.user_id}/application_credentials',
++                json=self._app_cred_body(
++                    roles=roles, access_rules=access_rules
++                ),
++                expected_status_code=http.client.CREATED,
++                headers={'X-Auth-Token': pw_token},
++            )
++            ac = resp.json['application_credential']
++            access_rule_id = ac['access_rules'][0]['id']
++            c.delete(
++                f'/v3/users/{self.user_id}/application_credentials/{ac["id"]}',
++                headers={'X-Auth-Token': pw_token},
++                expected_status_code=http.client.NO_CONTENT,
++            )
++            trust_token = self._get_trust_token(c, pw_token)
++            c.delete(
++                f'/v3/users/{self.user_id}/access_rules/{access_rule_id}',
++                headers={'X-Auth-Token': trust_token},
++                expected_status_code=http.client.FORBIDDEN,
++            )
++
++    def test_list_access_rules(self):
++        access_rules: list[dict[str, str]] = [
++            {"service": "foo", "method": "GET", "path": "/bar"}
++        ]
++        with self.test_client() as c:
++            roles = [{'id': self.role_id}]
++            app_cred_body = self._app_cred_body(
++                roles=roles, access_rules=access_rules
++            )
++            token = self.get_scoped_token()
++            c.post(
++                f"/v3/users/{self.user_id}/application_credentials",
++                json=app_cred_body,
++                expected_status_code=http.client.CREATED,
++                headers={"X-Auth-Token": token},
++            )
++            # Invoke GET access_rules and trigger internal validation
++            r = c.get(
++                f"/v3/users/{self.user_id}/access_rules",
++                expected_status_code=http.client.OK,
++                headers={"X-Auth-Token": token},
++            )
++            ar = r.json["access_rules"]
++            self.assertEqual(access_rules[0]["method"], ar[0]["method"])
++
++    # TODO(stephenfin): This will pass once we increase strictness of the query
++    # string validation
++    @unittest.expectedFailure
++    def test_list_access_rules_invalid_qs(self):
++        with self.test_client() as c:
++            token = self.get_scoped_token()
++            # Invoke GET access_rules with unsupported query parameters and
++            # trigger internal validation
++            c.get(
++                f"/v3/users/{self.user_id}/access_rules?user_id=foo",
++                expected_status_code=http.client.BAD_REQUEST,
++                headers={"X-Auth-Token": token},
++            )
++
++    def test_show_access_rule(self):
++        access_rules: list[dict[str, str]] = [
++            {"service": "foo", "method": "GET", "path": "/bar"}
++        ]
++        with self.test_client() as c:
++            roles = [{'id': self.role_id}]
++            app_cred_body = self._app_cred_body(
++                roles=roles, access_rules=access_rules
++            )
++            token = self.get_scoped_token()
++            resp = c.post(
++                f"/v3/users/{self.user_id}/application_credentials",
++                json=app_cred_body,
++                expected_status_code=http.client.CREATED,
++                headers={"X-Auth-Token": token},
++            )
++            access_rule_id = resp.json["application_credential"][
++                "access_rules"
++            ][0]["id"]
++            # Invoke GET access_rules/{id} and trigger internal validation
++            c.get(
++                f"/v3/users/{self.user_id}/access_rules/{access_rule_id}",
++                expected_status_code=http.client.OK,
++                headers={"X-Auth-Token": token},
++            )
++
++    # TODO(stephenfin): This will pass once we increase strictness of the query
++    # string validation
++    @unittest.expectedFailure
++    def test_show_access_rule_invalid_qs(self):
++        with self.test_client() as c:
++            token = self.get_scoped_token()
++            # Invoke GET access_rules/{id} with unsupported query parameters and
++            # trigger internal validation
++            c.get(
++                f"/v3/users/{self.user_id}/access_rules/{access_rule_id}"
++                "?foo=bar",
++                expected_status_code=http.client.BAD_REQUEST,
++                headers={"X-Auth-Token": token},
++            )
++
++    def test_delete_access_rule(self):
++        access_rules: list[dict[str, str]] = [
++            {"service": "foo", "method": "GET", "path": "/bar"}
++        ]
++        with self.test_client() as c:
++            roles = [{'id': self.role_id}]
++            app_cred_body = self._app_cred_body(
++                roles=roles, access_rules=access_rules
++            )
++            token = self.get_scoped_token()
++            resp = c.post(
++                f"/v3/users/{self.user_id}/application_credentials",
++                json=app_cred_body,
++                expected_status_code=http.client.CREATED,
++                headers={"X-Auth-Token": token},
++            )
++            app_cred: dict = resp.json["application_credential"]
++            access_rule_id = app_cred["access_rules"][0]["id"]
++            c.delete(
++                f"/v3/users/{self.user_id}/application_credentials"
++                f"/{app_cred['id']}",
++                json=app_cred_body,
++                expected_status_code=http.client.NO_CONTENT,
++                headers={"X-Auth-Token": token},
++            )
++            # Invoke GET access_rules/{id} and trigger internal validation
++            c.delete(
++                f"/v3/users/{self.user_id}/access_rules/{access_rule_id}",
++                expected_status_code=http.client.NO_CONTENT,
++                headers={"X-Auth-Token": token},
++            )
+diff --git a/keystone/tests/unit/test_v3_credential.py b/keystone/tests/unit/test_v3_credential.py
+index c3c3a7b55..7daec4af0 100644
+--- a/keystone/tests/unit/test_v3_credential.py
++++ b/keystone/tests/unit/test_v3_credential.py
+@@ -65,6 +65,30 @@ class CredentialBaseTestCase(test_v3.RestfulTestCase):
+ 
+         return json.dumps(blob), credential_id
+ 
++    def _get_ec2_sig_ref(self, blob):
++        """Return a signed ec2Credentials dict for use with POST /ec2tokens."""
++        signer = ec2_utils.Ec2Signer(blob['secret'])
++        params = {
++            'SignatureMethod': 'HmacSHA256',
++            'SignatureVersion': '2',
++            'AWSAccessKeyId': blob['access'],
++        }
++        return {
++            'access': blob['access'],
++            'signature': signer.generate(
++                {
++                    'host': 'foo',
++                    'verb': 'GET',
++                    'path': '/bar',
++                    'params': params,
++                }
++            ),
++            'host': 'foo',
++            'verb': 'GET',
++            'path': '/bar',
++            'params': params,
++        }
++
+     def _test_get_token(self, access, secret):
+         """Test signature validation with the access/secret provided."""
+         signer = ec2_utils.Ec2Signer(secret)
+@@ -669,6 +693,152 @@ class TestCredentialTrustScoped(CredentialBaseTestCase):
+             token=token_id,
+             expected_status=http.client.CONFLICT)
+ 
++    def _get_trust_token(self):
++        ref = unit.new_trust_ref(
++            trustor_user_id=self.user_id,
++            trustee_user_id=self.trustee_user_id,
++            project_id=self.project_id,
++            impersonation=True,
++            role_ids=[self.role_id],
++        )
++        del ref['id']
++        r = self.post('/OS-TRUST/trusts', body={'trust': ref})
++        trust = self.assertValidTrustResponse(r)
++        auth_data = self.build_authentication_request(
++            user_id=self.trustee_user['id'],
++            password=self.trustee_user['password'],
++            trust_id=trust['id'],
++        )
++        r = self.v3_create_token(auth_data)
++        return r.headers.get('X-Subject-Token')
++
++    def test_trust_token_cannot_list_totp_credentials(self):
++        """Trust-scoped token must not see TOTP/MFA credentials (project_id=None).
++
++        TOTP credentials have no project anchor. Before this fix the
++        project boundary check skipped null-project credentials, allowing a
++        delegation token to enumerate and exfiltrate MFA secrets.
++        """
++        totp_ref = {
++            'user_id': self.user_id,
++            'type': 'totp',
++            'blob': '{"seed": "JBSWY3DPEHPK3PXP"}',
++        }
++        r = self.post('/credentials', body={'credential': totp_ref})
++        totp_id = r.result['credential']['id']
++
++        trust_token = self._get_trust_token()
++
++        r = self.get(f'/credentials?user_id={self.user_id}', token=trust_token)
++        listed_ids = [c['id'] for c in r.result['credentials']]
++        self.assertNotIn(totp_id, listed_ids)
++
++    def test_trust_token_cannot_read_totp_credential(self):
++        """Trust-scoped token must not read a TOTP credential blob."""
++        totp_ref = {
++            'user_id': self.user_id,
++            'type': 'totp',
++            'blob': '{"seed": "JBSWY3DPEHPK3PXP"}',
++        }
++        r = self.post('/credentials', body={'credential': totp_ref})
++        totp_id = r.result['credential']['id']
++
++        trust_token = self._get_trust_token()
++        self.get(
++            f'/credentials/{totp_id}',
++            token=trust_token,
++            expected_status=http.client.FORBIDDEN,
++        )
++
++    def test_trust_token_cannot_update_totp_credential(self):
++        """Trust-scoped token must not be able to update a TOTP credential blob."""
++        totp_ref = {
++            'user_id': self.user_id,
++            'type': 'totp',
++            'blob': '{"seed": "JBSWY3DPEHPK3PXP"}',
++        }
++        r = self.post('/credentials', body={'credential': totp_ref})
++        totp_id = r.result['credential']['id']
++
++        trust_token = self._get_trust_token()
++        self.patch(
++            f'/credentials/{totp_id}',
++            token=trust_token,
++            body={'credential': totp_ref},
++            expected_status=http.client.FORBIDDEN,
++        )
++
++    def test_trust_token_cannot_delete_totp_credential(self):
++        """Trust-scoped token must not delete a TOTP credential."""
++        totp_ref = {
++            'user_id': self.user_id,
++            'type': 'totp',
++            'blob': '{"seed": "JBSWY3DPEHPK3PXP"}',
++        }
++        r = self.post('/credentials', body={'credential': totp_ref})
++        totp_id = r.result['credential']['id']
++
++        trust_token = self._get_trust_token()
++        self.delete(
++            f'/credentials/{totp_id}',
++            token=trust_token,
++            expected_status=http.client.FORBIDDEN,
++        )
++        # Confirm it still exists
++        self.get(f'/credentials/{totp_id}', expected_status=http.client.OK)
++
++    def test_ec2_auth_trust_cross_project_scoped_to_trust(self):
++        """Trust-backed EC2 credential with mismatched project_id is safe.
++
++        When an EC2 credential's project_id differs from the trust's
++        project_id, the trust mechanism constrains the resulting token to
++        the trust's project -- not the credential's project. This means the
++        cross-project escalation does not occur for trust-backed credentials,
++        and no additional auth-time check is needed in that branch.
++
++        This test documents and protects that invariant.
++        """
++        trust_ref = unit.new_trust_ref(
++            trustor_user_id=self.user_id,
++            trustee_user_id=self.trustee_user_id,
++            project_id=self.project_id,
++            impersonation=True,
++            role_ids=[self.role_id],
++        )
++        del trust_ref['id']
++        r = self.post('/OS-TRUST/trusts', body={'trust': trust_ref})
++        trust = self.assertValidTrustResponse(r)
++
++        other_project = unit.new_project_ref(domain_id=self.domain_id)
++        other_project = PROVIDERS.resource_api.create_project(
++            other_project['id'], other_project
++        )
++
++        # Plant a credential with project_id pointing to the other project
++        # but trust_id from the trust above (scoped to self.project_id).
++        blob, ref = unit.new_ec2_credential(
++            user_id=self.user_id, project_id=other_project['id']
++        )
++        blob['trust_id'] = trust['id']
++        ref['blob'] = json.dumps(blob)
++        PROVIDERS.credential_api.create_credential(ref['id'], ref)
++
++        PROVIDERS.assignment_api.create_system_grant_for_user(
++            self.user_id, self.role_id
++        )
++        token = self.get_system_scoped_token()
++        r = self.post(
++            '/ec2tokens',
++            body={'ec2Credentials': self._get_ec2_sig_ref(blob)},
++            token=token,
++            expected_status=http.client.OK,
++        )
++        # The resulting token is scoped to the trust's project, not to
++        # other_project -- the trust mechanism prevents cross-project escalation.
++        token_project = r.result['token']['project']['id']
++        self.assertEqual(self.project_id, token_project)
++        self.assertNotEqual(other_project['id'], token_project)
++
+ 
+ class TestCredentialAppCreds(CredentialBaseTestCase):
+     """Test credential with application credential token."""
+@@ -873,6 +1043,81 @@ class TestCredentialAppCreds(CredentialBaseTestCase):
+             expected_status=http.client.UNAUTHORIZED,
+         )
+ 
++    def test_app_cred_token_cannot_list_totp_credentials(self):
++        """App cred token must not see TOTP/MFA credentials (project_id=None).
++
++        TOTP credentials have no project anchor. Before this fix the
++        project boundary check skipped null-project credentials, allowing a
++        delegation token to enumerate and exfiltrate MFA secrets.
++        """
++        totp_ref = {
++            'user_id': self.user_id,
++            'type': 'totp',
++            'blob': '{"seed": "JBSWY3DPEHPK3PXP"}',
++        }
++        r = self.post('/credentials', body={'credential': totp_ref})
++        totp_id = r.result['credential']['id']
++
++        app_cred_token = self._get_app_cred_token(unrestricted=True)
++
++        r = self.get(
++            f'/credentials?user_id={self.user_id}', token=app_cred_token
++        )
++        listed_ids = [c['id'] for c in r.result['credentials']]
++        self.assertNotIn(totp_id, listed_ids)
++
++    def test_app_cred_token_cannot_read_totp_credential(self):
++        """App cred token must not read a TOTP credential blob."""
++        totp_ref = {
++            'user_id': self.user_id,
++            'type': 'totp',
++            'blob': '{"seed": "JBSWY3DPEHPK3PXP"}',
++        }
++        r = self.post('/credentials', body={'credential': totp_ref})
++        totp_id = r.result['credential']['id']
++        app_cred_token = self._get_app_cred_token(unrestricted=True)
++
++        self.get(
++            f'/credentials/{totp_id}',
++            token=app_cred_token,
++            expected_status=http.client.FORBIDDEN,
++        )
++
++    def test_app_cred_token_cannot_update_totp_credential(self):
++        """App cred token must not update a TOTP credential blob."""
++        totp_ref = {
++            'user_id': self.user_id,
++            'type': 'totp',
++            'blob': '{"seed": "JBSWY3DPEHPK3PXP"}',
++        }
++        r = self.post('/credentials', body={'credential': totp_ref})
++        totp_id = r.result['credential']['id']
++        app_cred_token = self._get_app_cred_token(unrestricted=True)
++
++        self.patch(
++            f'/credentials/{totp_id}',
++            token=app_cred_token,
++            body={'credential': totp_ref},
++            expected_status=http.client.FORBIDDEN,
++        )
++
++    def test_app_cred_token_cannot_delete_totp_credential(self):
++        """App cred token must not delete a TOTP credential blob."""
++        totp_ref = {
++            'user_id': self.user_id,
++            'type': 'totp',
++            'blob': '{"seed": "JBSWY3DPEHPK3PXP"}',
++        }
++        r = self.post('/credentials', body={'credential': totp_ref})
++        totp_id = r.result['credential']['id']
++        app_cred_token = self._get_app_cred_token(unrestricted=True)
++
++        self.delete(
++            f'/credentials/{totp_id}',
++            token=app_cred_token,
++            expected_status=http.client.FORBIDDEN,
++        )
++
+ 
+ class TestCredentialAccessToken(CredentialBaseTestCase):
+     """Test credential with access token."""
+@@ -1020,6 +1265,53 @@ class TestCredentialAccessToken(CredentialBaseTestCase):
+         self.assertIn(self.role_id, ec2_roles)
+         self.assertNotIn(role_id, ec2_roles)
+ 
++    def test_ec2_auth_access_token_cross_project_blocked(self):
++        """OAuth1 access-token-backed EC2 credential must not auth cross-project.
++
++        Auth-time check: if a cross-project EC2 credential backed by an OAuth1
++        access token exists, POST /ec2tokens must reject it when the
++        credential's project_id differs from the access token's project_id.
++        """
++        access_key, _ = self._get_access_token()
++
++        # Retrieve the stored access token to get its project_id
++        access_token = PROVIDERS.oauth_api.get_access_token(
++            access_key.decode('utf-8')
++            if isinstance(access_key, bytes)
++            else access_key
++        )
++
++        # Create a second project (cross-project target)
++        other_project = unit.new_project_ref(domain_id=self.domain_id)
++        other_project = PROVIDERS.resource_api.create_project(
++            other_project['id'], other_project
++        )
++
++        # Directly inject an EC2 credential whose project_id points to the
++        # other project but whose access_token_id references the token above.
++        # This simulates a pre-existing cross-project credential.
++        blob, ref = unit.new_ec2_credential(
++            user_id=self.user_id, project_id=other_project['id']
++        )
++        blob['access_token_id'] = (
++            access_key.decode('utf-8')
++            if isinstance(access_key, bytes)
++            else access_key
++        )
++        ref['blob'] = json.dumps(blob)
++        PROVIDERS.credential_api.create_credential(ref['id'], ref)
++
++        PROVIDERS.assignment_api.create_system_grant_for_user(
++            self.user_id, self.role_id
++        )
++        token = self.get_system_scoped_token()
++        self.post(
++            '/ec2tokens',
++            body={'ec2Credentials': self._get_ec2_sig_ref(blob)},
++            token=token,
++            expected_status=http.client.UNAUTHORIZED,
++        )
++
+ 
+ class TestCredentialEc2(CredentialBaseTestCase):
+     """Test v3 credential compatibility with ec2tokens."""
+@@ -1124,3 +1416,103 @@ class TestCredentialEc2(CredentialBaseTestCase):
+         self.assertRaises(exception.CredentialNotFound,
+                           PROVIDERS.credential_api.get_credential,
+                           cred_from_credential_api[0]['id'])
++
++    def _get_trust_token(self):
++        """Create a trust and return a trust-scoped token for the trustee."""
++        trustee = unit.new_user_ref(domain_id=self.domain_id)
++        password = trustee['password']
++        trustee = PROVIDERS.identity_api.create_user(trustee)
++        trustee['password'] = password
++        trust_ref = unit.new_trust_ref(
++            trustor_user_id=self.user_id,
++            trustee_user_id=trustee['id'],
++            project_id=self.project_id,
++            impersonation=True,
++            role_ids=[self.role_id],
++        )
++        del trust_ref['id']
++        r = self.post('/OS-TRUST/trusts', body={'trust': trust_ref})
++        trust = r.result['trust']
++        auth_data = self.build_authentication_request(
++            user_id=trustee['id'],
++            password=trustee['password'],
++            trust_id=trust['id'],
++        )
++        r = self.v3_create_token(auth_data)
++        return r.headers.get('X-Subject-Token')
++
++    def test_ec2_create_credential_trust_cross_project_blocked(self):
++        """Trust-scoped token cannot create EC2 cred for a different project."""
++        other_project = unit.new_project_ref(domain_id=self.domain_id)
++        other_project = PROVIDERS.resource_api.create_project(
++            other_project['id'], other_project
++        )
++        trust_token = self._get_trust_token()
++        uri = f'/users/{self.user_id}/credentials/OS-EC2'
++        self.post(
++            uri,
++            body={'tenant_id': other_project['id']},
++            token=trust_token,
++            expected_status=http.client.FORBIDDEN,
++        )
++
++    def test_ec2_create_credential_trust_same_project_allowed(self):
++        """Trust-scoped token can create EC2 cred for the trust project."""
++        trust_token = self._get_trust_token()
++        uri = self._get_ec2_cred_uri()
++        r = self.post(
++            uri,
++            body={'tenant_id': self.project_id},
++            token=trust_token,
++            expected_status=http.client.CREATED,
++        )
++        self.assertEqual(self.project_id, r.result['credential']['tenant_id'])
++
++    def test_ec2_get_credential_trust_cross_project_blocked(self):
++        """Trust-scoped token cannot get an EC2 cred from a different project."""
++        other_project = unit.new_project_ref(domain_id=self.domain_id)
++        other_project = PROVIDERS.resource_api.create_project(
++            other_project['id'], other_project
++        )
++        PROVIDERS.assignment_api.add_role_to_user_and_project(
++            self.user_id, other_project['id'], self.role_id
++        )
++        ec2_cred = self._get_ec2_cred()
++        # Change the credential's project to the other project directly
++        PROVIDERS.credential_api.update_credential(
++            next(
++                c['id']
++                for c in PROVIDERS.credential_api.list_credentials_for_user(
++                    self.user_id, type=CRED_TYPE_EC2
++                )
++            ),
++            {'project_id': other_project['id']},
++        )
++        trust_token = self._get_trust_token()
++        uri = '/'.join([self._get_ec2_cred_uri(), ec2_cred['access']])
++        self.get(uri, token=trust_token, expected_status=http.client.FORBIDDEN)
++
++    def test_ec2_delete_credential_trust_cross_project_blocked(self):
++        """Trust-scoped token cannot delete EC2 cred from a different project."""
++        other_project = unit.new_project_ref(domain_id=self.domain_id)
++        other_project = PROVIDERS.resource_api.create_project(
++            other_project['id'], other_project
++        )
++        PROVIDERS.assignment_api.add_role_to_user_and_project(
++            self.user_id, other_project['id'], self.role_id
++        )
++        ec2_cred = self._get_ec2_cred()
++        PROVIDERS.credential_api.update_credential(
++            next(
++                c['id']
++                for c in PROVIDERS.credential_api.list_credentials_for_user(
++                    self.user_id, type=CRED_TYPE_EC2
++                )
++            ),
++            {'project_id': other_project['id']},
++        )
++        trust_token = self._get_trust_token()
++        uri = '/'.join([self._get_ec2_cred_uri(), ec2_cred['access']])
++        self.delete(
++            uri, token=trust_token, expected_status=http.client.FORBIDDEN
++        )
+diff --git a/keystone/tests/unit/test_v3_oauth1.py b/keystone/tests/unit/test_v3_oauth1.py
+index 6b6942b61..debe17aa6 100644
+--- a/keystone/tests/unit/test_v3_oauth1.py
++++ b/keystone/tests/unit/test_v3_oauth1.py
+@@ -430,6 +430,118 @@ class AccessTokenCRUDTests(OAuthFlowTests):
+         self.assertEqual([], entities)
+         self.assertValidListLinks(resp.result['links'])
+ 
++    def _get_app_cred_token(self):
++        app_cred = {
++            'id': uuid.uuid4().hex,
++            'user_id': self.user_id,
++            'project_id': self.project_id,
++            'name': uuid.uuid4().hex,
++            'roles': [{'id': self.role_id}],
++            'secret': uuid.uuid4().hex,
++        }
++        PROVIDERS.application_credential_api.create_application_credential(
++            app_cred
++        )
++        auth_data = self.build_authentication_request(
++            app_cred_id=app_cred['id'], secret=app_cred['secret']
++        )
++        r = self.v3_create_token(auth_data)
++        return r.headers['X-Subject-Token']
++
++    def test_list_access_tokens_with_app_cred_blocked(self):
++        """Application credential token must not list OAuth1 access tokens."""
++        self.test_oauth_flow()
++        token = self._get_app_cred_token()
++        self.get(
++            f'/users/{self.user_id}/OS-OAUTH1/access_tokens',
++            token=token,
++            expected_status=http.client.FORBIDDEN,
++        )
++
++    def test_get_access_token_with_app_cred_blocked(self):
++        """Application credential token must not get a specific access token."""
++        self.test_oauth_flow()
++        token = self._get_app_cred_token()
++        access_token_key = self.access_token.key.decode()
++        self.get(
++            f'/users/{self.user_id}/OS-OAUTH1/access_tokens/{access_token_key}',
++            token=token,
++            expected_status=http.client.FORBIDDEN,
++        )
++
++    def test_delete_access_token_with_app_cred_blocked(self):
++        """Application credential token must not delete an access token."""
++        self.test_oauth_flow()
++        token = self._get_app_cred_token()
++        access_token_key = self.access_token.key.decode()
++        self.delete(
++            f'/users/{self.user_id}/OS-OAUTH1/access_tokens/{access_token_key}',
++            token=token,
++            expected_status=http.client.FORBIDDEN,
++        )
++
++    def test_get_access_token_with_trust_token_blocked(self):
++        """Trust-scoped token must not get a specific access token."""
++        self.test_oauth_flow()
++        trustee = unit.new_user_ref(domain_id=self.domain_id)
++        password = trustee['password']
++        trustee = PROVIDERS.identity_api.create_user(trustee)
++        trustee['password'] = password
++        trust_ref = unit.new_trust_ref(
++            trustor_user_id=self.user_id,
++            trustee_user_id=trustee['id'],
++            project_id=self.project_id,
++            impersonation=True,
++            role_ids=[self.role_id],
++        )
++        del trust_ref['id']
++        r = self.post('/OS-TRUST/trusts', body={'trust': trust_ref})
++        trust_id = r.result['trust']['id']
++        auth_data = self.build_authentication_request(
++            user_id=trustee['id'],
++            password=trustee['password'],
++            trust_id=trust_id,
++        )
++        r = self.v3_create_token(auth_data)
++        trust_token = r.headers['X-Subject-Token']
++        access_token_key = self.access_token.key.decode()
++        self.get(
++            f'/users/{self.user_id}/OS-OAUTH1/access_tokens/{access_token_key}',
++            token=trust_token,
++            expected_status=http.client.FORBIDDEN,
++        )
++
++    def test_delete_access_token_with_trust_token_blocked(self):
++        """Trust-scoped token must not delete an access token."""
++        self.test_oauth_flow()
++        trustee = unit.new_user_ref(domain_id=self.domain_id)
++        password = trustee['password']
++        trustee = PROVIDERS.identity_api.create_user(trustee)
++        trustee['password'] = password
++        trust_ref = unit.new_trust_ref(
++            trustor_user_id=self.user_id,
++            trustee_user_id=trustee['id'],
++            project_id=self.project_id,
++            impersonation=True,
++            role_ids=[self.role_id],
++        )
++        del trust_ref['id']
++        r = self.post('/OS-TRUST/trusts', body={'trust': trust_ref})
++        trust_id = r.result['trust']['id']
++        auth_data = self.build_authentication_request(
++            user_id=trustee['id'],
++            password=trustee['password'],
++            trust_id=trust_id,
++        )
++        r = self.v3_create_token(auth_data)
++        trust_token = r.headers['X-Subject-Token']
++        access_token_key = self.access_token.key.decode()
++        self.delete(
++            f'/users/{self.user_id}/OS-OAUTH1/access_tokens/{access_token_key}',
++            token=trust_token,
++            expected_status=http.client.FORBIDDEN,
++        )
++
+ 
+ class AuthTokenTests(object):
+ 
+diff --git a/releasenotes/notes/bug-2150089-e91b592c948e5771.yaml b/releasenotes/notes/bug-2150089-e91b592c948e5771.yaml
+new file mode 100644
+index 000000000..9d4442462
+--- /dev/null
++++ b/releasenotes/notes/bug-2150089-e91b592c948e5771.yaml
+@@ -0,0 +1,35 @@
++---
++security:
++  - |
++    [`bug 2150089 <https://launchpad.net/bugs/2150089>`_]
++    Delegated tokens (trusts, application credentials, OAuth1 access tokens)
++    are now restricted to credentials whose ``project_id`` matches the token's
++    project scope. This closes a cross-project lateral movement vector where a
++    delegated token could read, modify, or delete credentials belonging to a
++    different project, including EC2 keys and TOTP/MFA seed bindings.
++
++    Application credential tokens are now blocked from all trust operations
++    (create, delete, list, get). Allowing an application credential to bootstrap
++    a trust creates a new delegation context whose token can access
++    authentication material outside the delegation chain, breaking the audit
++    trail. The ``unrestricted`` flag governs credential management, not trust
++    management.
++upgrade:
++  - |
++    [`bug 2150089 <https://launchpad.net/bugs/2150089>`_]
++    Two new ``[security_compliance]`` options control opt-in insecure behaviour
++    for operators with workflows that break after this upgrade:
++
++    ``allow_insecure_admin_trust_cross_project_credentials_access`` (default
++    ``False``): set to ``True`` if admin-role trusts or application credentials
++    need to access credentials across multiple projects (e.g. Mistral cron
++    triggers syncing EC2 credentials system-wide).
++
++    ``allow_insecure_application_credential_trust_escalation`` (default
++    ``False``): set to ``True`` if application credentials must create or manage
++    trusts (e.g. Heat stacks authenticated via application credentials). Use
++    OIDC federation flows (``v3oidcclientcredentials``, ``v3oidcdeviceauthz``)
++    as the proper long-term alternative.
++
++    Both options are intentionally named to signal that enabling them is
++    insecure. Migrate affected workflows away from these options.
+-- 
+2.47.3
+

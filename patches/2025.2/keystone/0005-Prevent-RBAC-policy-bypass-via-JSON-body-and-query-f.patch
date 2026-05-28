@@ -1,0 +1,595 @@
+From 21d1a674d1a1e131355a4e698b3b45529784eb90 Mon Sep 17 00:00:00 2001
+From: Grzegorz Grasza <xek@redhat.com>
+Date: Tue, 12 May 2026 09:10:20 +0200
+Subject: [PATCH 5/5] Prevent RBAC policy bypass via JSON body and query
+ filters (CVE-2026-42999)
+
+The RBAC enforcer unconditionally merged the raw JSON request body into
+the policy enforcement dictionary after trusted target data had been set
+from the database. An attacker could include a "target" key in the JSON
+body to overwrite database-sourced RBAC target attributes, causing all
+%(target.*)s policy substitutions to evaluate against attacker-controlled
+values. This affected 88 endpoint/method combinations across all Keystone
+API resources.
+
+The fix namespaces user-controlled JSON body data under a "request_body"
+key in the policy dict, making it structurally impossible for request body
+fields to collide with internal keys like "target" or view_args.
+
+The only in-tree policy rule that depended on the old JSON body merge
+behavior was identity:create_trust, which referenced
+%(trust.trustor_user_id)s from the request body at the top level of the
+policy dict. This is updated to use target_attr and the
+%(target.trust.trustor_user_id)s substitution, consistent with all other
+trust policy rules.
+
+Additionally, query-string filter values had the same structural issue:
+_extract_filter_values() results were merged at the top level, meaning a
+filter key matching a view_arg key (e.g. user_id on
+/v3/users/{user_id}/... endpoints using ADMIN_OR_SYSTEM_READER_OR_OWNER)
+could be overwritten by an attacker-controlled ?user_id= query param,
+bypassing ownership checks. Filter values are now namespaced under
+"filter_attr". No in-tree policy rule references filter values via %(key)s
+substitutions, so this is backwards-compatible for upstream deployments.
+
+Closes-Bug: #2148398
+Assisted-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+Co-authored-by: Boris Bobrov <b.bobrov@sap.com>
+Co-authored-by: Artem Goncharov <artem.goncharov@gmail.com>
+Change-Id: I295d1ac27faad05a680bb2b3fac8cfa27fa1c4bd
+Signed-off-by: Grzegorz Grasza <xek@redhat.com>
+(cherry picked from commit 22b51f5d5d86350d3fbc66697e4097bacf2a8ce9)
+---
+ keystone/api/trusts.py                        |   4 +-
+ keystone/common/policies/base.py              |   2 +-
+ keystone/common/rbac_enforcer/enforcer.py     |  21 ++-
+ .../tests/protection/v3/test_credentials.py   | 120 ++++++++++++
+ keystone/tests/protection/v3/test_grants.py   |  77 ++++++++
+ .../tests/unit/common/test_rbac_enforcer.py   | 175 +++++++++++++++++-
+ .../notes/bug-2148398-e35dd449b3a330e6.yaml   |  40 ++++
+ 7 files changed, 429 insertions(+), 10 deletions(-)
+ create mode 100644 releasenotes/notes/bug-2148398-e35dd449b3a330e6.yaml
+
+diff --git a/keystone/api/trusts.py b/keystone/api/trusts.py
+index 0f7a9d884..252bd3b44 100644
+--- a/keystone/api/trusts.py
++++ b/keystone/api/trusts.py
+@@ -279,8 +279,10 @@ class TrustsResource(TrustResourceBase):
+ 
+         POST /v3/OS-TRUST/trusts
+         """
+-        ENFORCER.enforce_call(action='identity:create_trust')
+         trust = self.request_body_json.get('trust', {})
++        ENFORCER.enforce_call(
++            action='identity:create_trust', target_attr={'trust': trust}
++        )
+         self._check_unrestricted()
+ 
+         if trust.get('project_id') and not trust.get('roles'):
+diff --git a/keystone/common/policies/base.py b/keystone/common/policies/base.py
+index 9676c56db..45ac995fc 100644
+--- a/keystone/common/policies/base.py
++++ b/keystone/common/policies/base.py
+@@ -30,7 +30,7 @@ RULE_ADMIN_OR_TOKEN_SUBJECT = 'rule:admin_or_token_subject'  # nosec
+ RULE_REVOKE_EVENT_OR_ADMIN = 'rule:revoke_event_or_admin'
+ RULE_SERVICE_ADMIN_OR_TOKEN_SUBJECT = 'rule:service_admin_or_token_subject'  # nosec
+ RULE_SERVICE_OR_ADMIN = 'rule:service_or_admin'
+-RULE_TRUST_OWNER = 'user_id:%(trust.trustor_user_id)s'
++RULE_TRUST_OWNER = 'user_id:%(target.trust.trustor_user_id)s'
+ 
+ # We are explicitly setting system_scope:all in these check strings because
+ # they provide backwards compatibility in the event a deployment sets
+diff --git a/keystone/common/rbac_enforcer/enforcer.py b/keystone/common/rbac_enforcer/enforcer.py
+index cf15f0048..153ec57bb 100644
+--- a/keystone/common/rbac_enforcer/enforcer.py
++++ b/keystone/common/rbac_enforcer/enforcer.py
+@@ -472,14 +472,21 @@ class RBACEnforcer:
+ 
+             policy_dict['target'] = target_attr or build_target()
+ 
+-        # Pull the data from the submitted json body to generate
+-        # appropriate input/target attributes, we take an explicit copy here
+-        # to ensure we're not somehow corrupting
++        # Pull the data from the submitted json body. We namespace it under
++        # 'request_body' to prevent user-controlled input from overwriting
++        # security-critical keys in the policy dict (e.g. 'target' populated
++        # by build_target/target_attr, or view_args like 'user_id').
+         json_input = flask.request.get_json(force=True, silent=True) or {}
+-        policy_dict.update(json_input.copy())
+-
+-        # Generate the filter_attr dataset.
+-        policy_dict.update(cls._extract_filter_values(filters))
++        if json_input:
++            policy_dict['request_body'] = json_input.copy()
++
++        # Namespace query-string filter values under 'filter_attr' to prevent
++        # attacker-controlled query params from overwriting view_args (e.g.
++        # user_id from /v3/users/{user_id}/...) or other trusted keys in the
++        # policy dict via %(key)s substitutions in policy rules.
++        filter_values = cls._extract_filter_values(filters)
++        if filter_values:
++            policy_dict['filter_attr'] = filter_values
+ 
+         flattened = utils.flatten_dict(policy_dict)
+         if LOG.logger.getEffectiveLevel() <= log.DEBUG:
+diff --git a/keystone/tests/protection/v3/test_credentials.py b/keystone/tests/protection/v3/test_credentials.py
+index fc45a1ea6..064253882 100644
+--- a/keystone/tests/protection/v3/test_credentials.py
++++ b/keystone/tests/protection/v3/test_credentials.py
+@@ -18,11 +18,13 @@ from oslo_serialization import jsonutils
+ from keystone.common.policies import base as bp
+ from keystone.common import provider_api
+ import keystone.conf
++from keystone.credential.providers import fernet as credential_fernet
+ from keystone.tests.common import auth as common_auth
+ from keystone.tests import unit
+ from keystone.tests.unit import base_classes
+ from keystone.tests.unit import ksfixtures
+ from keystone.tests.unit.ksfixtures import temporaryfile
++from keystone.tests.unit import test_v3
+ 
+ CONF = keystone.conf.CONF
+ PROVIDERS = provider_api.ProviderAPIs
+@@ -1303,3 +1305,121 @@ class ProjectAdminTestsEnforceScopeFalse(
+             r = c.post('/v3/auth/tokens', json=auth)
+             self.token_id = r.headers['X-Subject-Token']
+             self.headers = {'X-Auth-Token': self.token_id}
++
++
++class TargetInjectionCredentialTests(test_v3.RestfulTestCase):
++    """Test that JSON body injection cannot bypass credential RBAC.
++
++    Verifies CVE-2026-42999: the RBAC enforcer must not allow the JSON
++    request body to overwrite security-critical keys in the policy dict.
++    """
++
++    def setUp(self):
++        super().setUp()
++        self.useFixture(
++            ksfixtures.KeyRepository(
++                self.config_fixture,
++                'credential',
++                credential_fernet.MAX_ACTIVE_KEYS,
++            )
++        )
++
++    def _make_user_with_project(self, role_id=None):
++        user = unit.create_user(
++            PROVIDERS.identity_api, domain_id=self.domain_id
++        )
++        project = unit.new_project_ref(domain_id=self.domain_id)
++        PROVIDERS.resource_api.create_project(project['id'], project)
++        if role_id:
++            PROVIDERS.assignment_api.add_role_to_user_and_project(
++                user['id'], project['id'], role_id
++            )
++        return user, project
++
++    def test_list_credentials_cannot_read_other_users_secrets(self):
++        """GET /v3/credentials must not return other users' credentials.
++
++        An attacker injects their own user_id into target.credential.user_id
++        in the JSON body. Without the fix the per-item policy filter would
++        see the attacker's user_id and pass every credential through.
++        """
++        role = unit.new_role_ref()
++        PROVIDERS.role_api.create_role(role['id'], role)
++
++        victim, victim_project = self._make_user_with_project(role['id'])
++        attacker, attacker_project = self._make_user_with_project(role['id'])
++
++        victim_cred = unit.new_credential_ref(
++            user_id=victim['id'], project_id=victim_project['id']
++        )
++        PROVIDERS.credential_api.create_credential(
++            victim_cred['id'], victim_cred
++        )
++        attacker_cred = unit.new_credential_ref(
++            user_id=attacker['id'], project_id=attacker_project['id']
++        )
++        PROVIDERS.credential_api.create_credential(
++            attacker_cred['id'], attacker_cred
++        )
++
++        attacker_auth = self.build_authentication_request(
++            user_id=attacker['id'],
++            password=attacker['password'],
++            project_id=attacker_project['id'],
++        )
++        r = self.get(
++            '/credentials',
++            auth=attacker_auth,
++            body={'target': {'credential': {'user_id': attacker['id']}}},
++        )
++
++        cred_ids = [c['id'] for c in r.result['credentials']]
++        self.assertIn(attacker_cred['id'], cred_ids)
++        self.assertNotIn(victim_cred['id'], cred_ids)
++
++    def test_ec2_create_credential_cannot_create_for_other_user(self):
++        """EC2 credential creation must not allow impersonating other users.
++
++        POST /v3/users/{user_id}/credentials/OS-EC2: the attacker injects
++        target.credential.user_id to bypass the ownership check.
++        """
++        member_role = unit.new_role_ref(name='member')
++        PROVIDERS.role_api.create_role(member_role['id'], member_role)
++
++        victim, victim_project = self._make_user_with_project(
++            member_role['id']
++        )
++        attacker, attacker_project = self._make_user_with_project(
++            member_role['id']
++        )
++
++        attacker_auth = self.build_authentication_request(
++            user_id=attacker['id'],
++            password=attacker['password'],
++            project_id=attacker_project['id'],
++        )
++        ec2_uri = f'/users/{victim["id"]}/credentials/OS-EC2'
++
++        self.post(
++            ec2_uri,
++            auth=attacker_auth,
++            body={
++                'tenant_id': victim_project['id'],
++                'target': {'credential': {'user_id': attacker['id']}},
++            },
++            expected_status=http.client.FORBIDDEN,
++        )
++        self.post(
++            ec2_uri,
++            auth=attacker_auth,
++            body={
++                'tenant_id': victim_project['id'],
++                'target': {
++                    'credential': {
++                        'user_id': attacker['id'],
++                        'project_id': attacker_project['id'],
++                    }
++                },
++            },
++            expected_status=http.client.FORBIDDEN,
++        )
+diff --git a/keystone/tests/protection/v3/test_grants.py b/keystone/tests/protection/v3/test_grants.py
+index 2ac3c29b3..ae64a1905 100644
+--- a/keystone/tests/protection/v3/test_grants.py
++++ b/keystone/tests/protection/v3/test_grants.py
+@@ -23,6 +23,7 @@ from keystone.tests import unit
+ from keystone.tests.unit import base_classes
+ from keystone.tests.unit import ksfixtures
+ from keystone.tests.unit.ksfixtures import temporaryfile
++from keystone.tests.unit import test_v3
+ 
+ CONF = keystone.conf.CONF
+ PROVIDERS = provider_api.ProviderAPIs
+@@ -2376,3 +2377,79 @@ class DomainAdminTests(
+                 headers=self.headers,
+                 expected_status_code=http.client.FORBIDDEN,
+             )
++
++
++class TargetInjectionGrantTests(test_v3.RestfulTestCase):
++    """Test that JSON body injection cannot bypass grant RBAC.
++
++    Verifies CVE-2026-42999: the RBAC enforcer must not allow the JSON
++    request body to overwrite security-critical keys in the policy dict.
++    """
++
++    def setUp(self):
++        super().setUp()
++        policy_file = self.useFixture(temporaryfile.SecureTempFile())
++        self.useFixture(
++            ksfixtures.Policy(
++                self.config_fixture, policy_file=policy_file.file_name
++            )
++        )
++        with open(policy_file.file_name, 'w') as f:
++            overrides = {
++                'identity:create_grant': (
++                    '(role:admin and system_scope:all) or '
++                    '(role:admin and '
++                    'domain_id:%(target.user.domain_id)s and '
++                    'domain_id:%(target.domain.id)s) and '
++                    '(domain_id:%(target.role.domain_id)s or '
++                    'None:%(target.role.domain_id)s)'
++                )
++            }
++            f.write(jsonutils.dumps(overrides))
++
++    def test_inherited_grant_cannot_escalate_cross_domain(self):
++        """PUT OS-INHERIT grant must not allow cross-domain escalation.
++
++        A domain admin in domain A tries to create an inherited admin role
++        grant on domain B by injecting target data. Without the fix the
++        policy would see all domains matching the attacker's domain.
++        """
++        domain_a = unit.new_domain_ref()
++        PROVIDERS.resource_api.create_domain(domain_a['id'], domain_a)
++        attacker = unit.create_user(
++            PROVIDERS.identity_api, domain_id=domain_a['id']
++        )
++        admin_role = self.role
++        PROVIDERS.assignment_api.create_grant(
++            admin_role['id'], user_id=attacker['id'], domain_id=domain_a['id']
++        )
++
++        domain_b = unit.new_domain_ref()
++        PROVIDERS.resource_api.create_domain(domain_b['id'], domain_b)
++
++        attacker_auth = self.build_authentication_request(
++            user_id=attacker['id'],
++            password=attacker['password'],
++            domain_id=domain_a['id'],
++        )
++
++        inherit_url = (
++            '/OS-INHERIT/domains/{domain_id}/users/{user_id}'
++            '/roles/{role_id}/inherited_to_projects'
++        ).format(
++            domain_id=domain_b['id'],
++            user_id=attacker['id'],
++            role_id=admin_role['id'],
++        )
++        self.put(
++            inherit_url,
++            auth=attacker_auth,
++            body={
++                'target': {
++                    'user': {'domain_id': domain_a['id']},
++                    'domain': {'id': domain_a['id']},
++                    'role': {'domain_id': None, 'name': 'member'},
++                }
++            },
++            expected_status=http.client.FORBIDDEN,
++        )
+diff --git a/keystone/tests/unit/common/test_rbac_enforcer.py b/keystone/tests/unit/common/test_rbac_enforcer.py
+index 2424a0fec..f3cea97e7 100644
+--- a/keystone/tests/unit/common/test_rbac_enforcer.py
++++ b/keystone/tests/unit/common/test_rbac_enforcer.py
+@@ -174,7 +174,7 @@ class _TestRBACEnforcerBase(rest.RestfulTestCase):
+             ),
+             policy.RuleDefault(
+                 name='example:with_filter',
+-                check_str='user_id:%(user)s',
++                check_str='user_id:%(filter_attr.user)s',
+                 scope_types=['project'],
+             ),
+             policy.RuleDefault(
+@@ -450,6 +450,135 @@ class TestRBACEnforcerRest(_TestRBACEnforcerBase):
+             ),
+         )
+ 
++    def test_json_body_cannot_overwrite_build_target(self):
++        # Verify that a JSON request body cannot overwrite the target
++        # data populated by build_target. The enforcer must namespace
++        # user-controlled JSON input so it cannot collide with the
++        # trusted 'target' key set from the database.
++        assertIn = self.assertIn
++        assertEq = self.assertEqual
++
++        real_owner_id = uuid.uuid4().hex
++        attacker_id = uuid.uuid4().hex
++
++        def _enforce_mock_func(credentials, action, target, do_raise=True):
++            assertIn('target.credential.user_id', target)
++            assertEq(target['target.credential.user_id'], real_owner_id)
++
++        def _build_target():
++            return {'credential': {'user_id': real_owner_id}}
++
++        self.useFixture(
++            fixtures.MockPatchObject(
++                self.enforcer, '_enforce', _enforce_mock_func
++            )
++        )
++
++        with self.test_client() as c:
++            path = '/v3/auth/tokens'
++            body = self._auth_json()
++            r = c.post(
++                path,
++                json=body,
++                follow_redirects=True,
++                expected_status_code=201,
++            )
++            token_id = r.headers['X-Subject-Token']
++
++            # Send a request with a JSON body that attempts to
++            # overwrite the build_target-supplied credential owner.
++            c.get(
++                f'{self.restful_api_url_prefix}/argument/{uuid.uuid4().hex}',
++                headers={'X-Auth-Token': token_id},
++                json={'target': {'credential': {'user_id': attacker_id}}},
++            )
++            self.enforcer.enforce_call(
++                action='example:allowed', build_target=_build_target
++            )
++
++    def test_json_body_cannot_overwrite_target_attr(self):
++        # Verify that a JSON request body cannot overwrite the target
++        # data populated by target_attr. The enforcer must namespace
++        # user-controlled JSON input so it cannot collide with the
++        # trusted 'target' key set explicitly by the API handler.
++        assertIn = self.assertIn
++        assertEq = self.assertEqual
++
++        real_owner_id = uuid.uuid4().hex
++        attacker_id = uuid.uuid4().hex
++
++        def _enforce_mock_func(credentials, action, target, do_raise=True):
++            assertIn('target.credential.user_id', target)
++            assertEq(target['target.credential.user_id'], real_owner_id)
++
++        self.useFixture(
++            fixtures.MockPatchObject(
++                self.enforcer, '_enforce', _enforce_mock_func
++            )
++        )
++
++        with self.test_client() as c:
++            path = '/v3/auth/tokens'
++            body = self._auth_json()
++            r = c.post(
++                path,
++                json=body,
++                follow_redirects=True,
++                expected_status_code=201,
++            )
++            token_id = r.headers['X-Subject-Token']
++
++            c.get(
++                f'{self.restful_api_url_prefix}/argument/{uuid.uuid4().hex}',
++                headers={'X-Auth-Token': token_id},
++                json={'target': {'credential': {'user_id': attacker_id}}},
++            )
++            target_attr = {'credential': {'user_id': real_owner_id}}
++            self.enforcer.enforce_call(
++                action='example:allowed', target_attr=target_attr
++            )
++
++    def test_json_body_cannot_overwrite_view_args(self):
++        # Verify that a JSON request body cannot overwrite URL path
++        # parameters (view_args) in the policy dict. The enforcer must
++        # namespace user-controlled JSON input so it cannot collide
++        # with trusted view_args like 'user_id' or 'argument_id'.
++        assertIn = self.assertIn
++        assertEq = self.assertEqual
++
++        real_argument_id = uuid.uuid4().hex
++        injected_argument_id = uuid.uuid4().hex
++
++        def _enforce_mock_func(credentials, action, target, do_raise=True):
++            assertIn('argument_id', target)
++            assertEq(target['argument_id'], real_argument_id)
++
++        self.useFixture(
++            fixtures.MockPatchObject(
++                self.enforcer, '_enforce', _enforce_mock_func
++            )
++        )
++
++        with self.test_client() as c:
++            path = '/v3/auth/tokens'
++            body = self._auth_json()
++            r = c.post(
++                path,
++                json=body,
++                follow_redirects=True,
++                expected_status_code=201,
++            )
++            token_id = r.headers['X-Subject-Token']
++
++            # URL has argument_id=real_argument_id, but the JSON body
++            # tries to overwrite it.
++            c.get(
++                (f'{self.restful_api_url_prefix}/argument/{real_argument_id}'),
++                headers={'X-Auth-Token': token_id},
++                json={'argument_id': injected_argument_id},
++            )
++            self.enforcer.enforce_call(action='example:allowed')
++
+     def test_call_build_enforcement_target(self):
+         assertIn = self.assertIn
+         assertEq = self.assertEqual
+@@ -703,6 +832,50 @@ class TestRBACEnforcerRest(_TestRBACEnforcerBase):
+                 action='example:with_filter',
+             )
+ 
++    def test_query_filter_cannot_overwrite_view_args(self):
++        """Query-string filter values must not overwrite view_args in policy dict.
++
++        Before the fix, policy_dict.update(filter_values) ran after
++        policy_dict.update(view_args). If a filter key matched a view_arg key
++        (e.g. both named 'user_id'), a ?user_id=attacker query param would
++        overwrite the URL-path-sourced value used in %(user_id)s policy
++        substitutions, bypassing ownership checks such as
++        ADMIN_OR_SYSTEM_READER_OR_OWNER on /v3/users/{user_id}/... endpoints.
++        """
++        real_arg_id = uuid.uuid4().hex
++        injected_arg_id = uuid.uuid4().hex
++        seen = {}
++
++        def _capture_enforce(credentials, action, target, do_raise=True):
++            seen.update(target)
++
++        self.useFixture(
++            fixtures.MockPatchObject(
++                self.enforcer, '_enforce', _capture_enforce
++            )
++        )
++
++        with self.test_client() as c:
++            r = c.post(
++                '/v3/auth/tokens',
++                json=self._auth_json(),
++                expected_status_code=201,
++            )
++            token_id = r.headers['X-Subject-Token']
++            c.get(
++                f'{self.restful_api_url_prefix}/argument/{real_arg_id}'
++                f'?argument_id={injected_arg_id}',
++                headers={'X-Auth-Token': token_id},
++            )
++            self.enforcer.enforce_call(
++                action='example:allowed', filters=['argument_id']
++            )
++
++        # view_arg survives: argument_id at the top level is real_arg_id
++        self.assertEqual(real_arg_id, seen.get('argument_id'))
++        # filter value is namespaced, not overwriting view_arg
++        self.assertEqual(injected_arg_id, seen.get('filter_attr.argument_id'))
++
+     def test_enforce_call_with_pre_instantiated_enforcer(self):
+         token_path = '/v3/auth/tokens'
+         auth_json = self._auth_json()
+diff --git a/releasenotes/notes/bug-2148398-e35dd449b3a330e6.yaml b/releasenotes/notes/bug-2148398-e35dd449b3a330e6.yaml
+new file mode 100644
+index 000000000..1685cc04f
+--- /dev/null
++++ b/releasenotes/notes/bug-2148398-e35dd449b3a330e6.yaml
+@@ -0,0 +1,40 @@
++---
++critical:
++  - |
++    [`bug 2148398 <https://bugs.launchpad.net/keystone/+bug/2148398>`_]
++    The RBAC enforcer unconditionally merged the raw JSON request body into
++    the policy enforcement dictionary after trusted target data had been set
++    from the database. An attacker could include a ``target`` key in the JSON
++    body to overwrite database-sourced RBAC target attributes, causing all
++    ``%(target.*)s`` policy substitutions to evaluate against
++    attacker-controlled values. This affected 88 endpoint/method combinations
++    across all Keystone API resource areas. Any authenticated user could
++    exploit this to read every credential secret in the deployment, create
++    EC2 credentials for arbitrary users, or revoke other users' tokens. A
++    domain administrator could escalate to full cloud admin by creating
++    inherited role grants on other domains. The vulnerability has been present
++    since the Rocky release (14.0.0).
++security:
++  - |
++    [`bug 2148398 <https://bugs.launchpad.net/keystone/+bug/2148398>`_]
++    The RBAC policy enforcer now namespaces JSON request body data under a
++    ``request_body`` key in the policy dictionary instead of merging it at
++    the top level. This prevents user-controlled input from overwriting
++    security-critical keys such as ``target`` (populated from the database
++    by ``build_target`` or ``target_attr``) and URL path parameters like
++    ``user_id``. All upstream policy rules are unaffected by this change.
++    Deployments with custom policy rules that reference JSON body fields
++    directly via ``%(field_name)s`` substitutions (not under ``target.``)
++    will need to update those references to ``%(request_body.field_name)s``.
++upgrade:
++  - |
++    [`bug 2148398 <https://bugs.launchpad.net/keystone/+bug/2148398>`_]
++    The ``identity:create_trust`` policy rule now uses
++    ``%(target.trust.trustor_user_id)s`` instead of
++    ``%(trust.trustor_user_id)s``. The trust data from the request body is
++    now passed explicitly via ``target_attr`` rather than relying on the
++    JSON body merge. This aligns ``create_trust`` with all other trust
++    policy rules which already use the ``target.trust.*`` prefix.
++    Deployments that override the ``identity:create_trust`` policy and
++    reference ``%(trust.trustor_user_id)s`` must update to
++    ``%(target.trust.trustor_user_id)s``.
+-- 
+2.47.3
+

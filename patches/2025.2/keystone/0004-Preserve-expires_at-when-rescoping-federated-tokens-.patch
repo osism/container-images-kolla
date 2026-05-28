@@ -1,0 +1,193 @@
+From f59482b7bd61a2b501ae7c2606de7572193ffb78 Mon Sep 17 00:00:00 2001
+From: Grzegorz Grasza <xek@redhat.com>
+Date: Tue, 12 May 2026 09:11:24 +0200
+Subject: [PATCH 4/5] Preserve expires_at when rescoping federated tokens
+ (CVE-2026-44394)
+
+When a federated token is rescoped via POST /v3/auth/tokens the
+handle_scoped_token function returned response_data without an expires_at
+value. Because issue_token falls back to default_expire_time when
+expires_at is None, each rescope issued a fresh full-TTL token instead of
+inheriting the remaining lifetime of the original token.
+
+A user with a federated token could extend their session indefinitely by
+rescoping repeatedly before expiry, bypassing operator-configured TTL
+policies and IdP-level account revocation.
+
+Fix: propagate token.expires_at from handle_scoped_token so that
+issue_token uses the original token's expiry rather than resetting to
+the default. The non-federated path in token.py already did this via
+response_data.setdefault('expires_at', token.expires_at).
+
+Closes-Bug: #2150379
+Assisted-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+Co-authored-by: Artem Goncharov <artem.goncharov@gmail.com>
+Change-Id: I0bbb8520e12c52edd01fb47c873f0227819706f5
+Signed-off-by: Grzegorz Grasza <xek@redhat.com>
+(cherry picked from commit 75a4a0c354c7f568b28dd85182dc729553fb3a33)
+---
+ keystone/auth/plugins/mapped.py               |   4 +
+ .../tests/unit/auth/plugins/test_mapped.py    | 121 ++++++++++++++++++
+ 2 files changed, 125 insertions(+)
+
+diff --git a/keystone/auth/plugins/mapped.py b/keystone/auth/plugins/mapped.py
+index 236905b2e..419a185b1 100644
+--- a/keystone/auth/plugins/mapped.py
++++ b/keystone/auth/plugins/mapped.py
+@@ -110,6 +110,10 @@ def handle_scoped_token(token, federation_api, identity_api):
+     response_data['group_ids'] = group_ids
+     response_data[federation_constants.IDENTITY_PROVIDER] = identity_provider
+     response_data[federation_constants.PROTOCOL] = protocol
++    # Preserve the original token's expiry to prevent users from
++    # indefinitely extending their session by repeatedly rescoping.
++    # The non-federated path in token.py does the same via setdefault().
++    response_data['expires_at'] = token.expires_at
+ 
+     return response_data
+ 
+diff --git a/keystone/tests/unit/auth/plugins/test_mapped.py b/keystone/tests/unit/auth/plugins/test_mapped.py
+index 3b9f84764..2c43729fb 100644
+--- a/keystone/tests/unit/auth/plugins/test_mapped.py
++++ b/keystone/tests/unit/auth/plugins/test_mapped.py
+@@ -15,6 +15,7 @@ import uuid
+ from keystone.assignment.core import Manager as AssignmentApi
+ from keystone.auth.plugins import mapped
+ from keystone.exception import ProjectNotFound
++from keystone.federation import constants as federation_constants
+ from keystone.resource.core import Manager as ResourceApi
+ from keystone.tests import unit
+ 
+@@ -32,6 +33,7 @@ class TestMappedPlugin(unit.TestCase):
+         self.idp_domain_uuid_mock = uuid.uuid4().hex
+         self.member_role_id = uuid.uuid4().hex
+         self.member_role_name = "member"
++
+         self.existing_roles = {
+             self.member_role_name: {'id': self.member_role_id}
+         }
+@@ -210,3 +212,122 @@ class TestMappedPlugin(unit.TestCase):
+         project = shadow_project.copy()
+         project['id'] = uuid.uuid4().hex
+         return project
++
++    def _make_federated_token_mock(self, expires_at):
++        token = mock.Mock()
++        token.audit_id = uuid.uuid4().hex
++        token.user_id = uuid.uuid4().hex
++        token.identity_provider_id = 'test-idp'
++        token.protocol_id = 'mapped'
++        token.federated_groups = [{'id': uuid.uuid4().hex}]
++        token.expires_at = expires_at
++        return token
++
++
++class TestHandleScopedToken(unit.TestCase):
++    """Tests for the handle_scoped_token security fix.
++
++    Verify that rescoping a federated token preserves the original
++    token's expires_at rather than falling back to a fresh TTL.
++    Without the fix, an attacker can extend their session indefinitely
++    by rescoping before expiry, bypassing IdP-level account revocation.
++    """
++
++    def setUp(self):
++        super().setUp()
++        self.federation_api = mock.Mock()
++        self.identity_api = mock.Mock()
++        mapping_ref = {'id': uuid.uuid4().hex}
++        self.federation_api.get_mapping_from_idp_and_protocol.return_value = (
++            mapping_ref
++        )
++
++    @mock.patch(
++        'keystone.auth.plugins.mapped.notifications'
++        '.send_saml_audit_notification',
++        autospec=True,
++    )
++    @mock.patch(
++        'keystone.auth.plugins.mapped.utils.validate_mapped_group_ids',
++        autospec=True,
++    )
++    @mock.patch(
++        'keystone.auth.plugins.mapped.utils.assert_enabled_identity_provider',
++        autospec=True,
++    )
++    @mock.patch(
++        'keystone.auth.plugins.mapped.utils.validate_expiration', autospec=True
++    )
++    def test_handle_scoped_token_preserves_expires_at(
++        self,
++        mock_validate_exp,
++        mock_assert_idp,
++        mock_validate_groups,
++        mock_notify,
++    ):
++        """Rescoped federated token must inherit original expiry (not fresh TTL).
++
++        This is the security regression test for the authentication expiry
++        bypass vulnerability: handle_scoped_token must include expires_at in
++        the returned response_data so that issue_token() does not fall back to
++        default_expire_time().
++        """
++        original_expiry = '2026-04-26T08:59:30.000000Z'
++        token = self._make_federated_token_mock(original_expiry)
++
++        result = mapped.handle_scoped_token(
++            token, self.federation_api, self.identity_api
++        )
++
++        self.assertIn('expires_at', result)
++        self.assertEqual(original_expiry, result['expires_at'])
++
++    @mock.patch(
++        'keystone.auth.plugins.mapped.notifications'
++        '.send_saml_audit_notification',
++        autospec=True,
++    )
++    @mock.patch(
++        'keystone.auth.plugins.mapped.utils.validate_mapped_group_ids',
++        autospec=True,
++    )
++    @mock.patch(
++        'keystone.auth.plugins.mapped.utils.assert_enabled_identity_provider',
++        autospec=True,
++    )
++    @mock.patch(
++        'keystone.auth.plugins.mapped.utils.validate_expiration', autospec=True
++    )
++    def test_handle_scoped_token_returns_federation_metadata(
++        self,
++        mock_validate_exp,
++        mock_assert_idp,
++        mock_validate_groups,
++        mock_notify,
++    ):
++        """Rescoped federated token still returns all required federation data."""
++        token = self._make_federated_token_mock('2026-04-26T08:59:30.000000Z')
++
++        result = mapped.handle_scoped_token(
++            token, self.federation_api, self.identity_api
++        )
++
++        self.assertEqual(token.user_id, result['user_id'])
++        self.assertEqual(
++            token.identity_provider_id,
++            result[federation_constants.IDENTITY_PROVIDER],
++        )
++        self.assertEqual(
++            token.protocol_id, result[federation_constants.PROTOCOL]
++        )
++        self.assertIsInstance(result['group_ids'], list)
++
++    def _make_federated_token_mock(self, expires_at):
++        token = mock.Mock()
++        token.audit_id = uuid.uuid4().hex
++        token.user_id = uuid.uuid4().hex
++        token.identity_provider_id = 'test-idp'
++        token.protocol_id = 'mapped'
++        token.federated_groups = [{'id': uuid.uuid4().hex}]
++        token.expires_at = expires_at
++        return token
+-- 
+2.47.3
+

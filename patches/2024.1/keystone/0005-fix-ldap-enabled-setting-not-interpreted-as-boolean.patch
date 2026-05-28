@@ -1,0 +1,76 @@
+From dc8c24af85b36242f77791c8ac07ff69944ffd2c Mon Sep 17 00:00:00 2001
+From: Benedikt Trefzer <benedikt.trefzer@cirrax.com>
+Date: Thu, 21 Aug 2025 16:11:12 +0200
+Subject: [PATCH 05/12] fix ldap 'enabled' setting not interpreted as boolean
+
+interpretation of the ldap enabled attribute as boolean
+is only done if enabled_invert setting is set to true.
+
+Conflicts:
+  keystone/identity/backends/ldap/core.py
+
+NOTE(elod.illes): conflict is due to Blakify patch [1] that was added
+in 2024.2 Dalmatian release.
+
+[1] I832ec4c152fa58fb0088d9f880add86a20ec95fc
+
+Closes-Bug: #2121152
+Change-Id: I7260bf46adf003aef7c7ac0d436c3758f658cb0c
+Signed-off-by: Benedikt Trefzer <benedikt.trefzer@cirrax.com>
+(cherry picked from commit 98e3e6bd847e94d856f3bac7eb23d1b3e9d4f89b)
+(cherry picked from commit 3cdfe147347d647dce4901d2e6beed794cc1618b)
+---
+ keystone/identity/backends/ldap/core.py               | 11 +++++++++--
+ .../fix_ldap_enabled_boolean-6281eb00e5aaed26.yaml    |  4 ++++
+ 2 files changed, 13 insertions(+), 2 deletions(-)
+ create mode 100644 releasenotes/notes/fix_ldap_enabled_boolean-6281eb00e5aaed26.yaml
+
+diff --git a/keystone/identity/backends/ldap/core.py b/keystone/identity/backends/ldap/core.py
+index 72bc7da92..153bc4920 100644
+--- a/keystone/identity/backends/ldap/core.py
++++ b/keystone/identity/backends/ldap/core.py
+@@ -257,6 +257,7 @@ class UserApi(common_ldap.EnabledEmuMixIn, common_ldap.BaseLdap):
+         self.enabled_default = conf.ldap.user_enabled_default
+         self.enabled_invert = conf.ldap.user_enabled_invert
+         self.enabled_emulation = conf.ldap.user_enabled_emulation
++        self.attribute_ignore = conf.ldap.user_attribute_ignore
+ 
+     def _ldap_res_to_model(self, res):
+         obj = super(UserApi, self)._ldap_res_to_model(res)
+@@ -264,7 +265,10 @@ class UserApi(common_ldap.EnabledEmuMixIn, common_ldap.BaseLdap):
+             enabled = int(obj.get('enabled', self.enabled_default))
+             obj['enabled'] = ((enabled & self.enabled_mask) !=
+                               self.enabled_mask)
+-        elif self.enabled_invert and not self.enabled_emulation:
++        elif (
++            not self.enabled_emulation
++            and 'enabled' not in self.attribute_ignore
++        ):
+             # This could be a bool or a string.  If it's a string,
+             # we need to convert it so we can invert it properly.
+             enabled = obj.get('enabled', self.enabled_default)
+@@ -273,7 +277,10 @@ class UserApi(common_ldap.EnabledEmuMixIn, common_ldap.BaseLdap):
+                     enabled = True
+                 else:
+                     enabled = False
+-            obj['enabled'] = not enabled
++            if self.enabled_invert:
++                obj['enabled'] = not enabled
++            else:
++                obj['enabled'] = enabled
+         obj['dn'] = res[0]
+ 
+         return obj
+diff --git a/releasenotes/notes/fix_ldap_enabled_boolean-6281eb00e5aaed26.yaml b/releasenotes/notes/fix_ldap_enabled_boolean-6281eb00e5aaed26.yaml
+new file mode 100644
+index 000000000..421abc592
+--- /dev/null
++++ b/releasenotes/notes/fix_ldap_enabled_boolean-6281eb00e5aaed26.yaml
+@@ -0,0 +1,4 @@
++---
++fixes:
++  - |
++    Ldap identity backend did not interpret the enabled field as boolean.
+-- 
+2.47.3
+
