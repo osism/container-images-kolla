@@ -1,0 +1,70 @@
+From 8278d24d5387d2a738b1e5abc64389d2aff99705 Mon Sep 17 00:00:00 2001
+From: Boris Bobrov <b.bobrov@sap.com>
+Date: Wed, 25 Mar 2026 22:53:32 +0100
+Subject: [PATCH 7/7] Include system scope in rescope guard
+
+The allow_rescope_scoped_token=False configuration option is
+meant to prevent any scoped token from being used to create
+another token. The check only covered project-scoped and
+domain-scoped tokens but not system-scoped tokens, allowing
+a system-scoped token to be rescoped despite the setting.
+
+Generated-By: claude-opus-4-6 (OpenCode)
+Signed-off-by: Boris Bobrov <b.bobrov@sap.com>
+Change-Id: I795bfb7c5dad8949c9879e06ae36784f7856deb8
+(cherry picked from commit bcc8e819a8611e2f5a8bc1a61cfa792269106c1a)
+(cherry picked from commit 549a704284269f6bc78367814a172deacf832be1)
+---
+ keystone/auth/plugins/token.py      |  6 +++++-
+ keystone/tests/unit/test_v3_auth.py | 18 ++++++++++++++++++
+ 2 files changed, 23 insertions(+), 1 deletion(-)
+
+diff --git a/keystone/auth/plugins/token.py b/keystone/auth/plugins/token.py
+index 5650b2cf4..428d4abd9 100644
+--- a/keystone/auth/plugins/token.py
++++ b/keystone/auth/plugins/token.py
+@@ -107,7 +107,11 @@ def token_authenticate(token: TokenModel) -> dict[str, ty.Any]:
+ 
+         if not CONF.token.allow_rescope_scoped_token:
+             # Do not allow conversion from scoped tokens.
+-            if token.project_scoped or token.domain_scoped:
++            if (
++                token.project_scoped
++                or token.domain_scoped
++                or token.system_scoped
++            ):
+                 raise exception.ForbiddenAction(
+                     action=_('rescope a scoped token')
+                 )
+diff --git a/keystone/tests/unit/test_v3_auth.py b/keystone/tests/unit/test_v3_auth.py
+index cac93c6dc..7f3847b3c 100644
+--- a/keystone/tests/unit/test_v3_auth.py
++++ b/keystone/tests/unit/test_v3_auth.py
+@@ -3148,6 +3148,24 @@ class AllowRescopeScopedTokenDisabledTests(test_v3.RestfulTestCase):
+             expected_status=http.client.FORBIDDEN,
+         )
+ 
++    def test_rescoped_system_token_disabled(self):
++        PROVIDERS.assignment_api.create_system_grant_for_user(
++            self.user['id'], self.role['id']
++        )
++        system_token = self.get_requested_token(
++            self.build_authentication_request(
++                user_id=self.user['id'],
++                password=self.user['password'],
++                system=True,
++            )
++        )
++        # A system-scoped token should not be usable to create any new
++        # token when allow_rescope_scoped_token is disabled.
++        self.v3_create_token(
++            self.build_authentication_request(token=system_token),
++            expected_status=http.client.FORBIDDEN,
++        )
++
+ 
+ class TestFernetTokenAPIs(
+     test_v3.RestfulTestCase, TokenAPITests, TokenDataTests
+-- 
+2.47.3
+
