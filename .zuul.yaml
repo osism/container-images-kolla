@@ -210,17 +210,33 @@
         secret: SECRET_CONTAINER_IMAGES_KOLLA
         pass-to-parent: true
 
+# DO NOT MERGE - temporary diagnostic probe jobs for the regiocloud-a
+# IPv6 egress investigation. Run the tool-availability + network probe
+# on both CI images via the check pipeline of a draft PR.
+- job:
+    name: kolla-diag-net-noble
+    description: TEMP IPv6 egress probe on the noble CI image (DNM)
+    nodeset: ubuntu-noble-large
+    run: playbooks/diag-network-probe.yml
+    timeout: 2400
+    voting: false
+
+- job:
+    name: kolla-diag-net-bookworm
+    description: TEMP IPv6 egress probe on debian-bookworm (DNM)
+    nodeset: debian-bookworm
+    run: playbooks/diag-network-probe.yml
+    timeout: 2400
+    voting: false
+
 - project:
     merge-mode: squash-merge
     check:
+      # DNM: trimmed to the temporary probe jobs only (skip the heavier
+      # patch/lint jobs while we just want diagnostics on both images).
       jobs:
-        - flake8
-        - python-black
-        - yamllint
-        - container-images-kolla-patch-2024.1
-        - container-images-kolla-patch-2024.2
-        - container-images-kolla-patch-2025.1
-        - container-images-kolla-patch-2025.2
+        - kolla-diag-net-noble
+        - kolla-diag-net-bookworm
     label:
       jobs:
         - container-images-kolla-build-2024.1

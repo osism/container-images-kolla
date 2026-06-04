@@ -1,0 +1,188 @@
+---
+# DO NOT MERGE. Temporary CI probe for the regiocloud-a IPv6 egress
+# investigation (see ~/issues/regiocloud/ipv6-egress-instability.md).
+#
+# Runs on ubuntu-noble-large and debian-bookworm via a draft PR so the
+# check pipeline (untrusted -> speculative) actually executes it. It:
+#   1. reports diagnostic tool availability on the image,
+#   2. takes a one-shot dual-stack host snapshot,
+#   3. inspects Docker/BuildKit IPv6 config + container netns,
+#   4. runs an intrusive ~25 min time-series sampler to catch an
+#      intermittent IPv6 route flap / RA-lifetime expiry.
+#
+# Intrusive background sampling is acceptable here precisely because it
+# is one or two throwaway test builds, not the fleet-wide base role.
+# All steps are best-effort (set +e); nothing should fail the job.
+- name: regiocloud IPv6 egress probe
+  hosts: all
+  gather_facts: true
+  vars:
+    diag_targets:
+      - tarballs.opendev.org
+      - galaxy.ansible.com
+    diag_sample_interval: 20      # seconds between samples
+    diag_sample_duration: 1500    # total sampler runtime (~25 min)
+    diag_logdir: "{{ ansible_user_dir }}/zuul-output/logs"
+
+  tasks:
+    - name: Ensure log dir exists
+      ansible.builtin.file:
+        path: "{{ diag_logdir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Report tool availability
+      ansible.builtin.shell: |
+        set +e
+        echo "== node =="
+        (. /etc/os-release 2>/dev/null; echo "$PRETTY_NAME"); uname -r
+        echo "== requested tools =="
+        for t in ip ping getent wget curl traceroute6 traceroute mtr \
+                 mtr-packet rdisc6 resolvectl docker; do
+          p=$(command -v "$t" 2>/dev/null)
+          printf '%-12s %s\n' "$t" "${p:-MISSING}"
+        done
+        echo "== detail =="
+        command -v mtr >/dev/null 2>&1 && mtr --version 2>&1 | head -1
+        mp=$(command -v mtr-packet 2>/dev/null) \
+          && { command -v getcap >/dev/null 2>&1 \
+               && getcap "$mp" || echo "getcap absent"; }
+        if command -v ping >/dev/null 2>&1; then
+          ping -6 -c1 -W2 ::1 >/dev/null 2>&1 \
+            && echo "ping -6 ::1: ok unprivileged" \
+            || echo "ping -6 ::1: failed unprivileged"
+        fi
+        command -v docker >/dev/null 2>&1 && docker --version 2>&1 | head -1
+      args:
+        executable: /bin/bash
+      changed_when: false
+      failed_when: false
+      register: diag_tools
+
+    - name: Show tool availability
+      ansible.builtin.debug:
+        var: diag_tools.stdout_lines
+
+    - name: One-shot dual-stack host snapshot
+      ansible.builtin.shell: |
+        set +e
+        out={{ diag_logdir }}/net-debug.txt
+        targets="{{ diag_targets | join(' ') }}"
+        iface=$(ip -6 route show default 2>/dev/null \
+                | awk '{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}')
+        : "${iface:=eth0}"
+        gw=$(ip -6 route show default 2>/dev/null \
+             | awk '{for(i=1;i<=NF;i++) if($i=="via"){print $(i+1); exit}}')
+        {
+          echo "== date =="; date -Is
+          echo "== iface/gw =="; echo "iface=$iface gw=$gw"
+          echo "== ip -6 addr =="; ip -6 addr show
+          echo "== ip -6 route show =="; ip -6 route show
+          echo "== ip -6 route show default (expires/proto) =="
+          ip -6 route show default
+          echo "== sysctl accept_ra/forwarding =="
+          for k in all default "$iface"; do
+            sysctl "net.ipv6.conf.$k.forwarding" \
+                   "net.ipv6.conf.$k.accept_ra" 2>&1
+          done
+          echo "== rdisc6 RA solicit =="
+          if command -v rdisc6 >/dev/null 2>&1; then
+            timeout 6 rdisc6 -1 -w 3000 "$iface" 2>&1
+          else echo "rdisc6 not installed"; fi
+          echo "== resolvectl status =="
+          command -v resolvectl >/dev/null 2>&1 \
+            && resolvectl status 2>&1 || echo "resolvectl absent"
+          for d in $targets; do
+            echo "== target $d =="
+            getent ahosts "$d" 2>&1
+            curl -6 -sS -m 10 -o /dev/null \
+              -w 'curl6 http=%{http_code} ip=%{remote_ip} t=%{time_total}\n' \
+              "https://$d/" 2>&1 || echo "curl6 FAIL"
+            curl -4 -sS -m 10 -o /dev/null \
+              -w 'curl4 http=%{http_code} ip=%{remote_ip} t=%{time_total}\n' \
+              "https://$d/" 2>&1 || echo "curl4 FAIL"
+          done
+          echo "== ping6 gw =="
+          [ -n "$gw" ] && ping -6 -c1 -W2 "${gw}%${iface}" 2>&1 \
+            || echo "no v6 gw"
+          echo "== traceroute6/mtr first target =="
+          set -- $targets
+          if command -v traceroute6 >/dev/null 2>&1; then
+            timeout 30 traceroute6 -q1 -w2 "$1" 2>&1
+          elif command -v mtr >/dev/null 2>&1; then
+            timeout 30 mtr -6 -r -c2 "$1" 2>&1
+          else echo "no traceroute6/mtr"; fi
+        } > "$out" 2>&1
+        echo "wrote $out"
+      args:
+        executable: /bin/bash
+      changed_when: false
+      failed_when: false
+
+    - name: Docker / BuildKit IPv6 config + container netns
+      ansible.builtin.shell: |
+        set +e
+        out={{ diag_logdir }}/net-docker.txt
+        {
+          if ! command -v docker >/dev/null 2>&1; then
+            echo "docker not available on this image"
+          else
+            echo "== docker info (IPv6 lines) =="
+            if info=$(docker info 2>&1); then
+              printf '%s\n' "$info" | grep -iE 'ipv6|ip6tables' \
+                || echo "(no IPv6 lines)"
+            else
+              echo "docker info FAILED:"; printf '%s\n' "$info" | head -5
+            fi
+            echo "== /etc/docker/daemon.json =="
+            cat /etc/docker/daemon.json 2>/dev/null || echo "(absent)"
+            echo "== docker network inspect bridge =="
+            docker network inspect bridge 2>&1 \
+              | grep -iE '"Name"|EnableIPv6|Subnet|Gateway' \
+              || echo "(inspect failed)"
+            echo "== docker buildx ls =="
+            docker buildx ls 2>&1 || echo "(no buildx)"
+            echo "== container netns route presence (busybox) =="
+            if docker pull busybox >/dev/null 2>&1; then
+              docker run --rm busybox sh -c \
+                'echo "ip -6 addr:"; ip -6 addr show 2>&1; \
+                 echo "ip -6 route:"; ip -6 route show 2>&1' 2>&1
+            else
+              echo "busybox pull failed (itself a network datapoint)"
+            fi
+          fi
+        } > "$out" 2>&1
+        echo "wrote $out"
+      args:
+        executable: /bin/bash
+      changed_when: false
+      failed_when: false
+
+    - name: Intrusive time-series sampler (flap detection)
+      ansible.builtin.shell: |
+        set +e
+        out={{ diag_logdir }}/net-sampler.log
+        targets="{{ diag_targets | join(' ') }}"
+        end=$(( $(date +%s) + {{ diag_sample_duration | int }} ))
+        : > "$out"
+        while [ "$(date +%s)" -lt "$end" ]; do
+          ts=$(date -Is)
+          rt=$(ip -6 route show default 2>/dev/null | tr '\n' '|')
+          line="$ts route=[$rt]"
+          for d in $targets; do
+            v6=$(curl -6 -sS -m 8 -o /dev/null \
+                 -w '%{http_code}/%{time_total}' "https://$d/" 2>/dev/null \
+                 || echo FAIL)
+            v4=$(curl -4 -sS -m 8 -o /dev/null \
+                 -w '%{http_code}/%{time_total}' "https://$d/" 2>/dev/null \
+                 || echo FAIL)
+            line="$line ${d%%.*}:v6=$v6,v4=$v4"
+          done
+          echo "$line" >> "$out"
+          sleep {{ diag_sample_interval | int }}
+        done
+        echo "sampler done; tail:"; tail -5 "$out"
+      args:
+        executable: /bin/bash
+      changed_when: false
+      failed_when: false
