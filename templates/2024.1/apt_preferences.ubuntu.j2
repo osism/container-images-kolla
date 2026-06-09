@@ -5,3 +5,12 @@ Pin-Priority: 1000
 Package: openvswitch*
 Pin: version 3.3.*
 Pin-Priority: 1000
+
+# Stopgap: proxysql 3.0.9 (GHSA-58ww-865x-grpr bounds the first-packet
+# recv()) rejects the kolla-ansible keepalived proxysql health check (the
+# "show info" probe) -> keepalived FAULT -> api-int VIP dropped. Pin to
+# 3.0.8 until the upstream fix (kolla-ansible change 992020, depends on
+# kolla 992239, master-only) is backported to this release.
+Package: proxysql
+Pin: version 3.0.8*
+Pin-Priority: 1001
