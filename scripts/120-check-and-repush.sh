@@ -174,9 +174,15 @@ compare_layer_digests() {
 
     log_verbose "Pulling remote image to temporary tag: $temp_remote_tag"
 
-    # Pull the remote image directly to temporary tag to avoid overwriting local
-    if ! docker pull "$image" >/dev/null 2>&1; then
-        log_verbose "Failed to pull remote image: $image"
+    # Pull the remote image directly to temporary tag to avoid overwriting local.
+    # This function is only reached after check_image_exists() succeeded, so a
+    # pull failure here is anomalous (the registry reports the image as present
+    # but it cannot be pulled). Capture and log the real docker error instead of
+    # discarding it, so the cause (auth, manifest mismatch, network) is visible
+    # in the build log rather than hidden behind a generic message.
+    local pull_error
+    if ! pull_error=$(docker pull "$image" 2>&1 >/dev/null); then
+        log_warning "Failed to pull remote image for digest check: $image: ${pull_error:-unknown error}"
         return 1
     fi
 
