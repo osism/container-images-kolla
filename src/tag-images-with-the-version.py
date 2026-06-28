@@ -337,6 +337,7 @@ SBOM_IMAGE_TO_VERSION = {
     "swift": "swift-object",
     "tgtd": "tgtd",
     "trove": "trove-api",
+    "valkey": "valkey-server",
     "watcher": "watcher-api",
 }
 
