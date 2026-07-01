@@ -95,7 +95,7 @@ for image in client.images.list(filters=FILTERS):
             logger.error(f"Configuration for {name} ({best_key}) not found")
             continue
 
-        if best_key == "ovn" and OPENSTACK_VERSION in ["2024.1", "2024.2"]:
+        if best_key == "ovn" and OPENSTACK_VERSION in ["2024.1"]:
             command = "ovn-controller --version"
         else:
             command = configuration[best_key]
@@ -143,7 +143,7 @@ for image in client.images.list(filters=FILTERS):
                 # lego version 4.20.4 linux/amd64
                 r = findall(r"lego version (.*) linux", result)
 
-            elif best_key == "ovn" and OPENSTACK_VERSION in ["2024.1", "2024.2"]:
+            elif best_key == "ovn" and OPENSTACK_VERSION in ["2024.1"]:
                 # ovn-controller 22.03.0
                 r = findall(r"ovn-controller (.*)\n", result)
 
