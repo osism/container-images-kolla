@@ -1,0 +1,145 @@
+From 53e98119336c4b4bb3175fba98dd3d4a9ade70f2 Mon Sep 17 00:00:00 2001
+From: Freerk-Ole Zakfeld <fzakfeld@scaleuptech.com>
+Date: Wed, 8 Jul 2026 10:39:21 +0200
+Subject: [PATCH] Add `WEBSSO_POST_LOGOUT_URL` setting for proper SSO/OIDC
+ logout
+
+Once a WebSSO user's session has been terminated by the logout view, they
+will be redirected to the URL specified in this variable, instead of the
+login page. This only applies to users who authenticated via WebSSO (i.e.
+their session's ``auth_type`` is not ``credentials``).
+This is unrelated to ``LOGOUT_URL``, which just points the logout
+link/button at the logout view and does not by itself terminate the
+session.
+
+Assisted-By: Claude:claude-sonnet-4-6
+Change-Id: I8302cd390b954ee8abfa2340ff9fd0df8ad88120
+Signed-off-by: Freerk-Ole Zakfeld <fzakfeld@scaleuptech.com>
+(cherry picked from commit 54ab00bae04282c49bfa941a8f551493166f515c)
+---
+ doc/source/configuration/settings.rst         | 16 +++++++++++
+ openstack_auth/defaults.py                    | 10 +++++++
+ openstack_auth/tests/unit/test_auth.py        | 27 +++++++++++++++++++
+ openstack_auth/views.py                       |  6 +++++
+ ...bsso-post-logout-url-cb65d71cda668e1a.yaml |  7 +++++
+ 5 files changed, 66 insertions(+)
+ create mode 100644 releasenotes/notes/websso-post-logout-url-cb65d71cda668e1a.yaml
+
+diff --git a/doc/source/configuration/settings.rst b/doc/source/configuration/settings.rst
+index 8ba89b345..61f8e689a 100644
+--- a/doc/source/configuration/settings.rst
++++ b/doc/source/configuration/settings.rst
+@@ -1779,6 +1779,22 @@ Default: ``None``
+ Allows to specify a callback to the IdP to cleanup the SSO resources.
+ Once the user logs out it will redirect to the IdP log out method.
+
++WEBSSO_POST_LOGOUT_URL
++~~~~~~~~~~~~~~~~~~~~~~
++
++.. versionadded:: 2026.2(Hibiscus)
++
++Default: ``None``
++
++Once a WebSSO user's session has been terminated by the logout view, they
++will be redirected to the URL specified in this variable, instead of the
++login page. This only applies to users who authenticated via WebSSO (i.e.
++their session's ``auth_type`` is not ``credentials``).
++
++This is unrelated to ``LOGOUT_URL``, which just points the logout
++link/button at the logout view and does not by itself terminate the
++session.
++
+ WEBSSO_KEYSTONE_URL
+ ~~~~~~~~~~~~~~~~~~~
+
+diff --git a/openstack_auth/defaults.py b/openstack_auth/defaults.py
+index 41cfe539e..503b60b27 100644
+--- a/openstack_auth/defaults.py
++++ b/openstack_auth/defaults.py
+@@ -151,6 +151,16 @@ WEBSSO_DEFAULT_REDIRECT_REGION = OPENSTACK_KEYSTONE_URL
+ # in this variable.
+ WEBSSO_DEFAULT_REDIRECT_LOGOUT = None
+
++# Once a WebSSO user's session has been terminated by the logout view, they
++# will be redirected to the URL specified in this variable, instead of the
++# login page. This only applies to users who authenticated via WebSSO (i.e.
++# their session's auth_type is not 'credentials'); regular username/password
++# logins are unaffected and keep going to the login page.
++# Note this is unrelated to LOGOUT_URL, which just points the logout link/
++# button at the logout view and does not by itself terminate the session or
++# affect where the user ends up afterwards.
++WEBSSO_POST_LOGOUT_URL = None
++
+ # If set this URL will be used for web single-sign-on authentication
+ # instead of OPENSTACK_KEYSTONE_URL. This is needed in the deployment
+ # scenarios where network segmentation is used per security requirement.
+diff --git a/openstack_auth/tests/unit/test_auth.py b/openstack_auth/tests/unit/test_auth.py
+index b1f686342..ed6788189 100644
+--- a/openstack_auth/tests/unit/test_auth.py
++++ b/openstack_auth/tests/unit/test_auth.py
+@@ -992,6 +992,33 @@ class OpenStackAuthTestsWebSSO(test.TestCase):
+         self.assertRedirects(response, settings.WEBSSO_DEFAULT_REDIRECT_LOGOUT,
+                              status_code=302, target_status_code=301)
+
++    @override_settings(WEBSSO_POST_LOGOUT_URL='http://example.com/goodbye')
++    def test_logout_post_logout_url_redirect_websso_user(self):
++        settings.WEBSSO_POST_LOGOUT_URL = 'http://example.com/goodbye'
++
++        session = self.client.session
++        session['auth_type'] = 'oidc'
++        session.save()
++
++        url = reverse('logout')
++
++        response = self.client.get(url)
++        self.assertRedirects(response, settings.WEBSSO_POST_LOGOUT_URL,
++                             status_code=302, target_status_code=301)
++
++    @override_settings(WEBSSO_POST_LOGOUT_URL='http://example.com/goodbye')
++    def test_logout_post_logout_url_ignored_for_credentials_user(self):
++        settings.WEBSSO_POST_LOGOUT_URL = 'http://example.com/goodbye'
++
++        session = self.client.session
++        session['auth_type'] = 'credentials'
++        session.save()
++
++        url = reverse('logout')
++
++        response = self.client.get(url)
++        self.assertRedirects(response, settings.LOGIN_URL, status_code=302)
++
+
+ class OpenStackAuthTests(test.TestCase):
+
+diff --git a/openstack_auth/views.py b/openstack_auth/views.py
+index 8686ad031..5318ed998 100644
+--- a/openstack_auth/views.py
++++ b/openstack_auth/views.py
+@@ -262,6 +262,12 @@ def logout(request, login_url=None, **kwargs):
+         auth_user.unset_session_user_variables(request)
+         return django_http.HttpResponseRedirect(
+             settings.WEBSSO_DEFAULT_REDIRECT_LOGOUT)
++    session_auth_type = request.session.get('auth_type')
++    is_websso_user = (settings.WEBSSO_ENABLED and session_auth_type and
++                      session_auth_type != 'credentials')
++    if is_websso_user and settings.WEBSSO_POST_LOGOUT_URL:
++        auth_user.unset_session_user_variables(request)
++        return django_http.HttpResponseRedirect(settings.WEBSSO_POST_LOGOUT_URL)
+
+     return django_auth_views.logout_then_login(request,
+                                                login_url=login_url,
+diff --git a/releasenotes/notes/websso-post-logout-url-cb65d71cda668e1a.yaml b/releasenotes/notes/websso-post-logout-url-cb65d71cda668e1a.yaml
+new file mode 100644
+index 000000000..c245e118a
+--- /dev/null
++++ b/releasenotes/notes/websso-post-logout-url-cb65d71cda668e1a.yaml
+@@ -0,0 +1,7 @@
++---
++features:
++  - |
++    Added the ``WEBSSO_POST_LOGOUT_URL`` setting. When set, users who
++    authenticated via WebSSO are redirected to this URL after logging out,
++    instead of the login page. Regular credentials logins are
++    unaffected.
+--
+2.39.3 (Apple Git-145)
