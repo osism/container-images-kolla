@@ -1,0 +1,101 @@
+From 2a0afb81e7efe6e3b97b91f01687fc78fbebc51d Mon Sep 17 00:00:00 2001
+From: Brian Haley <haleyb.dev@gmail.com>
+Date: Thu, 21 May 2026 17:50:47 -0400
+Subject: [PATCH] Fix PF GET/PUT parent floating IP validation
+
+Verify the port-forwarding floating IP id matches the
+child floating IP id so we satisfy the policy requirements
+for GET and PUT operations.
+
+Closes-bug: #2150121
+
+Change-Id: Ie68e57da6222965e79d015a5568190d8bc29b9e8
+Signed-off-by: Brian Haley <haleyb.dev@gmail.com>
+Assisted-by: Claude Sonnet 4.6
+(cherry picked from commit b0411e51be7c0dde85757d2afb8cd432b01fc77a)
+---
+ neutron/services/portforwarding/pf_plugin.py  |  4 +--
+ .../services/portforwarding/test_pf_plugin.py | 27 +++++++++++++++++++
+ 2 files changed, 29 insertions(+), 2 deletions(-)
+
+diff --git a/neutron/services/portforwarding/pf_plugin.py b/neutron/services/portforwarding/pf_plugin.py
+index 0b3ef3dab0..24e065f071 100644
+--- a/neutron/services/portforwarding/pf_plugin.py
++++ b/neutron/services/portforwarding/pf_plugin.py
+@@ -416,7 +416,7 @@ class PortForwardingPlugin(fip_pf.PortForwardingPluginBase):
+             with db_api.CONTEXT_WRITER.using(context):
+                 fip_obj = self._get_fip_obj(context, floatingip_id)
+                 pf_obj = pf.PortForwarding.get_object(context, id=id)
+-                if not pf_obj:
++                if not pf_obj or pf_obj.floatingip_id != floatingip_id:
+                     raise pf_exc.PortForwardingNotFound(id=id)
+                 original_pf_obj = copy.deepcopy(pf_obj)
+                 ori_internal_port_id = pf_obj.internal_port_id
+@@ -669,7 +669,7 @@ class PortForwardingPlugin(fip_pf.PortForwardingPluginBase):
+                                        fields=None):
+         self._get_fip_obj(context, floatingip_id)
+         obj = pf.PortForwarding.get_object(context, id=id)
+-        if not obj:
++        if not obj or obj.floatingip_id != floatingip_id:
+             raise pf_exc.PortForwardingNotFound(id=id)
+         return obj
+ 
+diff --git a/neutron/tests/unit/services/portforwarding/test_pf_plugin.py b/neutron/tests/unit/services/portforwarding/test_pf_plugin.py
+index 47e61462f1..4c0c449370 100644
+--- a/neutron/tests/unit/services/portforwarding/test_pf_plugin.py
++++ b/neutron/tests/unit/services/portforwarding/test_pf_plugin.py
+@@ -90,10 +90,20 @@ class TestPortForwardingPlugin(testlib_api.SqlTestCase):
+ 
+     @mock.patch.object(port_forwarding.PortForwarding, 'get_object')
+     def test_get_floatingip_port_forwarding(self, get_object_mock):
++        get_object_mock.return_value = mock.Mock(floatingip_id='test-fip-id')
+         self.pf_plugin.get_floatingip_port_forwarding(
+             self.ctxt, 'pf_id', 'test-fip-id', fields=None)
+         get_object_mock.assert_called_once_with(self.ctxt, id='pf_id')
+ 
++    @mock.patch.object(port_forwarding.PortForwarding, 'get_object')
++    def test_negative_get_floatingip_port_forwarding_wrong_parent(
++            self, get_object_mock):
++        get_object_mock.return_value = mock.Mock(floatingip_id='other-fip-id')
++        self.assertRaises(
++            pf_exc.PortForwardingNotFound,
++            self.pf_plugin.get_floatingip_port_forwarding,
++            self.ctxt, 'pf_id', 'test-fip-id', fields=None)
++
+     @mock.patch.object(port_forwarding.PortForwarding, 'get_object',
+                        return_value=None)
+     def test_negative_get_floatingip_port_forwarding(self, get_object_mock):
+@@ -186,6 +196,7 @@ class TestPortForwardingPlugin(testlib_api.SqlTestCase):
+         pf_obj.internal_ip_address = "10.0.0.1"
+         pf_obj.internal_port = 22
+         pf_obj.external_port = 222
++        pf_obj.floatingip_id = 'fip_id'
+         mock_pf_get_object.return_value = pf_obj
+         port_dict = {'id': 'ID', 'fixed_ips': [{"subnet_id": "test-subnet-id",
+                                                 "ip_address": "10.0.0.1"}]}
+@@ -292,6 +303,22 @@ class TestPortForwardingPlugin(testlib_api.SqlTestCase):
+             self.pf_plugin.update_floatingip_port_forwarding,
+             self.ctxt, 'pf_id', **pf_input)
+ 
++    @mock.patch.object(port_forwarding.PortForwarding, 'get_object')
++    def test_negative_update_floatingip_port_forwarding_wrong_parent(
++            self, mock_pf_get_object):
++        pf_input = {
++            'port_forwarding':
++                {'port_forwarding': {
++                    'internal_ip_address': '1.1.1.1',
++                    'floatingip_id': 'fip_id'}},
++            'floatingip_id': 'fip_id'}
++        mock_pf_get_object.return_value = mock.Mock(
++            floatingip_id='other-fip-id')
++        self.assertRaises(
++            pf_exc.PortForwardingNotFound,
++            self.pf_plugin.update_floatingip_port_forwarding,
++            self.ctxt, 'pf_id', **pf_input)
++
+     @mock.patch.object(pf_plugin.PortForwardingPlugin,
+                        '_check_port_has_binding_floating_ip')
+     @mock.patch.object(obj_base.NeutronDbObject, 'update_objects')
+-- 
+2.47.3
+
