@@ -52,8 +52,6 @@ pushd $PROJECT_REPOSITORY_PATH > /dev/null
 if [[ "$OPENSTACK_VERSION" != "latest" ]]; then
     if [[ "$OPENSTACK_VERSION" == "2024.1" ]]; then
         git checkout origin/unmaintained/$OPENSTACK_VERSION
-    elif [[ "$OPENSTACK_VERSION" == "2024.2" ]]; then
-        git checkout 2024.2-eol
     else
         git checkout origin/stable/$OPENSTACK_VERSION
     fi
