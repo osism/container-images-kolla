@@ -1,4 +1,4 @@
-commit bd3143af856495385b43f6357577a0629ade48c8
+commit e3c52d399d2a0f7ad4c73f2ea7aaa728ca8990c6
 Author: jayaanand borra <jayaanand.borra@netapp.com>
 Date:   Sat Sep 7 12:57:13 2024 -0400
 
@@ -21,10 +21,9 @@ Date:   Sat Sep 7 12:57:13 2024 -0400
     Closes-bug: #2078968
     Change-Id: I90b9d74560f128e495b6ccecea2d3aa2ed68171f
     Signed-off-by: jayaanand borra <jayaanand.borra@netapp.com>
-    (cherry picked from commit aa6a11b2468bfebfb93534253146c1225842ce7b)
 
 diff --git a/cinder/tests/unit/volume/drivers/netapp/dataontap/client/fakes.py b/cinder/tests/unit/volume/drivers/netapp/dataontap/client/fakes.py
-index d7acc748c9..49be832cd1 100644
+index d7acc748c..49be832cd 100644
 --- a/cinder/tests/unit/volume/drivers/netapp/dataontap/client/fakes.py
 +++ b/cinder/tests/unit/volume/drivers/netapp/dataontap/client/fakes.py
 @@ -3118,7 +3118,9 @@ GET_NAMESPACE_RESPONSE_REST = {
@@ -48,10 +47,10 @@ index d7acc748c9..49be832cd1 100644
              "svm": {
                  "name": VSERVER_NAME
 diff --git a/cinder/tests/unit/volume/drivers/netapp/dataontap/client/test_client_cmode_rest.py b/cinder/tests/unit/volume/drivers/netapp/dataontap/client/test_client_cmode_rest.py
-index 9e5402c2f5..240594039e 100644
+index 3ab132d74..dfbad72b9 100644
 --- a/cinder/tests/unit/volume/drivers/netapp/dataontap/client/test_client_cmode_rest.py
 +++ b/cinder/tests/unit/volume/drivers/netapp/dataontap/client/test_client_cmode_rest.py
-@@ -4106,6 +4106,39 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
+@@ -4111,6 +4111,39 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
          self.client.send_request.assert_called_once_with(
              '/protocols/nvme/subsystems', 'get', query=query)
  
@@ -91,7 +90,7 @@ index 9e5402c2f5..240594039e 100644
      def test_create_subsystem(self):
          self.mock_object(self.client, 'send_request')
  
-@@ -4130,12 +4163,14 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
+@@ -4135,12 +4168,14 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
  
          expected_res = [
              {'subsystem': fake_client.SUBSYSTEM,
@@ -107,7 +106,7 @@ index 9e5402c2f5..240594039e 100644
          }
          self.client.send_request.assert_called_once_with(
              '/protocols/nvme/subsystem-maps', 'get', query=query)
-@@ -4216,3 +4251,102 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
+@@ -4221,3 +4256,102 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
          }
          self.client.send_request.assert_called_once_with(
              '/protocols/nvme/subsystem-maps', 'delete', query=query)
@@ -211,7 +210,7 @@ index 9e5402c2f5..240594039e 100644
 +            "%(code)s, Message: %(message)s",
 +            {'code': api_error.code, 'message': api_error.message})
 diff --git a/cinder/tests/unit/volume/drivers/netapp/dataontap/fakes.py b/cinder/tests/unit/volume/drivers/netapp/dataontap/fakes.py
-index a05774a098..bc6de6d8d1 100644
+index a05774a09..bc6de6d8d 100644
 --- a/cinder/tests/unit/volume/drivers/netapp/dataontap/fakes.py
 +++ b/cinder/tests/unit/volume/drivers/netapp/dataontap/fakes.py
 @@ -1036,5 +1036,6 @@ ADAPTIVE_QOS_POLICY_GROUP_INFO_REST = {
@@ -222,7 +221,7 @@ index a05774a098..bc6de6d8d1 100644
  HOST_NQN = 'nqn.1992-01.example.com:string'
  TARGET_NQN = 'nqn.1992-01.example.com:target'
 diff --git a/cinder/tests/unit/volume/drivers/netapp/dataontap/test_nvme_library.py b/cinder/tests/unit/volume/drivers/netapp/dataontap/test_nvme_library.py
-index 83f3b1e2cb..e6051468cd 100644
+index 63ff14d9b..40a57fa71 100644
 --- a/cinder/tests/unit/volume/drivers/netapp/dataontap/test_nvme_library.py
 +++ b/cinder/tests/unit/volume/drivers/netapp/dataontap/test_nvme_library.py
 @@ -16,7 +16,6 @@ from concurrent.futures import ThreadPoolExecutor
@@ -260,7 +259,7 @@ index 83f3b1e2cb..e6051468cd 100644
              'total_capacity_gb': 10.0,
              'free_capacity_gb': 2.0,
              'netapp_dedupe_used_percent': 55.0,
-@@ -790,44 +792,31 @@ class NetAppNVMeStorageLibraryTestCase(test.TestCase):
+@@ -791,44 +793,31 @@ class NetAppNVMeStorageLibraryTestCase(test.TestCase):
          self.library.client.namespace_resize.assert_called_once_with(
              fake.PATH_NAMESPACE, new_bytes)
  
@@ -322,7 +321,7 @@ index 83f3b1e2cb..e6051468cd 100644
  
      def test_initialize_connection(self):
          self.mock_object(self.library, '_map_namespace',
-@@ -899,7 +888,7 @@ class NetAppNVMeStorageLibraryTestCase(test.TestCase):
+@@ -900,7 +889,7 @@ class NetAppNVMeStorageLibraryTestCase(test.TestCase):
      def test__unmap_namespace(self, host_nqn):
          mock_find = self.mock_object(
              self.library, '_find_mapped_namespace_subsystem',
@@ -331,7 +330,7 @@ index 83f3b1e2cb..e6051468cd 100644
          self.mock_object(self.library.client, 'get_namespace_map',
                           return_value=[{'subsystem': fake.SUBSYSTEM}])
          self.mock_object(self.library.client, 'unmap_namespace')
-@@ -912,10 +901,6 @@ class NetAppNVMeStorageLibraryTestCase(test.TestCase):
+@@ -913,10 +902,6 @@ class NetAppNVMeStorageLibraryTestCase(test.TestCase):
              self.library.client.get_namespace_map.assert_not_called()
          else:
              self.library._find_mapped_namespace_subsystem.assert_not_called()
@@ -343,7 +342,7 @@ index 83f3b1e2cb..e6051468cd 100644
      @ddt.data(None, {'nqn': fake.HOST_NQN})
      def test_terminate_connection(self, connector):
 diff --git a/cinder/volume/drivers/netapp/dataontap/client/api.py b/cinder/volume/drivers/netapp/dataontap/client/api.py
-index 20121c3c5a..d033728436 100644
+index 20121c3c5..d03372843 100644
 --- a/cinder/volume/drivers/netapp/dataontap/client/api.py
 +++ b/cinder/volume/drivers/netapp/dataontap/client/api.py
 @@ -660,6 +660,7 @@ REST_UPDATE_SNAPMIRROR_FAILED = '13303844'
@@ -355,10 +354,10 @@ index 20121c3c5a..d033728436 100644
  
  class RestNaServer(object):
 diff --git a/cinder/volume/drivers/netapp/dataontap/client/client_cmode_rest.py b/cinder/volume/drivers/netapp/dataontap/client/client_cmode_rest.py
-index edd6300308..3c30ffa74c 100644
+index 6851ddfa8..47dcc1c46 100644
 --- a/cinder/volume/drivers/netapp/dataontap/client/client_cmode_rest.py
 +++ b/cinder/volume/drivers/netapp/dataontap/client/client_cmode_rest.py
-@@ -2799,6 +2799,22 @@ class RestClient(object, metaclass=volume_utils.TraceWrapperMetaclass):
+@@ -2803,6 +2803,22 @@ class RestClient(object, metaclass=volume_utils.TraceWrapperMetaclass):
          return [{'name': subsystem['name'], 'os_type': subsystem['os_type']}
                  for subsystem in records]
  
@@ -381,7 +380,7 @@ index edd6300308..3c30ffa74c 100644
      def create_subsystem(self, subsystem_name, os_type, host_nqn):
          """Creates subsystem with specified args."""
          body = {
-@@ -2813,7 +2829,7 @@ class RestClient(object, metaclass=volume_utils.TraceWrapperMetaclass):
+@@ -2817,7 +2833,7 @@ class RestClient(object, metaclass=volume_utils.TraceWrapperMetaclass):
          """Gets the namespace map using its path."""
          query = {
              'namespace.name': path,
@@ -390,7 +389,7 @@ index edd6300308..3c30ffa74c 100644
          }
          response = self.send_request('/protocols/nvme/subsystem-maps',
                                       'get',
-@@ -2824,6 +2840,7 @@ class RestClient(object, metaclass=volume_utils.TraceWrapperMetaclass):
+@@ -2828,6 +2844,7 @@ class RestClient(object, metaclass=volume_utils.TraceWrapperMetaclass):
          for map in records:
              map_subsystem = {}
              map_subsystem['subsystem'] = map['subsystem']['name']
@@ -398,7 +397,7 @@ index edd6300308..3c30ffa74c 100644
              map_subsystem['uuid'] = map['namespace']['uuid']
              map_subsystem['vserver'] = map['svm']['name']
  
-@@ -2895,3 +2912,54 @@ class RestClient(object, metaclass=volume_utils.TraceWrapperMetaclass):
+@@ -2899,3 +2916,54 @@ class RestClient(object, metaclass=volume_utils.TraceWrapperMetaclass):
          }
          self.send_request('/protocols/nvme/subsystem-maps', 'delete',
                            query=query)
@@ -454,10 +453,10 @@ index edd6300308..3c30ffa74c 100644
 +                )
 +                raise
 diff --git a/cinder/volume/drivers/netapp/dataontap/nvme_library.py b/cinder/volume/drivers/netapp/dataontap/nvme_library.py
-index 49f05ad76b..d74503e923 100644
+index fa969b058..94bd291b6 100644
 --- a/cinder/volume/drivers/netapp/dataontap/nvme_library.py
 +++ b/cinder/volume/drivers/netapp/dataontap/nvme_library.py
-@@ -525,7 +525,7 @@ class NetAppNVMeStorageLibrary(
+@@ -526,7 +526,7 @@ class NetAppNVMeStorageLibrary(
  
              # Add driver capabilities and config info
              pool['QoS_support'] = False
@@ -466,7 +465,7 @@ index 49f05ad76b..d74503e923 100644
              pool['online_extend_support'] = False
              pool['consistencygroup_support'] = True
              pool['consistent_group_snapshot_enabled'] = True
-@@ -611,67 +611,46 @@ class NetAppNVMeStorageLibrary(
+@@ -613,67 +613,46 @@ class NetAppNVMeStorageLibrary(
  
          self.namespace_table[name].size = new_size_bytes
  
@@ -552,7 +551,7 @@ index 49f05ad76b..d74503e923 100644
                  path, host_nqn)
              if ns_uuid is not None and subsystem_name:
                  return subsystem_name, ns_uuid
-@@ -738,18 +717,18 @@ class NetAppNVMeStorageLibrary(
+@@ -740,18 +719,18 @@ class NetAppNVMeStorageLibrary(
      def _unmap_namespace(self, path, host_nqn):
          """Unmaps a namespace from given host."""
  
@@ -584,7 +583,7 @@ index 49f05ad76b..d74503e923 100644
      def terminate_connection(self, volume, connector, **kwargs):
 diff --git a/releasenotes/notes/bug-2078968-fix-nvme-namespace-mapping-failed-during-live-migration-bbd26bb157b076bf.yaml b/releasenotes/notes/bug-2078968-fix-nvme-namespace-mapping-failed-during-live-migration-bbd26bb157b076bf.yaml
 new file mode 100644
-index 0000000000..a393538d1b
+index 000000000..a393538d1
 --- /dev/null
 +++ b/releasenotes/notes/bug-2078968-fix-nvme-namespace-mapping-failed-during-live-migration-bbd26bb157b076bf.yaml
 @@ -0,0 +1,50 @@
