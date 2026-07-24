@@ -1,0 +1,94 @@
+commit 08079e5f9446699efeaf913e5f54658bb0a37eac
+Author: hemanthc <hemanth.c@netapp.com>
+Date:   Tue Sep 23 06:24:58 2025 -0400
+
+    [NetApp] Fixed NVMe over TCP multipath attach path issue
+    
+    Initially Netapp used to handle a single nvme path.
+    With this fix, we have enhanced it to handle multiple
+    paths.
+    
+    Change-Id: If09b206f719645c1358868ae7ae1422982f732f5
+    Signed-off-by: hemanthc <hemanthc@netapp.com>
+
+diff --git a/cinder/tests/unit/volume/drivers/netapp/dataontap/test_nvme_library.py b/cinder/tests/unit/volume/drivers/netapp/dataontap/test_nvme_library.py
+index c5ebda5e0..938e6890b 100644
+--- a/cinder/tests/unit/volume/drivers/netapp/dataontap/test_nvme_library.py
++++ b/cinder/tests/unit/volume/drivers/netapp/dataontap/test_nvme_library.py
+@@ -897,6 +897,38 @@ class NetAppNVMeStorageLibraryTestCase(test.TestCase):
+             fake.SUBSYSTEM)
+         self.library.client.get_nvme_target_portals.assert_called_once_with()
+ 
++    def test_initialize_connection_multiple_portals(self):
++        self.mock_object(self.library, '_map_namespace',
++                         return_value=(fake.SUBSYSTEM, fake.UUID1))
++        self.mock_object(self.library.client, 'get_nvme_subsystem_nqn',
++                         return_value=fake.TARGET_NQN)
++        self.mock_object(self.library.client, 'get_nvme_target_portals',
++                         return_value=['10.10.10.10', '10.10.10.11',
++                                       '10.10.10.12'])
++
++        res = self.library.initialize_connection(
++            fake.NAMESPACE_VOLUME, {'nqn': fake.HOST_NQN})
++
++        expected_conn_info = {
++            "driver_volume_type": "nvmeof",
++            "data": {
++                "target_nqn": fake.TARGET_NQN,
++                "host_nqn": fake.HOST_NQN,
++                "portals": [
++                    ('10.10.10.10', 4420, 'tcp'),
++                    ('10.10.10.11', 4420, 'tcp'),
++                    ('10.10.10.12', 4420, 'tcp')
++                ],
++                "vol_uuid": fake.UUID1
++            }
++        }
++        self.assertEqual(expected_conn_info, res)
++        self.library._map_namespace.assert_called_once_with(
++            fake.NAMESPACE_NAME, fake.HOST_NQN)
++        self.library.client.get_nvme_subsystem_nqn.assert_called_once_with(
++            fake.SUBSYSTEM)
++        self.library.client.get_nvme_target_portals.assert_called_once_with()
++
+     def test_initialize_connection_error_no_host(self):
+         self.mock_object(self.library, '_map_namespace',
+                          return_value=(fake.SUBSYSTEM, fake.UUID1))
+diff --git a/cinder/volume/drivers/netapp/dataontap/nvme_library.py b/cinder/volume/drivers/netapp/dataontap/nvme_library.py
+index a4335bff7..eb73a6a44 100644
+--- a/cinder/volume/drivers/netapp/dataontap/nvme_library.py
++++ b/cinder/volume/drivers/netapp/dataontap/nvme_library.py
+@@ -725,11 +725,12 @@ class NetAppNVMeStorageLibrary(
+             raise exception.VolumeBackendAPIException(
+                 data=msg % name)
+ 
+-        portal = (target_portals[0], self.NVME_PORT, self.NVME_TRANSPORT)
++        portals = [(ip, self.NVME_PORT,
++                    self.NVME_TRANSPORT) for ip in target_portals]
+         data = {
+             "target_nqn": str(target_nqn),
+             "host_nqn": host_nqn,
+-            "portals": [portal],
++            "portals": portals,
+             "vol_uuid": namespace_uuid
+         }
+         conn_info = {"driver_volume_type": "nvmeof", "data": data}
+diff --git a/releasenotes/notes/bug-2121791-fixing-nvme-multipath-issue-389c393b6c4b33fc.yaml b/releasenotes/notes/bug-2121791-fixing-nvme-multipath-issue-389c393b6c4b33fc.yaml
+new file mode 100644
+index 000000000..8fd62e530
+--- /dev/null
++++ b/releasenotes/notes/bug-2121791-fixing-nvme-multipath-issue-389c393b6c4b33fc.yaml
+@@ -0,0 +1,13 @@
++---
++fixes:
++  - |
++    NetApp driver `bug #2121791
++    <https://bugs.launchpad.net/cinder/+bug/2121791>`_: Fixed
++    NetApp NVMe/TCP: Fixed multipath support for volume attachments
++    Previously, the NVMe over TCP driver only returned a single target
++    portal when initializing volume connections, even when multiple
++    paths were available on the NetApp array.This caused volumes
++    to attach using only one path, preventing proper multipath functionality.
++    The initialize_connection method now returns all available target
++    portals, enabling native NVMe multipath to utilize all
++    configured paths for improved redundancy and performance.
