@@ -1,4 +1,4 @@
-commit 335e3ae99deb5efbf769653b6ee1707b23129402
+commit 35e972707a0cd779ce54c142c727af0fd9e3f415
 Author: jayaanan <jayaanand.borra@netapp.com>
 Date:   Wed Mar 19 01:26:19 2025 -0400
 
@@ -11,10 +11,9 @@ Date:   Wed Mar 19 01:26:19 2025 -0400
     Closes-bug: #2120279
     Change-Id: If7de1dd46798b82211be10708f8eb1d175eafb75
     Signed-off-by: jayaanan <jayaanand.borra@netapp.com>
-    (cherry picked from commit 1549d536d1fe106964dcf188741ec7ef292b5cdc)
 
 diff --git a/cinder/tests/unit/volume/drivers/netapp/dataontap/test_nvme_library.py b/cinder/tests/unit/volume/drivers/netapp/dataontap/test_nvme_library.py
-index e6051468cd..f1fc1cb4d4 100644
+index 40a57fa71..0ce56da3f 100644
 --- a/cinder/tests/unit/volume/drivers/netapp/dataontap/test_nvme_library.py
 +++ b/cinder/tests/unit/volume/drivers/netapp/dataontap/test_nvme_library.py
 @@ -617,7 +617,7 @@ class NetAppNVMeStorageLibraryTestCase(test.TestCase):
@@ -24,13 +23,13 @@ index e6051468cd..f1fc1cb4d4 100644
 -            'online_extend_support': False,
 +            'online_extend_support': True,
              'netapp_is_flexgroup': 'false',
+             'total_volumes': 2,
          }]
-         if report_provisioned_capacity:
 diff --git a/cinder/volume/drivers/netapp/dataontap/nvme_library.py b/cinder/volume/drivers/netapp/dataontap/nvme_library.py
-index d74503e923..9ef25555d1 100644
+index 94bd291b6..8e60c9941 100644
 --- a/cinder/volume/drivers/netapp/dataontap/nvme_library.py
 +++ b/cinder/volume/drivers/netapp/dataontap/nvme_library.py
-@@ -526,7 +526,7 @@ class NetAppNVMeStorageLibrary(
+@@ -527,7 +527,7 @@ class NetAppNVMeStorageLibrary(
              # Add driver capabilities and config info
              pool['QoS_support'] = False
              pool['multiattach'] = True
@@ -41,7 +40,7 @@ index d74503e923..9ef25555d1 100644
              pool['reserved_percentage'] = self.reserved_percentage
 diff --git a/releasenotes/notes/netapp-nvme-in-use-expansion-d11f03fb64050145.yaml b/releasenotes/notes/netapp-nvme-in-use-expansion-d11f03fb64050145.yaml
 new file mode 100644
-index 0000000000..dfb519ad0b
+index 000000000..dfb519ad0
 --- /dev/null
 +++ b/releasenotes/notes/netapp-nvme-in-use-expansion-d11f03fb64050145.yaml
 @@ -0,0 +1,14 @@
