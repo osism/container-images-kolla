@@ -1235,10 +1235,10 @@ index c3c3a7b55..7daec4af0 100644
  
  class TestCredentialEc2(CredentialBaseTestCase):
      """Test v3 credential compatibility with ec2tokens."""
-@@ -1124,3 +1416,103 @@ class TestCredentialEc2(CredentialBaseTestCase):
-         self.assertRaises(exception.CredentialNotFound,
-                           PROVIDERS.credential_api.get_credential,
-                           cred_from_credential_api[0]['id'])
+@@ -1170,3 +1462,103 @@ class TestCredentialEc2(CredentialBaseTestCase):
+         ec2_cred = r.result['credential']
+         self.assertEqual(self.user_id, ec2_cred['user_id'])
+         self.assertEqual(self.project_id, ec2_cred['tenant_id'])
 +
 +    def _get_trust_token(self):
 +        """Create a trust and return a trust-scoped token for the trustee."""
