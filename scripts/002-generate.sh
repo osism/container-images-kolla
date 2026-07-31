@@ -53,8 +53,18 @@ setini DEFAULT tag $DOCKER_TAG
 setini DEFAULT base $KOLLA_BASE
 setini DEFAULT base_tag $KOLLA_BASE_TAG
 setini DEFAULT install_type $KOLLA_INSTALL_TYPE
-setini openstack-base location tarballs/requirements-stable-$OPENSTACK_VERSION.tar.gz
-sed -i "/\[openstack-base\]/a # tarball = https://tarballs.opendev.org/openstack/requirements/requirements-stable-$OPENSTACK_VERSION.tar.gz" $KOLLA_CONF_FILE
+# NOTE: Upstream renames stable/<version> to unmaintained/<version> when a
+# release enters the unmaintained phase. tarballs.opendev.org keeps serving the
+# requirements-stable-<version> artifact but stops refreshing it, so the branch
+# has to be selected explicitly here. Mirrors the checkout in 001-prepare.sh.
+if [[ "$OPENSTACK_VERSION" == "2024.1" ]]; then
+    REQUIREMENTS_BRANCH="unmaintained-$OPENSTACK_VERSION"
+else
+    REQUIREMENTS_BRANCH="stable-$OPENSTACK_VERSION"
+fi
+
+setini openstack-base location tarballs/requirements-$REQUIREMENTS_BRANCH.tar.gz
+sed -i "/\[openstack-base\]/a # tarball = https://tarballs.opendev.org/openstack/requirements/requirements-$REQUIREMENTS_BRANCH.tar.gz" $KOLLA_CONF_FILE
 setini openstack-base type local
 
 
