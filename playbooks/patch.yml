@@ -6,6 +6,11 @@
     docker_registry: osism.harbor.regio.digital
 
   tasks:
+    - name: Run patch-lib tests
+      ansible.builtin.command:
+        chdir: "{{ zuul.project.src_dir }}"
+        cmd: bash scripts/test-patch-lib.sh
+      changed_when: false
     - name: Run patch script
       ansible.builtin.shell:
         executable: /bin/bash

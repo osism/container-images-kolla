@@ -25,6 +25,10 @@ SOURCE_DOCKER_TAG=build-$BUILD_ID
 . defaults/all.sh
 . defaults/$OPENSTACK_VERSION.sh
 
+. scripts/patch-lib.sh
+
+reset_patch_manifest
+
 export VERSION
 export OPENSTACK_VERSION
 
@@ -67,11 +71,9 @@ rm -rf $PROJECT_REPOSITORY_PATH/docker/rabbitmq/rabbitmq-4-1
 
 # Apply patches
 
-for patch in $(find patches/kolla-build/$OPENSTACK_VERSION -type f -name '*.patch'); do
+for patch in $(find patches/kolla-build/$OPENSTACK_VERSION -type f -name '*.patch' | sort); do
     pushd $PROJECT_REPOSITORY_PATH > /dev/null
-    echo "APPLY PATCH $patch"
-    patch --forward --batch -p1 --dry-run < ../$patch || exit 1
-    patch --forward --batch -p1 < ../$patch
+    apply_patch "$patch"
     popd > /dev/null
 done
 
@@ -102,9 +104,7 @@ for project in $(find patches/$OPENSTACK_VERSION -mindepth 1 -type d | grep koll
     project=$(basename $project)
     for patch in $(find patches/$OPENSTACK_VERSION/$project -type f -name '*.patch' | sort); do
         pushd $project > /dev/null
-        echo "APPLY PATCH $patch"
-        patch --forward --batch -p1 --dry-run < ../$patch || exit 1
-        patch --forward --batch -p1 < ../$patch
+        apply_patch "$patch"
         popd > /dev/null
     done
 done

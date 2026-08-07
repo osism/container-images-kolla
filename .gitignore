@@ -1,3 +1,4 @@
+.patches-applied
 apt_preferences.ubuntu
 etc/kolla-build.conf
 images.lst

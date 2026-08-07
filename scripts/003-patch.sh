@@ -21,6 +21,7 @@ fi
 
 . defaults/all.sh
 . defaults/$OPENSTACK_VERSION.sh
+. scripts/patch-lib.sh
 
 export VERSION
 export OPENSTACK_VERSION
@@ -69,13 +70,30 @@ mkdir -p tarballs
 
 ping -c2 tarballs.opendev.org
 
-for tarball in $(grep '# tarball' $KOLLA_CONF_FILE | awk '{ print $4 }'); do
+# NOTE: The generated config repeats a tarball's `# tarball` line for
+# projects that produce more than one kolla image section (e.g.
+# neutron-dynamic-routing, which also has a
+# neutron-server-plugin-neutron-dynamic-routing section). Each tarball
+# must be processed exactly once, so dedupe while preserving the
+# generated config's order; `sort -u` would reorder processing instead.
+for tarball in $(awk '/# tarball/ && !seen[$4]++ { print $4 }' $KOLLA_CONF_FILE); do
     pushd tarballs > /dev/null
 
     filename=$(basename $tarball)
     if [[ -e $filename ]]; then
-        popd > /dev/null
-        continue
+        # A cached tarball has already been repacked with its patches applied,
+        # so re-applying them would trip the reversed-patch guard. It may also
+        # predate a change to the patch set. Re-download anything the
+        # verification at the end of this script covers; keep the rest cached.
+        directory=$(tar -tzf $filename | head -1 | cut -f1 -d"/")
+        if resolve_project_dir "patches/$OPENSTACK_VERSION" "$directory" > /dev/null \
+            || resolve_project_dir "overlays/$OPENSTACK_VERSION" "$directory" "/source" > /dev/null; then
+            echo "Re-download $filename: cached tarball belongs to a patched project"
+            rm $filename
+        else
+            popd > /dev/null
+            continue
+        fi
     fi
 
     echo Download $tarball
@@ -88,17 +106,17 @@ for tarball in $(grep '# tarball' $KOLLA_CONF_FILE | awk '{ print $4 }'); do
 
     echo Process $filename
     directory=$(tar -tzf $filename | head -1 | cut -f1 -d"/")
+    patch_dir=$(resolve_project_dir "patches/$OPENSTACK_VERSION" "$directory") || patch_dir=""
+    overlay_dir=$(resolve_project_dir "overlays/$OPENSTACK_VERSION" "$directory" "/source") || overlay_dir=""
 
     echo Check patches for $filename
-    if [[ -e ../patches/$OPENSTACK_VERSION/${directory%-*} ]]; then
+    if [[ -n $patch_dir ]]; then
         tar xzf $filename
         rm $filename
         find $directory -type f | sort > files-before
         pushd $directory > /dev/null
-        for patch in $(find ../../patches/$OPENSTACK_VERSION/${directory%-*} -type f -name '*.patch' | sort); do
-            echo "APPLY PATCH $patch"
-            patch --forward --batch -p1 --dry-run < $patch || exit 1
-            patch --forward --batch -p1 < $patch
+        for patch in $(find "$PATCH_ROOT/$patch_dir" -type f -name '*.patch' | sort); do
+            apply_patch "${patch#$PATCH_ROOT/}"
         done
         popd > /dev/null
         find $directory -type f | sort > files-after
@@ -109,11 +127,11 @@ for tarball in $(grep '# tarball' $KOLLA_CONF_FILE | awk '{ print $4 }'); do
     fi
 
     echo Check overlays for $filename
-    if [[ -e ../overlays/$OPENSTACK_VERSION/${directory%-*}/source ]]; then
+    if [[ -n $overlay_dir ]]; then
         tar xzf $filename
         rm $filename
         find $directory -type f | sort > files-before
-        rsync -avz ../overlays/$OPENSTACK_VERSION/${directory%-*}/source/ $directory
+        rsync -avz "$PATCH_ROOT/$overlay_dir/" $directory
         find $directory -type f | sort > files-after
         append_new_files_to_sources_txt $directory files-before files-after
         rm files-before files-after
@@ -122,3 +140,7 @@ for tarball in $(grep '# tarball' $KOLLA_CONF_FILE | awk '{ print $4 }'); do
     fi
     popd > /dev/null
 done
+
+verify_all_patches_applied "$PATCH_MANIFEST" \
+    "patches/$OPENSTACK_VERSION" \
+    "patches/kolla-build/$OPENSTACK_VERSION" || exit 3
