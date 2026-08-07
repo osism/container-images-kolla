@@ -41,12 +41,21 @@ resolve_project_dir () {
     local directory=$2
     local suffix=${3:-}
     local name=${directory%-*}
-    local path=$root/$name$suffix
+    local candidate path
 
-    if [[ -d $PATCH_ROOT/$path ]]; then
-        echo "$path"
-        return 0
-    fi
+    # opendev emits PEP 625-normalized sdists, so a tarball may use underscores
+    # where the directory in this repository uses hyphens, or the reverse. Each
+    # tree is probed independently: a project may have only an overlay, spelled
+    # differently from its patch directory. If both spellings exist in one tree
+    # the first wins and the loser's files show up as unapplied, which the
+    # verification at the end of 003-patch.sh reports.
+    for candidate in "$name" "${name//_/-}" "${name//-/_}"; do
+        path=$root/$candidate$suffix
+        if [[ -d $PATCH_ROOT/$path ]]; then
+            echo "$path"
+            return 0
+        fi
+    done
 
     return 1
 }
