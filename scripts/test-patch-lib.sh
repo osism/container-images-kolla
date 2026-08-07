@@ -154,6 +154,43 @@ else
     fail "resolve_project_dir emits no output when nothing matches (got '$resolved')"
 fi
 
+# --- resolve_project_dir: PEP 625 spelling variants -------------------------
+
+# opendev now ships neutron-dynamic-routing as an underscore-normalized sdist,
+# so the tarball's top directory no longer matches the hyphenated patch
+# directory in this repository. Both spellings must resolve, in both
+# directions.
+
+new_fixture
+mkdir -p "$PATCH_ROOT/patches/2025.1/neutron-dynamic-routing"
+resolved=$(resolve_project_dir "patches/2025.1" "neutron_dynamic_routing-26.0.0.0rc2.dev2")
+check_status "underscore tarball finds a hyphenated directory" 0 $?
+if [[ $resolved == "patches/2025.1/neutron-dynamic-routing" ]]; then
+    ok "underscore tarball resolves to the hyphenated directory"
+else
+    fail "underscore tarball resolves to the hyphenated directory (got '$resolved')"
+fi
+
+new_fixture
+mkdir -p "$PATCH_ROOT/patches/2025.1/neutron_dynamic_routing"
+resolved=$(resolve_project_dir "patches/2025.1" "neutron-dynamic-routing-24.0.1.dev3")
+check_status "hyphenated tarball finds an underscore directory" 0 $?
+if [[ $resolved == "patches/2025.1/neutron_dynamic_routing" ]]; then
+    ok "hyphenated tarball resolves to the underscore directory"
+else
+    fail "hyphenated tarball resolves to the underscore directory (got '$resolved')"
+fi
+
+new_fixture
+mkdir -p "$PATCH_ROOT/overlays/2025.1/neutron-dynamic-routing/source"
+resolved=$(resolve_project_dir "overlays/2025.1" "neutron_dynamic_routing-26.0.0.0rc2.dev2" "/source")
+check_status "spelling variants also apply to overlays" 0 $?
+if [[ $resolved == "overlays/2025.1/neutron-dynamic-routing/source" ]]; then
+    ok "overlay variant resolves independently of the patch tree"
+else
+    fail "overlay variant resolves independently of the patch tree (got '$resolved')"
+fi
+
 echo
 if [[ $failures -gt 0 ]]; then
     echo "$failures test(s) failed"
