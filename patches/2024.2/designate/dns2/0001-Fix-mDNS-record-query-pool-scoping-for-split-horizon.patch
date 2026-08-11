@@ -1,0 +1,255 @@
+From 6df8dc071ecfe6acf2776e8c47edde7d4f3c3642 Mon Sep 17 00:00:00 2001
+From: Omer <oschwart@redhat.com>
+Date: Tue, 24 Feb 2026 12:45:53 +0100
+Subject: [PATCH 1/3] Fix mDNS record query pool scoping for split-horizon DNS
+
+_handle_record_query did not use TSIG-based pool scoping when looking
+up recordsets. When the same zone name exists in multiple pools (e.g.
+split-horizon with BIND views), find_recordset found multiple SOA
+records and returned REFUSED.
+
+Use _zone_criterion_from_request to resolve the zone by pool first,
+then look up the recordset within that zone. Falls back to the
+recordset-first path for subdomain queries.
+
+Assisted-By: Claude Code 4.6 Opus
+Closes-Bug: #2142581
+Change-Id: I3807e32f0010e8f62fc59acaefccf4ea41e85387
+Signed-off-by: Omer <oschwart@redhat.com>
+(cherry picked from commit 027623ea07253aaea349478b884f8d2ede2f4619)
+(cherry picked from commit 912c03039c843fb3b5846eef318fd2d29ad98c5c)
+(cherry picked from commit c40f9ff7f2e963fa0459e0cb022e6db82fe27942)
+(cherry picked from commit 9cf243268fe224abb38fff8d65b8c3c8d33fed2f)
+---
+ designate/mdns/handler.py                     |  70 +++++++----
+ designate/tests/unit/mdns/test_handler.py     | 112 ++++++++++++++++++
+ ...ns-record-query-pool-scoping-9b035369.yaml |   9 ++
+ 3 files changed, 166 insertions(+), 25 deletions(-)
+ create mode 100644 releasenotes/notes/fix-mdns-record-query-pool-scoping-9b035369.yaml
+
+diff --git a/designate/mdns/handler.py b/designate/mdns/handler.py
+index 85ab7642..f14e8e47 100644
+--- a/designate/mdns/handler.py
++++ b/designate/mdns/handler.py
+@@ -314,14 +314,51 @@ class RequestHandler:
+         try:
+             q_rrset = request.question[0]
+             name = q_rrset.name.to_text()
+-            # TODO(vinod) once validation is separated from the api,
+-            # validate the parameters
+-            criterion = {
+-                'name': name,
+-                'type': dns.rdatatype.to_text(q_rrset.rdtype),
+-                'zones_deleted': False
+-            }
+-            recordset = self.storage.find_recordset(context, criterion)
++            rdtype = dns.rdatatype.to_text(q_rrset.rdtype)
++
++            # Try to find the zone first using TSIG-based pool scoping.
++            # This handles split-horizon configurations where the same
++            # zone name exists in multiple pools. The TSIG key on the
++            # request determines which pool's zone to serve, matching
++            # the approach used by _handle_axfr.
++            zone = None
++            try:
++                zone_criterion = self._zone_criterion_from_request(
++                    request, {'name': name})
++                zone = self.storage.find_zone(context, zone_criterion)
++            except exceptions.ZoneNotFound:
++                # Query name may not be a zone name (e.g. a subdomain
++                # like www.example.com when the zone is example.com).
++                # Fall through to the recordset-first lookup below.
++                pass
++
++            if zone:
++                # Zone found - look up the recordset within this
++                # specific zone. The zone_id scoping ensures we find
++                # the correct recordset even when multiple pools have
++                # zones with the same name.
++                criterion = {
++                    'zone_id': zone.id,
++                    'name': name,
++                    'type': rdtype,
++                }
++                recordset = self.storage.find_recordset(
++                    context, criterion)
++            else:
++                # Could not match the query name to a zone directly.
++                # Fall back to finding the recordset by name and type,
++                # then verify the zone matches the TSIG key's pool.
++                criterion = {
++                    'name': name,
++                    'type': rdtype,
++                    'zones_deleted': False
++                }
++                recordset = self.storage.find_recordset(
++                    context, criterion)
++
++                zone_criterion = self._zone_criterion_from_request(
++                    request, {'id': recordset.zone_id})
++                zone = self.storage.find_zone(context, zone_criterion)
+ 
+         except exceptions.NotFound:
+             # If an FQDN exists, like www.rackspace.com, but the specific
+@@ -351,23 +388,6 @@ class RequestHandler:
+             yield self._handle_query_error(request, dns.rcode.REFUSED)
+             return
+ 
+-        try:
+-            criterion = self._zone_criterion_from_request(
+-                request, {'id': recordset.zone_id})
+-            zone = self.storage.find_zone(context, criterion)
+-
+-        except exceptions.ZoneNotFound:
+-            LOG.warning('ZoneNotFound while handling query request. '
+-                        'Question was %(qr)s', {'qr': q_rrset})
+-            yield self._handle_query_error(request, dns.rcode.REFUSED)
+-            return
+-
+-        except exceptions.Forbidden:
+-            LOG.warning('Forbidden while handling query request. '
+-                        'Question was %(qr)s', {'qr': q_rrset})
+-            yield self._handle_query_error(request, dns.rcode.REFUSED)
+-            return
+-
+         r_rrset = self._convert_to_rrset(zone, recordset)
+         response.answer = [r_rrset] if r_rrset else []
+         response.set_rcode(dns.rcode.NOERROR)
+diff --git a/designate/tests/unit/mdns/test_handler.py b/designate/tests/unit/mdns/test_handler.py
+index 135df016..dcaf3a71 100644
+--- a/designate/tests/unit/mdns/test_handler.py
++++ b/designate/tests/unit/mdns/test_handler.py
+@@ -442,3 +442,115 @@ class HandleRecordQueryTest(oslotest.base.BaseTestCase):
+ 
+         self.assertEqual(1, len(response))
+         self.assertEqual(dns.rcode.REFUSED, response[0].rcode())
++
++    def test_handle_record_query_zone_first_with_tsig(self):
++        """Test zone-first lookup with POOL-scoped TSIG key.
++
++        In split-horizon configurations the same zone name exists in
++        multiple pools.  The TSIG key determines which pool's zone to
++        serve.  When the query name matches a zone name the handler
++        should resolve the zone by name + pool_id first, then look up
++        the recordset within that zone.
++        """
++        pool_id = 'c4f6ea1c-a1af-4401-a849-000000000001'
++        zone_id = 'e2bed4dc-9d01-11e4-89d3-123b93f75cba'
++        zone = objects.Zone(
++            id=zone_id, name='example.org.', pool_id=pool_id, ttl=3600,
++        )
++        recordset = objects.RecordSet(
++            name='example.org.', type='SOA',
++            records=objects.RecordList(objects=[
++                objects.Record(
++                    data='ns1.example.org. admin.example.org. '
++                         '2024010100 3600 600 86400 3600'),
++            ])
++        )
++        self.storage.find_zone.return_value = zone
++        self.storage.find_recordset.return_value = recordset
++
++        tsigkey = mock.Mock(scope='POOL', resource_id=pool_id)
++
++        request = dns.message.make_query(
++            'example.org.', dns.rdatatype.SOA)
++        request.environ = dict(context=self.context, tsigkey=tsigkey)
++        response = tuple(self.handler._handle_record_query(request))
++
++        self.assertEqual(1, len(response))
++        self.assertEqual(dns.rcode.NOERROR, response[0].rcode())
++
++        # Zone looked up by name + pool_id (zone-first path)
++        self.storage.find_zone.assert_called_once_with(
++            self.context,
++            {'name': 'example.org.', 'pool_id': pool_id}
++        )
++        # Recordset scoped to zone_id
++        self.storage.find_recordset.assert_called_once_with(
++            self.context,
++            {'zone_id': zone_id, 'name': 'example.org.', 'type': 'SOA'}
++        )
++
++    def test_handle_record_query_subdomain_with_tsig(self):
++        """Test recordset-first fallback for subdomain queries with TSIG.
++
++        When the query is for a subdomain (www.example.org.) rather than
++        a zone apex, the zone-first lookup raises ZoneNotFound because
++        no zone is named 'www.example.org.'.  The handler falls back to
++        finding the recordset by name, then verifies the zone matches
++        the TSIG key's pool.  The overall query still succeeds.
++        """
++        pool_id = 'c4f6ea1c-a1af-4401-a849-000000000001'
++        zone_id = 'e2bed4dc-9d01-11e4-89d3-123b93f75cba'
++        zone = objects.Zone(
++            id=zone_id, name='example.org.', pool_id=pool_id, ttl=3600,
++        )
++        recordset = objects.RecordSet(
++            name='www.example.org.', type='A', zone_id=zone_id,
++            records=objects.RecordList(objects=[
++                objects.Record(data='192.0.2.1'),
++            ])
++        )
++
++        # First find_zone (name='www.example.org.') fails;
++        # second find_zone (id=zone_id) succeeds.
++        self.storage.find_zone.side_effect = [
++            exceptions.ZoneNotFound, zone
++        ]
++        self.storage.find_recordset.return_value = recordset
++
++        tsigkey = mock.Mock(scope='POOL', resource_id=pool_id)
++
++        request = dns.message.make_query(
++            'www.example.org.', dns.rdatatype.A)
++        request.environ = dict(context=self.context, tsigkey=tsigkey)
++        response = tuple(self.handler._handle_record_query(request))
++
++        self.assertEqual(1, len(response))
++        self.assertEqual(dns.rcode.NOERROR, response[0].rcode())
++
++        self.assertEqual(2, self.storage.find_zone.call_count)
++        # Recordset found via fallback path (no zone_id scoping)
++        self.storage.find_recordset.assert_called_once_with(
++            self.context,
++            {'name': 'www.example.org.', 'type': 'A',
++             'zones_deleted': False}
++        )
++
++    def test_handle_record_query_zone_found_recordset_not_found(self):
++        """Test REFUSED when zone exists but recordset type does not."""
++        pool_id = 'c4f6ea1c-a1af-4401-a849-000000000001'
++        zone = objects.Zone(
++            id='e2bed4dc-9d01-11e4-89d3-123b93f75cba',
++            name='example.org.', pool_id=pool_id, ttl=3600,
++        )
++        self.storage.find_zone.return_value = zone
++        self.storage.find_recordset.side_effect = exceptions.NotFound
++
++        tsigkey = mock.Mock(scope='POOL', resource_id=pool_id)
++
++        request = dns.message.make_query(
++            'example.org.', dns.rdatatype.MX)
++        request.environ = dict(context=self.context, tsigkey=tsigkey)
++        response = tuple(self.handler._handle_record_query(request))
++
++        self.assertEqual(1, len(response))
++        self.assertEqual(dns.rcode.REFUSED, response[0].rcode())
+diff --git a/releasenotes/notes/fix-mdns-record-query-pool-scoping-9b035369.yaml b/releasenotes/notes/fix-mdns-record-query-pool-scoping-9b035369.yaml
+new file mode 100644
+index 00000000..ba4c7d97
+--- /dev/null
++++ b/releasenotes/notes/fix-mdns-record-query-pool-scoping-9b035369.yaml
+@@ -0,0 +1,9 @@
++---
++fixes:
++  - |
++    Fixed mDNS ``_handle_record_query`` to use TSIG-based pool scoping when
++    looking up SOA and other record queries. Previously, when the same zone
++    name existed in multiple pools (e.g. split-horizon DNS), the handler
++    would find multiple matching recordsets and return REFUSED. The handler
++    now resolves the zone first using the TSIG key's pool_id, then looks up
++    the recordset within that zone.
+-- 
+2.47.3
+

@@ -1,0 +1,453 @@
+From 32e74e1ceff734237d4518b96cca912cb673c23c Mon Sep 17 00:00:00 2001
+From: Omer <oschwart@redhat.com>
+Date: Fri, 19 Dec 2025 18:42:32 -0300
+Subject: [PATCH 2/3] Require TSIG keys for zones in non-default pools
+
+Add validation during zone creation and pool moves to ensure that
+non-default pools have TSIG keys configured. Without TSIG, MDNS
+defaults to searching only in the default pool, causing zones in
+other pools to fail with 'ZoneNotFound' errors during AXFR,
+leaving them stuck in ERROR status.
+
+This provides fail-fast behavior with a clear error message,
+rather than allowing zones to silently fail during synchronization.
+
+Note: this does not change existing API behavior for the user as
+the zone would get into ERROR eventually without a TSIG key.
+
+Documentation has been added to explain the TSIG requirement for
+multi-pool deployments.
+
+Closes-Bug: #2008693
+Assisted-By: Claude Code 4.5 Sonnet
+Change-Id: I5a2a18903e2bdc6a7b2202203ef3d41a0c6a7849
+Signed-off-by: Omer <oschwart@redhat.com>
+(cherry picked from commit 7dfcfb74f0375e016da3ae99bc39651bccefa189)
+(cherry picked from commit 094ce8d73023452f66f45b0d92d46e073f7f36bc)
+(cherry picked from commit ef31c9598371471d0e91986c968a1dd85c64746c)
+(cherry picked from commit 15f5db678cec792cb5421659e25cfeb35d64817a)
+---
+ designate/central/service.py                  |  21 ++++
+ .../tests/functional/central/test_service.py  | 103 ++++++++++++++++++
+ .../tests/functional/manage/test_pool.py      |   8 ++
+ designate/tests/functional/test_storage.py    |   1 +
+ doc/source/admin/multiple-pools.rst           |  88 +++++++++++++++
+ ...re-tsig-for-non-default-pools-2008693.yaml |  12 ++
+ 6 files changed, 233 insertions(+)
+ create mode 100644 releasenotes/notes/require-tsig-for-non-default-pools-2008693.yaml
+
+diff --git a/designate/central/service.py b/designate/central/service.py
+index 75fd6fa5..54723261 100644
+--- a/designate/central/service.py
++++ b/designate/central/service.py
+@@ -352,6 +352,23 @@ class Service(service.RPCService):
+                 "A project ID must be specified when not using a project "
+                 "scoped token.")
+ 
++    def _validate_pool_tsig_key(self, context, pool_id):
++        if pool_id == CONF['service:central'].default_pool_id:
++            return
++        criterion = {'scope': 'POOL', 'resource_id': pool_id}
++        try:
++            self.storage.find_tsigkey(context, criterion)
++        except exceptions.TsigKeyNotFound:
++            pool = self.storage.get_pool(context, pool_id)
++            raise exceptions.BadRequest(
++                'Zones in non-default pools require a TSIG key with '
++                'scope=POOL for zone transfers. Pool "%s" (ID: %s) does '
++                'not have a TSIG key configured. Please create a TSIG '
++                'key for this pool and configure the same key in the '
++                'backend nameservers before creating zones.' %
++                (pool.name, pool_id)
++            )
++
+     # SOA Recordset Methods
+     @staticmethod
+     def _build_soa_record(zone, ns_records):
+@@ -769,6 +786,8 @@ class Service(service.RPCService):
+         # Get a pool id
+         zone.pool_id = self.scheduler.schedule_zone(context, zone)
+ 
++        self._validate_pool_tsig_key(context, zone.pool_id)
++
+         # Handle sub-zones appropriately
+         parent_zone = self._is_subzone(
+             context, zone.name, zone.pool_id)
+@@ -1384,6 +1403,8 @@ class Service(service.RPCService):
+         except exceptions.PoolNotFound:
+             raise exceptions.BadRequest('Target pool does not exist')
+ 
++        self._validate_pool_tsig_key(context, target_pool_id)
++
+         target_pool_ns_records = self._get_pool_ns_records(context,
+                                                            target_pool_id)
+         if len(target_pool_ns_records) == 0:
+diff --git a/designate/tests/functional/central/test_service.py b/designate/tests/functional/central/test_service.py
+index df64ea43..bebaf351 100644
+--- a/designate/tests/functional/central/test_service.py
++++ b/designate/tests/functional/central/test_service.py
+@@ -495,11 +495,48 @@ class CentralServiceTest(designate.tests.functional.TestCase):
+ 
+         # Create a secondary pool
+         second_pool = self.create_pool()
++        self.create_tsigkey(scope='POOL', resource_id=second_pool.id)
+         fixture["attributes"] = {}
+         fixture["attributes"]["pool_id"] = second_pool.id
+ 
+         self.create_zone(**fixture)
+ 
++    def test_create_zone_non_default_pool_without_tsig(self):
++        """Test that zone creation in non-default pool without TSIG fails"""
++        fixture = self.get_zone_fixture()
++
++        # Create a secondary pool without a TSIG key
++        second_pool = self.create_pool()
++
++        # Attempt to create a zone in the pool without TSIG
++        fixture["attributes"] = {}
++        fixture["attributes"]["pool_id"] = second_pool.id
++
++        # Should raise BadRequest exception
++        exc = self.assertRaises(
++            rpc_dispatcher.ExpectedException,
++            self.central_service.create_zone,
++            self.admin_context,
++            objects.Zone.from_dict(fixture)
++        )
++        self.assertEqual(exceptions.BadRequest, exc.exc_info[0])
++        self.assertIn('TSIG key', str(exc.exc_info[1]))
++
++    def test_create_zone_non_default_pool_with_tsig(self):
++        """Test that zone creation in non-default pool with TSIG succeeds"""
++        fixture = self.get_zone_fixture()
++
++        # Create a secondary pool and TSIG key for it
++        second_pool = self.create_pool()
++        self.create_tsigkey(scope='POOL', resource_id=second_pool.id)
++
++        # Create a zone in the pool with TSIG
++        fixture["attributes"] = {}
++        fixture["attributes"]["pool_id"] = second_pool.id
++
++        zone = self.create_zone(**fixture)
++        self.assertEqual(second_pool.id, zone.pool_id)
++
+     def test_create_zone_over_tld(self):
+         values = dict(
+             name='example.com.',
+@@ -590,6 +627,7 @@ class CentralServiceTest(designate.tests.functional.TestCase):
+ 
+         # Create a secondary pool
+         second_pool = self.create_pool()
++        self.create_tsigkey(scope='POOL', resource_id=second_pool.id)
+         fixture["attributes"] = {}
+         fixture["attributes"]["pool_id"] = second_pool.id
+         fixture["name"] = "sub.%s" % fixture["name"]
+@@ -3025,6 +3063,7 @@ class CentralServiceTest(designate.tests.functional.TestCase):
+     def test_update_pool_add_ns_record(self):
+         # Create a server pool and 3 zones
+         pool = self.create_pool(fixture=0)
++        self.create_tsigkey(scope='POOL', resource_id=pool.id)
+         zone = self.create_zone(
+             attributes=[{'key': 'pool_id', 'value': pool.id}])
+         self.create_zone(
+@@ -3069,6 +3108,7 @@ class CentralServiceTest(designate.tests.functional.TestCase):
+ 
+     def test_update_pool_add_ns_record_without_priority(self):
+         pool = self.create_pool(fixture=0)
++        self.create_tsigkey(scope='POOL', resource_id=pool.id)
+         self.create_zone(pool_id=pool.id)
+         new_ns_record = objects.PoolNsRecord(hostname='ns-new.example.org.')
+         pool.ns_records.append(new_ns_record)
+@@ -3079,6 +3119,7 @@ class CentralServiceTest(designate.tests.functional.TestCase):
+     def test_update_pool_remove_ns_record(self):
+         # Create a server pool and zone
+         pool = self.create_pool(fixture=0)
++        self.create_tsigkey(scope='POOL', resource_id=pool.id)
+         zone = self.create_zone(
+             attributes=[{'key': 'pool_id', 'value': pool.id}])
+ 
+@@ -4244,6 +4285,7 @@ class CentralServiceTest(designate.tests.functional.TestCase):
+ 
+     def test_pool_move_zone(self):
+         pool = self.create_pool(fixture=0)
++        self.create_tsigkey(scope='POOL', resource_id=pool.id)
+         zone = self.create_zone(context=self.admin_context, pool_id=pool.id)
+         self.storage.create_pool_ns_record(
+             self.admin_context, pool['id'],
+@@ -4252,6 +4294,8 @@ class CentralServiceTest(designate.tests.functional.TestCase):
+ 
+         # create second pool
+         second_pool = self.create_pool(fixture=1)
++        self.create_tsigkey(name='test-key-second-pool', scope='POOL',
++                           resource_id=second_pool.id)
+         self.storage.create_pool_ns_record(
+             self.admin_context, second_pool['id'],
+             objects.PoolNsRecord(priority=1, hostname='ns-new.example.org.')
+@@ -4263,6 +4307,55 @@ class CentralServiceTest(designate.tests.functional.TestCase):
+         self.assertEqual(zone.id, moved_zone.id)
+         self.assertEqual(moved_zone.pool_id, second_pool['id'])
+ 
++    def test_pool_move_zone_from_non_default_to_default_pool(self):
++        # create 2 pools
++        pool = self.create_pool(fixture=0)
++        self.create_tsigkey(scope='POOL', resource_id=pool.id)
++        second_pool = self.create_pool(fixture=1)
++        self.create_tsigkey(name='test-key-second-pool', scope='POOL',
++                           resource_id=second_pool.id)
++
++        self.config(scheduler_filters=['pool_id_attribute'],
++                    group='service:central')
++
++        zone = self.create_zone(context=self.admin_context,
++                                pool_id=second_pool.id)
++        self.storage.create_pool_ns_record(
++            self.admin_context, pool['id'],
++            objects.PoolNsRecord(priority=1, hostname='ns-old.example.org.')
++        )
++
++        self.storage.create_pool_ns_record(
++            self.admin_context, second_pool['id'],
++            objects.PoolNsRecord(priority=1, hostname='ns-new.example.org.')
++        )
++
++        self.central_service.pool_move_zone(self.admin_context,
++            zone.id, pool['id'])
++        moved_zone = self.central_service.get_zone(
++            self.admin_context, zone.id
++        )
++        self.assertEqual(moved_zone.pool_id, pool['id'])
++
++    def test_pool_move_zone_without_tsig(self):
++        """Test that moving a zone to a non-default pool without TSIG fails"""
++        zone = self.create_zone()
++
++        second_pool = self.create_pool(fixture=1)
++        self.storage.create_pool_ns_record(
++            self.admin_context, second_pool['id'],
++            objects.PoolNsRecord(priority=1, hostname='ns-new.example.org.')
++        )
++
++        exc = self.assertRaises(
++            rpc_dispatcher.ExpectedException,
++            self.central_service.pool_move_zone,
++            self.admin_context,
++            zone.id, second_pool['id']
++        )
++        self.assertEqual(exceptions.BadRequest, exc.exc_info[0])
++        self.assertIn('TSIG key', str(exc.exc_info[1]))
++
+     def test_pool_move_zone_no_valid_pool_selected(self):
+         pool_id = '794ccc2c-d751-44fe-b57f-8894c9f5c842'
+         zone = self.create_zone(fixture=0, pool_id=pool_id)
+@@ -4277,10 +4370,13 @@ class CentralServiceTest(designate.tests.functional.TestCase):
+ 
+     def test_pool_move_zone_without_target_pool(self):
+         pool = self.create_pool(fixture=0)
++        self.create_tsigkey(scope='POOL', resource_id=pool.id)
+         zone = self.create_zone(context=self.admin_context, pool_id=pool.id)
+ 
+         # create second pool
+         second_pool = self.create_pool(fixture=1)
++        self.create_tsigkey(name='test-key-second-pool', scope='POOL',
++                           resource_id=second_pool.id)
+         new_ns_record = objects.PoolNsRecord(hostname='ns-new.example.org.')
+         second_pool.ns_records.append(new_ns_record)
+ 
+@@ -4295,10 +4391,13 @@ class CentralServiceTest(designate.tests.functional.TestCase):
+ 
+     def test_pool_move_zone_exception_no_ns_records(self):
+         pool = self.create_pool(fixture=0)
++        self.create_tsigkey(scope='POOL', resource_id=pool.id)
+         zone = self.create_zone(context=self.admin_context, pool_id=pool.id)
+ 
+         # create second pool
+         second_pool = self.create_pool(fixture=1)
++        self.create_tsigkey(name='test-key-second-pool', scope='POOL',
++                           resource_id=second_pool.id)
+ 
+         zone.pool_id = second_pool['id']
+         with mock.patch.object(self.central_service, '_get_pool_ns_records',
+@@ -4310,6 +4409,7 @@ class CentralServiceTest(designate.tests.functional.TestCase):
+ 
+     def test_pool_move_zone_exception_invalid_pool_id(self):
+         pool = self.create_pool(fixture=0)
++        self.create_tsigkey(scope='POOL', resource_id=pool.id)
+         zone = self.create_zone(context=self.admin_context, pool_id=pool.id)
+ 
+         # Use fake pool ID
+@@ -4578,6 +4678,7 @@ class CentralServiceTest(designate.tests.functional.TestCase):
+ 
+     def test_create_catalog_member_zone(self):
+         pool = self.create_pool(fixture=2)
++        self.create_tsigkey(scope='POOL', resource_id=pool.id)
+ 
+         self.storage._ensure_catalog_zone_config(self.admin_context, pool)
+         catalog_zone = self.storage.get_catalog_zone(self.admin_context, pool)
+@@ -4595,6 +4696,7 @@ class CentralServiceTest(designate.tests.functional.TestCase):
+ 
+     def test_update_catalog_member_zone(self):
+         pool = self.create_pool(fixture=2)
++        self.create_tsigkey(scope='POOL', resource_id=pool.id)
+ 
+         self.storage._ensure_catalog_zone_config(self.admin_context, pool)
+         catalog_zone = self.storage.get_catalog_zone(self.admin_context, pool)
+@@ -4622,6 +4724,7 @@ class CentralServiceTest(designate.tests.functional.TestCase):
+ 
+     def test_delete_catalog_member_zone(self):
+         pool = self.create_pool(fixture=2)
++        self.create_tsigkey(scope='POOL', resource_id=pool.id)
+ 
+         self.storage._ensure_catalog_zone_config(self.admin_context, pool)
+         catalog_zone = self.storage.get_catalog_zone(self.admin_context, pool)
+diff --git a/designate/tests/functional/manage/test_pool.py b/designate/tests/functional/manage/test_pool.py
+index 4a7c8862..87c275c9 100644
+--- a/designate/tests/functional/manage/test_pool.py
++++ b/designate/tests/functional/manage/test_pool.py
+@@ -283,6 +283,14 @@ class ManagePoolTestCase(designate.tests.functional.TestCase):
+         self.command._setup()
+         self.command._create_pool(get_pools()[0])
+ 
++        # Create TSIG key for the pool to support zone creation validation
++        created_pool = self.central_service.find_pool(
++            self.admin_context, {'name': 'default'})
++        self.create_tsigkey(
++            scope='POOL',
++            resource_id=created_pool.id
++        )
++
+         self.create_zone(fixture=0)
+         self.create_zone(fixture=1)
+ 
+diff --git a/designate/tests/functional/test_storage.py b/designate/tests/functional/test_storage.py
+index eb4f4734..3d5c5dea 100644
+--- a/designate/tests/functional/test_storage.py
++++ b/designate/tests/functional/test_storage.py
+@@ -4023,6 +4023,7 @@ class SqlalchemyStorageTest(designate.tests.functional.TestCase):
+ 
+     def test_get_catalog_zone_records(self):
+         pool = self.create_pool(fixture=2)
++        self.create_tsigkey(scope='POOL', resource_id=pool.id)
+         self.storage._ensure_catalog_zone_config(self.admin_context, pool)
+         member_zone = self.create_zone(
+             attributes=[{'key': 'pool_id', 'value': pool.id}])
+diff --git a/doc/source/admin/multiple-pools.rst b/doc/source/admin/multiple-pools.rst
+index e0045247..9471084e 100644
+--- a/doc/source/admin/multiple-pools.rst
++++ b/doc/source/admin/multiple-pools.rst
+@@ -161,6 +161,94 @@ to store the zone on.
+ Pool Scheduler
+ ==============
+ 
++Configuring TSIG Keys for Non-Default Pools
++============================================
++
++.. important::
++
++   Non-default pools require TSIG (Transaction Signature) keys for zone
++   transfers to function correctly. Without TSIG keys, zones in non-default
++   pools will fail to synchronize with backend nameservers.
++
++Why TSIG Keys Are Required
++---------------------------
++
++When backend nameservers request zone transfers via AXFR from Designate's
++MiniDNS service, MDNS needs to identify which pool the requested zone belongs
++to. MDNS uses TSIG authentication to make this determination:
++
++* **With TSIG**: MDNS uses the TSIG key's resource_id to identify the pool
++  and retrieve the correct zone.
++* **Without TSIG**: MDNS defaults to searching only in the default pool,
++  causing zones in other pools to fail with "ZoneNotFound" errors.
++
++Creating and Configuring TSIG Keys
++-----------------------------------
++
++The process involves generating the TSIG key, configuring it in backend
++nameservers, and registering it in Designate's database. MiniDNS reads
++TSIG keys directly from the Designate database, so no separate MDNS
++configuration is needed.
++
++#. Generate a TSIG key using ``tsig-keygen``:
++
++   .. code-block:: bash
++
++      sudo tsig-keygen -a hmac-sha256 <key-name> > <path-to-key-file>
++
++   This creates a file with content similar to:
++
++   .. code-block:: text
++
++      key "<key-name>" {
++              algorithm hmac-sha256;
++              secret "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
++      };
++
++#. Configure the TSIG key in your backend nameservers. For BIND9, include
++   the key in ``named.conf`` and configure it for use with MDNS:
++
++   .. code-block:: text
++
++      include "<path-to-key-file>";
++
++      server <mdns-ip-address> {
++        keys { <key-name>; };
++      };
++
++#. Create the TSIG key in Designate's database using the API:
++
++   .. code-block:: bash
++
++      # Extract the secret from the key file
++      SECRET=$(grep secret <path-to-key-file> | awk '{print $2}' | tr -d '";')
++
++      # Create the TSIG key in Designate for your pool
++      openstack tsigkey create \
++        --name <key-name> \
++        --algorithm hmac-sha256 \
++        --secret "$SECRET" \
++        --scope POOL \
++        --resource-id <pool-uuid>
++
++#. Verify the TSIG key is properly configured:
++
++   .. code-block:: bash
++
++      # List TSIG keys
++      openstack tsigkey list
++
++      # Verify zones can now be created in the non-default pool
++      openstack zone create --email admin@example.com \
++        --attributes pool_id:<pool-uuid> \
++        example.com.
++
++Without completing all these steps, zones created in non-default pools will
++remain in ERROR status, unable to synchronize with backend nameservers.
++
++Configuring the Pool Scheduler
++==============================
++
+ The pool scheduler allows selecting a pool when a zone is
+ created. Each scheduler acts as a filter, selecting or negating each
+ pool based on some attributes. Designate comes with some simple
+diff --git a/releasenotes/notes/require-tsig-for-non-default-pools-2008693.yaml b/releasenotes/notes/require-tsig-for-non-default-pools-2008693.yaml
+new file mode 100644
+index 00000000..5850f674
+--- /dev/null
++++ b/releasenotes/notes/require-tsig-for-non-default-pools-2008693.yaml
+@@ -0,0 +1,12 @@
++---
++other:
++  - |
++    [`bug 2008693 <https://bugs.launchpad.net/designate/+bug/2008693>`_]
++    Added validation to require TSIG keys for zones in non-default pools.
++    When backend nameservers request zone transfers from MDNS without TSIG
++    authentication, MDNS defaults to searching only in the default pool,
++    causing zones in other pools to fail with "ZoneNotFound" errors. The new
++    validation prevents this by rejecting zone creation and pool moves to
++    non-default pools when no TSIG key with scope=POOL exists for that pool.
++    Documentation has been added explaining how to properly configure TSIG
++    keys for multi-pool deployments.
+-- 
+2.47.3
+
