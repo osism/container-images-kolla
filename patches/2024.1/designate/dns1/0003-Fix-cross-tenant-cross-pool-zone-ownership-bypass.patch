@@ -1,0 +1,526 @@
+From 55c2bc4ef6093dbd9044698c3410dfecac65310a Mon Sep 17 00:00:00 2001
+From: Omer <oschwart@redhat.com>
+Date: Thu, 23 Jul 2026 12:31:13 +0200
+Subject: [PATCH 3/3] Fix cross-tenant/cross-pool zone ownership bypass
+
+Zone ownership checks (duplicate-name, subzone, superzone) and mDNS
+record/NOTIFY lookups only ever considered the zone's own pool, so a
+tenant could bypass all three ownership protections against another
+tenant's zone by scheduling to a different pool, and could trigger an
+ambiguous-lookup DoS in mDNS via a colliding zone name in another pool.
+
+Add _check_zone_ownership_conflicts(), called from create_zone() before
+pool scheduling, which searches for exact-name/subzone/superzone
+conflicts across all pools and rejects them only when the conflicting
+zone belongs to a different tenant. Same-tenant use of an identical or
+overlapping name across pools (split-horizon, pool migrations) is
+preserved unchanged.
+
+Fix the two unscoped mDNS lookups this bypass made exploitable:
+_handle_record_query() now walks from the query name up through its
+ancestors, scoping each candidate by the TSIG-derived (or default)
+pool_id, with no remaining unscoped fallback. _handle_notify() now
+fetches every zone matching the name and disambiguates using the trust
+check it already performs - whether the sending IP is a configured
+master for that zone - since NOTIFY has no TSIG relationship to scope
+by.
+
+Closes-Bug: #2160533
+Change-Id: I0900980fd1f2ecfba11c745762fae2f043078259
+Signed-off-by: Omer <oschwart@redhat.com>
+(cherry picked from commit 7f7adaea0d5246ae3cabb1a5cd4e90de6e6904ba)
+(cherry picked from commit b5255cf54363bdb0775b51cc0fbf38eeb28aecae)
+(cherry picked from commit 6d4fc8923215c8c3193305c30e5db5155fb1f3a5)
+---
+ designate/central/service.py                  |  47 +++++++
+ designate/mdns/handler.py                     | 120 ++++++++++--------
+ .../tests/functional/central/test_basic.py    |   2 +
+ .../tests/functional/central/test_service.py  |  88 +++++++++++++
+ .../tests/functional/mdns/test_handler.py     |  12 +-
+ designate/tests/unit/mdns/test_handler.py     |  35 ++---
+ 6 files changed, 230 insertions(+), 74 deletions(-)
+
+diff --git a/designate/central/service.py b/designate/central/service.py
+index 54723261..f3e41d3c 100644
+--- a/designate/central/service.py
++++ b/designate/central/service.py
+@@ -335,6 +335,49 @@ class Service(service.RPCService):
+ 
+         return subzones
+ 
++    def _check_zone_ownership_conflicts(self, context, zone):
++        """
++        Ensures zone.name does not collide - as an exact duplicate, a
++        subzone, or a superzone - with a zone owned by a different
++        tenant, regardless of which pool that zone lives in. A single
++        tenant may still own the same or an overlapping zone name
++        across multiple pools (e.g. split-horizon deployments); only
++        cross-tenant collisions are rejected here.
++        """
++        context = context.elevated(all_tenants=True)
++        labels = zone.name.split('.')
++
++        # Exact-name duplicate owned by another tenant, in any pool.
++        for existing in self.storage.find_zones(context, {'name': zone.name}):
++            if existing.tenant_id != zone.tenant_id:
++                raise exceptions.DuplicateZone(
++                    'Zone already exists, owned by a different tenant')
++
++        # This zone would be a subzone of a zone owned by another
++        # tenant, in any pool. Stop at the first (nearest) ancestor
++        # match, same as _is_subzone.
++        for i in range(1, len(labels)):
++            name = '.'.join(labels[i:])
++            ancestors = self.storage.find_zones(context, {'name': name})
++            if not ancestors:
++                continue
++            for ancestor in ancestors:
++                if ancestor.tenant_id != zone.tenant_id:
++                    raise exceptions.IllegalChildZone(
++                        'Unable to create subzone in another tenants '
++                        'zone')
++            break
++
++        # This zone would be a superzone of a zone owned by another
++        # tenant, in any pool.
++        search_term = "%%.%(name)s" % {"name": zone.name}
++        for subzone in self.storage.find_zones(
++                context, {'name': search_term}):
++            if subzone.tenant_id != zone.tenant_id:
++                raise exceptions.IllegalParentZone(
++                    'Unable to create zone because another tenant owns '
++                    'a subzone of the zone')
++
+     def _is_valid_ttl(self, context, ttl):
+         if ttl is None:
+             return
+@@ -783,6 +826,10 @@ class Service(service.RPCService):
+         # Ensure TTL is above the minimum
+         self._is_valid_ttl(context, zone.ttl)
+ 
++        # Ensure this zone name does not collide with another tenant's
++        # zone, regardless of which pool either zone lives in
++        self._check_zone_ownership_conflicts(context, zone)
++
+         # Get a pool id
+         zone.pool_id = self.scheduler.schedule_zone(context, zone)
+ 
+diff --git a/designate/mdns/handler.py b/designate/mdns/handler.py
+index d9bd8d9b..14d3aa9b 100644
+--- a/designate/mdns/handler.py
++++ b/designate/mdns/handler.py
+@@ -113,25 +113,41 @@ class RequestHandler:
+             'deleted': False
+         }
+ 
+-        try:
+-            zone = self.storage.find_zone(context, criterion)
+-        except exceptions.ZoneNotFound:
++        # No pool_id here deliberately: NOTIFY has no TSIG requirement
++        # under any configuration, so at this point we don't know
++        # which pool the sender is even talking about. We must look
++        # across every pool and disambiguate afterwards.
++        matching_zones = self.storage.find_zones(context, criterion)
++        if not matching_zones:
++            # No SECONDARY zone with this name exists in any pool.
+             response.set_rcode(dns.rcode.NOTAUTH)
+             yield response
+             return
+ 
+         notify_addr = request.environ['addr'][0]
+ 
+-        # We check if the src_master which is the assumed master for the zone
+-        # that is sending this NOTIFY OP is actually the master. If it's not
+-        # We'll reply but don't do anything with the NOTIFY.
+-        master_addr = zone.get_master_by_ip(notify_addr)
+-        if not master_addr:
++        # There can be more than one SECONDARY zone with this name
++        # across different pools/tenants. Disambiguate using the trust
++        # mechanism NOTIFY already relies on - whether the sending
++        # address is a configured master for the zone - rather than
++        # assuming the name is unique across pools.
++        zone = None
++        master_addr = None
++        for candidate in matching_zones:
++            master_addr = candidate.get_master_by_ip(notify_addr)
++            if master_addr:
++                zone = candidate
++                break
++
++        if not zone:
++            # None of the matching zones (in any pool) list this
++            # sender as a master - refuse, same as the classic
++            # single-zone "wrong master" case.
+             LOG.warning(
+                 'NOTIFY for %(name)s from non-master server %(addr)s, '
+                 'refusing.',
+                 {
+-                    'name': zone.name,
++                    'name': name,
+                     'addr': notify_addr
+                 }
+             )
+@@ -194,6 +210,33 @@ class RequestHandler:
+                 )
+         return criterion
+ 
++    def _find_zone_by_ancestor_walk(self, context, request, name):
++        """Find the zone that would be authoritative for `name`.
++
++        Walks from the full query name up through each ancestor label
++        - e.g. for 'www.example.com.': tries 'www.example.com.' itself
++        (the record may be a zone apex), then 'example.com.', then
++        'com.' - stopping at the first level that matches an existing
++        zone. Every candidate is scoped by the same pool/zone identity
++        derived from the request's TSIG key (or the default pool if
++        unsigned, via `_zone_criterion_from_request`), which is what
++        stops a same-named zone in a different pool from being
++        matched instead. Returns None if no ancestor at any level
++        matches within that scope.
++        """
++        pool_criterion = self._zone_criterion_from_request(request)
++        labels = name.split('.')
++
++        for i in range(len(labels) - 1):
++            ancestor_name = '.'.join(labels[i:])
++            criterion = dict(pool_criterion, name=ancestor_name)
++            try:
++                return self.storage.find_zone(context, criterion)
++            except exceptions.ZoneNotFound:
++                continue
++
++        return None
++
+     def _handle_axfr(self, request):
+         context = request.environ['context']
+         q_rrset = request.question[0]
+@@ -316,49 +359,22 @@ class RequestHandler:
+             name = q_rrset.name.to_text()
+             rdtype = dns.rdatatype.to_text(q_rrset.rdtype)
+ 
+-            # Try to find the zone first using TSIG-based pool scoping.
+-            # This handles split-horizon configurations where the same
+-            # zone name exists in multiple pools. The TSIG key on the
+-            # request determines which pool's zone to serve, matching
+-            # the approach used by _handle_axfr.
+-            zone = None
+-            try:
+-                zone_criterion = self._zone_criterion_from_request(
+-                    request, {'name': name})
+-                zone = self.storage.find_zone(context, zone_criterion)
+-            except exceptions.ZoneNotFound:
+-                # Query name may not be a zone name (e.g. a subdomain
+-                # like www.example.com when the zone is example.com).
+-                # Fall through to the recordset-first lookup below.
+-                pass
+-
+-            if zone:
+-                # Zone found - look up the recordset within this
+-                # specific zone. The zone_id scoping ensures we find
+-                # the correct recordset even when multiple pools have
+-                # zones with the same name.
+-                criterion = {
+-                    'zone_id': zone.id,
+-                    'name': name,
+-                    'type': rdtype,
+-                }
+-                recordset = self.storage.find_recordset(
+-                    context, criterion)
+-            else:
+-                # Could not match the query name to a zone directly.
+-                # Fall back to finding the recordset by name and type,
+-                # then verify the zone matches the TSIG key's pool.
+-                criterion = {
+-                    'name': name,
+-                    'type': rdtype,
+-                    'zones_deleted': False
+-                }
+-                recordset = self.storage.find_recordset(
+-                    context, criterion)
+-
+-                zone_criterion = self._zone_criterion_from_request(
+-                    request, {'id': recordset.zone_id})
+-                zone = self.storage.find_zone(context, zone_criterion)
++            # Find the zone containing this record (apex or not),
++            # scoped to the requester's own pool throughout - same
++            # scoping _handle_axfr uses. This never falls back to a
++            # pool-blind lookup that could collide with a matching
++            # name+type in another pool, so split-horizon setups
++            # (same zone name in multiple pools) resolve correctly.
++            zone = self._find_zone_by_ancestor_walk(context, request, name)
++            if zone is None:
++                raise exceptions.ZoneNotFound()
++
++            criterion = {
++                'zone_id': zone.id,
++                'name': name,
++                'type': rdtype,
++            }
++            recordset = self.storage.find_recordset(context, criterion)
+ 
+         except exceptions.NotFound:
+             # If an FQDN exists, like www.rackspace.com, but the specific
+diff --git a/designate/tests/functional/central/test_basic.py b/designate/tests/functional/central/test_basic.py
+index a2f4890b..983d4e94 100644
+--- a/designate/tests/functional/central/test_basic.py
++++ b/designate/tests/functional/central/test_basic.py
+@@ -698,6 +698,7 @@ class CentralZoneTestCase(CentralBasic):
+         self.service._enforce_zone_quota = mock.Mock()
+         self.service._is_valid_zone_name = mock.Mock()
+         self.service._is_valid_ttl = mock.Mock()
++        self.service._check_zone_ownership_conflicts = mock.Mock()
+         self.service._is_subzone = mock.Mock(
+             return_value=False
+         )
+@@ -738,6 +739,7 @@ class CentralZoneTestCase(CentralBasic):
+         )
+         self.service._is_valid_zone_name = mock.Mock()
+         self.service._is_valid_ttl = mock.Mock()
++        self.service._check_zone_ownership_conflicts = mock.Mock()
+         self.service._is_subzone = mock.Mock(
+             return_value=False
+         )
+diff --git a/designate/tests/functional/central/test_service.py b/designate/tests/functional/central/test_service.py
+index f4312e35..73a23cc2 100644
+--- a/designate/tests/functional/central/test_service.py
++++ b/designate/tests/functional/central/test_service.py
+@@ -719,6 +719,94 @@ class CentralServiceTest(designate.tests.functional.TestCase):
+ 
+         self.assertEqual(exceptions.IllegalParentZone, exc.exc_info[0])
+ 
++    def test_create_zone_duplicate_different_pools_different_tenant_fails(
++            self):
++        context = self.get_admin_context()
++        context.project_id = '1'
++
++        fixture = self.get_zone_fixture()
++        fixture['context'] = context
++
++        # Create first zone that's placed in default pool, owned by
++        # tenant '1'
++        self.create_zone(**fixture)
++
++        # Create a secondary pool
++        second_pool = self.create_pool()
++
++        context = self.get_admin_context()
++        context.project_id = '2'
++
++        fixture['context'] = context
++        fixture['attributes'] = {}
++        fixture['attributes']['pool_id'] = second_pool.id
++
++        # Attempt to create the same zone name in the second pool,
++        # owned by a different tenant
++        exc = self.assertRaises(rpc_dispatcher.ExpectedException,
++                                self.create_zone, **fixture)
++
++        self.assertEqual(exceptions.DuplicateZone, exc.exc_info[0])
++
++    def test_create_subzone_different_pools_different_tenant_fails(self):
++        context = self.get_admin_context()
++        context.project_id = '1'
++
++        fixture = self.get_zone_fixture()
++        fixture['context'] = context
++
++        # Create the parent zone in the default pool, owned by
++        # tenant '1'
++        self.create_zone(**fixture)
++
++        # Create a secondary pool
++        second_pool = self.create_pool()
++
++        context = self.get_admin_context()
++        context.project_id = '2'
++
++        fixture['context'] = context
++        fixture['attributes'] = {}
++        fixture['attributes']['pool_id'] = second_pool.id
++        fixture['name'] = 'sub.%s' % fixture['name']
++
++        # Attempt to create the subzone in the second pool, owned by
++        # a different tenant
++        exc = self.assertRaises(rpc_dispatcher.ExpectedException,
++                                self.create_zone, **fixture)
++
++        self.assertEqual(exceptions.IllegalChildZone, exc.exc_info[0])
++
++    def test_create_superzone_different_pools_different_tenant_fails(self):
++        context = self.get_admin_context()
++        context.project_id = '1'
++
++        zone_values = self.get_zone_fixture(fixture=1)
++        zone_name = zone_values['name']
++
++        subzone_values = copy.deepcopy(zone_values)
++        subzone_values['name'] = 'www.%s' % zone_name
++        subzone_values['context'] = context
++
++        # Create the subzone in the default pool, owned by tenant '1'
++        self.create_zone(**subzone_values)
++
++        # Create a secondary pool
++        second_pool = self.create_pool()
++
++        context = self.get_admin_context()
++        context.project_id = '2'
++
++        zone_values['context'] = context
++        zone_values['attributes'] = {'pool_id': second_pool.id}
++
++        # Attempt to create the superzone in the second pool, owned by
++        # a different tenant
++        exc = self.assertRaises(rpc_dispatcher.ExpectedException,
++                                self.create_zone, **zone_values)
++
++        self.assertEqual(exceptions.IllegalParentZone, exc.exc_info[0])
++
+     def test_create_blacklisted_zone_success(self):
+         # Create blacklisted zone using default values
+         self.create_blacklist()
+diff --git a/designate/tests/functional/mdns/test_handler.py b/designate/tests/functional/mdns/test_handler.py
+index 27174e63..bd15d2a7 100644
+--- a/designate/tests/functional/mdns/test_handler.py
++++ b/designate/tests/functional/mdns/test_handler.py
+@@ -174,8 +174,8 @@ class MdnsRequestHandlerTest(designate.tests.functional.TestCase):
+             'context': self.context
+         }
+ 
+-        with mock.patch.object(self.handler.storage, 'find_zone',
+-                               return_value=zone):
++        with mock.patch.object(self.handler.storage, 'find_zones',
++                               return_value=[zone]):
+             response = next(self.handler(request)).to_wire()
+ 
+         self.assertEqual(expected_response, binascii.b2a_hex(response))
+@@ -211,8 +211,8 @@ class MdnsRequestHandlerTest(designate.tests.functional.TestCase):
+             'context': self.context
+         }
+ 
+-        with mock.patch.object(self.handler.storage, 'find_zone',
+-                               return_value=zone):
++        with mock.patch.object(self.handler.storage, 'find_zones',
++                               return_value=[zone]):
+             response = next(self.handler(request)).to_wire()
+ 
+         assert not self.mock_tg.add_thread.called
+@@ -247,8 +247,8 @@ class MdnsRequestHandlerTest(designate.tests.functional.TestCase):
+             'context': self.context
+         }
+ 
+-        with mock.patch.object(self.handler.storage, 'find_zone',
+-                               return_value=zone):
++        with mock.patch.object(self.handler.storage, 'find_zones',
++                               return_value=[zone]):
+             response = next(self.handler(request)).to_wire()
+ 
+         assert not self.mock_tg.add_thread.called
+diff --git a/designate/tests/unit/mdns/test_handler.py b/designate/tests/unit/mdns/test_handler.py
+index 81385863..1d1d1588 100644
+--- a/designate/tests/unit/mdns/test_handler.py
++++ b/designate/tests/unit/mdns/test_handler.py
+@@ -58,13 +58,13 @@ class MdnsHandleTest(oslotest.base.BaseTestCase):
+     @mock.patch.object(rpc, 'get_client', mock.Mock())
+     @mock.patch.object(dns.resolver.Resolver, 'resolve')
+     def test_notify(self, mock_query):
+-        self.storage.find_zone.return_value = objects.Zone(
++        self.storage.find_zones.return_value = [objects.Zone(
+             id='e2bed4dc-9d01-11e4-89d3-123b93f75cba',
+             serial=2,
+             masters=objects.ZoneMasterList.from_list([
+                 {'host': '192.0.2.1', 'port': 53},
+             ])
+-        )
++        )]
+         mock_query.return_value = [
+             mock.Mock(serial=1)
+         ]
+@@ -86,13 +86,13 @@ class MdnsHandleTest(oslotest.base.BaseTestCase):
+ 
+     @mock.patch.object(dns.resolver.Resolver, 'resolve')
+     def test_notify_same_serial(self, mock_query):
+-        self.storage.find_zone.return_value = objects.Zone(
++        self.storage.find_zones.return_value = [objects.Zone(
+             id='e2bed4dc-9d01-11e4-89d3-123b93f75cba',
+             serial=1,
+             masters=objects.ZoneMasterList.from_list([
+                 {'host': '192.0.2.1', 'port': 53},
+             ])
+-        )
++        )]
+         mock_query.return_value = [
+             mock.Mock(serial=1)
+         ]
+@@ -124,7 +124,7 @@ class MdnsHandleTest(oslotest.base.BaseTestCase):
+         self.assertEqual(dns.rcode.FORMERR, tuple(response)[0].rcode())
+ 
+     def test_notify_zone_not_found(self):
+-        self.storage.find_zone.side_effect = exceptions.ZoneNotFound
++        self.storage.find_zones.return_value = []
+ 
+         request = dns.message.make_query(
+             'www.example.org.', dns.rdatatype.SOA
+@@ -136,11 +136,11 @@ class MdnsHandleTest(oslotest.base.BaseTestCase):
+         self.assertEqual(dns.rcode.NOTAUTH, tuple(response)[0].rcode())
+ 
+     def test_notify_no_master_addr(self):
+-        self.storage.find_zone.return_value = objects.Zone(
++        self.storage.find_zones.return_value = [objects.Zone(
+             masters=objects.ZoneMasterList.from_list([
+                 {'host': '192.0.2.1', 'port': 53},
+             ])
+-        )
++        )]
+ 
+         request = dns.message.make_query(
+             'www.example.org.', dns.rdatatype.SOA
+@@ -152,7 +152,8 @@ class MdnsHandleTest(oslotest.base.BaseTestCase):
+         self.assertEqual(dns.rcode.REFUSED, tuple(response)[0].rcode())
+ 
+         self.assertIn(
+-            'NOTIFY for None from non-master server 203.0.113.1, refusing.',
++            'NOTIFY for www.example.org. from non-master server '
++            '203.0.113.1, refusing.',
+             self.stdlog.logger.output
+         )
+ 
+@@ -484,13 +485,15 @@ class HandleRecordQueryTest(oslotest.base.BaseTestCase):
+         )
+ 
+     def test_handle_record_query_subdomain_with_tsig(self):
+-        """Test recordset-first fallback for subdomain queries with TSIG.
++        """Test the ancestor walk-up for subdomain queries with TSIG.
+ 
+         When the query is for a subdomain (www.example.org.) rather than
+-        a zone apex, the zone-first lookup raises ZoneNotFound because
+-        no zone is named 'www.example.org.'.  The handler falls back to
+-        finding the recordset by name, then verifies the zone matches
+-        the TSIG key's pool.  The overall query still succeeds.
++        a zone apex, the first candidate lookup (name='www.example.org.')
++        raises ZoneNotFound because no zone is named that. The handler
++        walks up to the parent name (example.org.), scoped by the same
++        TSIG-derived pool_id, and finds the containing zone there. The
++        recordset lookup is then scoped to that zone's zone_id, never
++        falling back to an unscoped, cross-pool lookup.
+         """
+         pool_id = 'c4f6ea1c-a1af-4401-a849-000000000001'
+         zone_id = 'e2bed4dc-9d01-11e4-89d3-123b93f75cba'
+@@ -522,11 +525,11 @@ class HandleRecordQueryTest(oslotest.base.BaseTestCase):
+         self.assertEqual(dns.rcode.NOERROR, response[0].rcode())
+ 
+         self.assertEqual(2, self.storage.find_zone.call_count)
+-        # Recordset found via fallback path (no zone_id scoping)
++        # Recordset found scoped to the zone found by walking up to the
++        # parent name (example.org.)
+         self.storage.find_recordset.assert_called_once_with(
+             self.context,
+-            {'name': 'www.example.org.', 'type': 'A',
+-             'zones_deleted': False}
++            {'zone_id': zone_id, 'name': 'www.example.org.', 'type': 'A'}
+         )
+ 
+     def test_handle_record_query_zone_found_recordset_not_found(self):
+-- 
+2.47.3
+
