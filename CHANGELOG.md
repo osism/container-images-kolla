@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 This file was started on December 08, 2025. Changes prior to this date are not included in the CHANGELOG.
 
+## [v0.20260813.0] - 2026-08-13
+
+### Added
+- Fail the build when a patch file exists but was never applied, via a new patch manifest and end-of-build verification step (osism/container-images-kolla@823ec2f)
+
+### Changed
+- Re-enable building neutron images for 2024.1, needed again after the CVE-2026-55707 fix (osism/container-images-kolla#761)
+- Enable building designate images for 2024.1, required for the backported CVE fixes (osism/container-images-kolla#769)
+
+### Fixed
+- Add nova patches for CVE-2026-46448 to strip internal `_nova`-prefixed scheduler hints on instance create (osism/container-images-kolla#741)
+- Fix project-board automation for fork PRs so they are added to the project board (osism/container-images-kolla#744)
+- Pin valkey to the deployable valkey-server image via SBOM_IMAGE_TO_VERSION so the version pin no longer silently falls back to the OpenStack release version (osism/container-images-kolla#745)
+- Add nova patches for OSSN-0101 to stop the websocket proxy from mutating the global allowed-origins config with request Host headers (osism/container-images-kolla#746)
+- Add neutron patches for OSSN-0102 to fix cross-project access to router conntrack helpers and floating IP port forwarding (osism/container-images-kolla#746)
+- Backport a NetApp NVMe/TCP multipath fix (bug #2121791) to cinder for 2025.1 and 2025.2 so initialize_connection returns all available target portals, and refresh existing 2025.1 NetApp NVMe backport patches (osism/container-images-kolla#756)
+- Fix CVE-2026-55707 in neutron preventing non-admin users from onboarding subnets of networks they don't own, for 2024.1, 2024.2, 2025.1 and 2025.2 (osism/container-images-kolla#758)
+- Fix 2024.1 images silently building from frozen stable-2024.1 sources by selecting the unmaintained/2024.1 requirements tarball, which opendev keeps refreshing (osism/container-images-kolla#762)
+- Append files added by patches and overlays to SOURCES.txt so pbr includes them (e.g. alembic migrations) in the built venv instead of silently dropping them (osism/container-images-kolla#763)
+- Match patch and overlay directories across hyphen/underscore spelling variants so PEP 625-normalized sdists (e.g. neutron-dynamic-routing) resolve correctly (osism/container-images-kolla@7055983)
+- Designate: fix mDNS record query pool scoping so split-horizon DNS deployments with the same zone name in multiple pools no longer get erroneous REFUSED responses (2024.1, 2024.2) (osism/container-images-kolla#769)
+- Designate: require TSIG keys for zones scheduled to non-default pools, preventing zones from silently failing AXFR sync and getting stuck in ERROR status (2024.1, 2024.2) (osism/container-images-kolla#769)
+- Designate: fix a cross-tenant/cross-pool zone ownership bypass allowing duplicate-name, subzone and superzone checks to be evaded by scheduling a zone to a different pool, and fix the related ambiguous mDNS/NOTIFY zone lookups it exploited (2024.1) (osism/container-images-kolla#769)
+
+### Removed
+- Drop nova 2025.1 and 2025.2 CVE-2026-46448 patches, merged upstream (osism/container-images-kolla#742)
+- Drop nova OSSN-0101 websocket proxy config-mutation patch for 2025.1 and 2025.2, merged upstream (osism/container-images-kolla#748, osism/container-images-kolla#752)
+- Drop neutron CVE-2026-55707 patches for 2025.1 and 2025.2, merged upstream (osism/container-images-kolla#759)
+- Drop neutron CVE-2026-55707 patch for 2024.1, merged upstream (osism/container-images-kolla#760)
+- Drop 2024.1 neutron, keystone and nova patches merged upstream into unmaintained/2024.1: neutron router conntrack helper cross-project access fix (CVE-2026-55707), keystone EC2/S3 token auth hardening patches, and nova websocket proxy origin-poisoning and scheduler-hint stripping fixes (CVE-2026-46448) (osism/container-images-kolla#762)
+- Drop 2025.1 keystone patch blocking application credential token rescoping to system scope, merged upstream (osism/container-images-kolla#764)
+- Drop 2024.2 skyline patch adding TLSv1.2/TLSv1.3 support for HTTPS upstream endpoints, merged upstream (osism/container-images-kolla#765)
+
+### Dependencies
+- ansible 11.12.0 → 14.2.0 (osism/container-images-kolla#671, osism/container-images-kolla#754, osism/container-images-kolla#755)
+- docker 7.1.0 → 7.2.0 (osism/container-images-kolla#749)
+- mako 1.3.10 → 1.4.1 (osism/container-images-kolla#717, osism/container-images-kolla#768)
+- packaging 26.0 → 26.3 (osism/container-images-kolla#716, osism/container-images-kolla#767)
+- requests 2.32.5 → 2.34.2 (osism/container-images-kolla#706, osism/container-images-kolla#743)
+- setuptools 80.10.2 → 83.0.0 (osism/container-images-kolla#751)
+- tabulate 0.9.0 → 0.10.0 (osism/container-images-kolla#701)
+
 ## [v0.20260615.0] - 2026-06-15
 
 ### Added
