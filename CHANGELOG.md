@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 This file was started on December 08, 2025. Changes prior to this date are not included in the CHANGELOG.
 
-## [v0.20260813.0] - 2026-08-13
+## [v0.20260814.0] - 2026-08-14
 
 ### Added
 - Fail the build when a patch file exists but was never applied, via a new patch manifest and end-of-build verification step (osism/container-images-kolla@823ec2f)
