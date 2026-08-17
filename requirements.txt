@@ -7,5 +7,5 @@ docker==7.2.0
 loguru==0.7.3
 packaging==26.3
 requests==2.34.2
-setuptools==83.0.0
+setuptools==84.0.0
 tabulate==0.10.0
