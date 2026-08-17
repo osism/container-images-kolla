@@ -1,0 +1,10 @@
+--- a/kolla/image/tasks.py
++++ b/kolla/image/tasks.py
+@@ -412,6 +412,7 @@ class BuildTask(EngineTask):
+                     network_mode=self.conf.network_mode,
+                     pull=pull,
+                     forcerm=self.forcerm,
++                    squash=True,
+                     platform=self.conf.platform,
+                     buildargs=buildargs,
+                     **kwargs)[1]:
