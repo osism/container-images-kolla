@@ -1,0 +1,13 @@
+diff --git a/kolla/image/kolla_worker.py b/kolla/image/kolla_worker.py
+index b60f0558f..db5c74caa 100644
+--- a/kolla/image/kolla_worker.py
++++ b/kolla/image/kolla_worker.py
+@@ -385,7 +385,7 @@ class KollaWorker(object):
+                           self.openstack_branch_slashed,
+                       'tag': self.tag,
+                       'maintainer': self.maintainer,
+-                      'kolla_version': kolla_version,
++                      'kolla_version': '2026.1',
+                       'image_name': image_name,
+                       'users': self.get_users(),
+                       'distro_package_manager': self.distro_package_manager,
