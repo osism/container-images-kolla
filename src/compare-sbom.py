@@ -211,7 +211,7 @@ def load_sbom_from_container(image_ref: str) -> Optional[Dict]:
     Pull container image and extract SBOM file.
 
     Args:
-        image_ref: Container image reference (e.g., "registry.osism.cloud/kolla/sbom:2025.1")
+        image_ref: Container image reference (e.g., "registry.osism.tech/kolla/sbom:2025.1")
 
     Returns:
         Parsed SBOM data dictionary, or None if the image does not exist
@@ -488,7 +488,7 @@ Exit codes:
         "-r",
         type=str,
         default=None,
-        help="Remote SBOM container image reference (default: registry.osism.cloud/kolla/sbom:<openstack-version>)",
+        help="Remote SBOM container image reference (default: registry.osism.tech/kolla/sbom:<openstack-version>)",
     )
 
     parser.add_argument(
@@ -530,7 +530,7 @@ Exit codes:
 
     # If remote-image not explicitly set, construct it with openstack-version
     if args.remote_image is None:
-        args.remote_image = f"registry.osism.cloud/kolla/sbom:{args.openstack_version}"
+        args.remote_image = f"registry.osism.tech/kolla/sbom:{args.openstack_version}"
 
     # Handle --list-remote mode
     if args.list_remote:
