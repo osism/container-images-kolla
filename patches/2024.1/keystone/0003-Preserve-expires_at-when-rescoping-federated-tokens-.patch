@@ -1,7 +1,7 @@
-From 922c6697a0ff8470c05d51983d61ff478c9a5a8d Mon Sep 17 00:00:00 2001
+From 2954a864101766fb11bae202c333c646d1926ad4 Mon Sep 17 00:00:00 2001
 From: Grzegorz Grasza <xek@redhat.com>
 Date: Tue, 12 May 2026 09:11:24 +0200
-Subject: [PATCH 11/12] Preserve expires_at when rescoping federated tokens
+Subject: [PATCH 3/6] Preserve expires_at when rescoping federated tokens
  (CVE-2026-44394)
 
 When a federated token is rescoped via POST /v3/auth/tokens the
@@ -25,6 +25,7 @@ Co-authored-by: Artem Goncharov <artem.goncharov@gmail.com>
 Change-Id: I0bbb8520e12c52edd01fb47c873f0227819706f5
 Signed-off-by: Grzegorz Grasza <xek@redhat.com>
 (cherry picked from commit 75a4a0c354c7f568b28dd85182dc729553fb3a33)
+(cherry picked from commit 7846c2375f72e1f5ad2f797241d3e6ca2e09d8b1)
 ---
  keystone/auth/plugins/mapped.py               |   4 +
  .../tests/unit/auth/plugins/test_mapped.py    | 120 ++++++++++++++++++

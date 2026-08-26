@@ -1,7 +1,7 @@
-From de284e32331429baea4628b8d012d6bd7eab5a25 Mon Sep 17 00:00:00 2001
+From 44eb1d9f9e4f2e4b6eb4c9d76604a84efb2ac45b Mon Sep 17 00:00:00 2001
 From: Grzegorz Grasza <xek@redhat.com>
 Date: Tue, 12 May 2026 09:10:20 +0200
-Subject: [PATCH 12/12] Prevent RBAC policy bypass via JSON body and query
+Subject: [PATCH 4/6] Prevent RBAC policy bypass via JSON body and query
  filters (CVE-2026-42999)
 
 The RBAC enforcer unconditionally merged the raw JSON request body into
@@ -39,6 +39,7 @@ Co-authored-by: Artem Goncharov <artem.goncharov@gmail.com>
 Change-Id: I295d1ac27faad05a680bb2b3fac8cfa27fa1c4bd
 Signed-off-by: Grzegorz Grasza <xek@redhat.com>
 (cherry picked from commit 22b51f5d5d86350d3fbc66697e4097bacf2a8ce9)
+(cherry picked from commit 2743acbcbac8190ae24f3c3e85149dc68b7f2254)
 ---
  keystone/api/trusts.py                        |   4 +-
  keystone/common/policies/base.py              |   2 +-
@@ -51,7 +52,7 @@ Signed-off-by: Grzegorz Grasza <xek@redhat.com>
  create mode 100644 releasenotes/notes/bug-2148398-e35dd449b3a330e6.yaml
 
 diff --git a/keystone/api/trusts.py b/keystone/api/trusts.py
-index 265d3be82..84e97b5ba 100644
+index a7d06561a..ab2aa9a7a 100644
 --- a/keystone/api/trusts.py
 +++ b/keystone/api/trusts.py
 @@ -296,8 +296,10 @@ class TrustResource(ks_flask.ResourceBase):
