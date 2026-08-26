@@ -1,7 +1,7 @@
-From 73360467804e7a108d4330888a82900a299b9581 Mon Sep 17 00:00:00 2001
+From 7a89e7761c2dab3ae14fed45bcc3f65d04f68683 Mon Sep 17 00:00:00 2001
 From: Grzegorz Grasza <xek@redhat.com>
 Date: Tue, 12 May 2026 09:22:34 +0200
-Subject: [PATCH 09/12] Fix user impersonation through application credentials
+Subject: [PATCH 1/6] Fix user impersonation through application credentials
  (CVE-2026-42998)
 
 When authenticating by application credential ID, the caller can supply a
@@ -20,6 +20,7 @@ Change-Id: I2fe6089886eebf3775930451b87771e40b5e179e
 Signed-off-by: Grzegorz Grasza <xek@redhat.com>
 Signed-off-by: Artem Goncharov <artem.goncharov@gmail.com>
 (cherry picked from commit 6cd25fecdab8b9261e916ee10f3dba5aeb0c1984)
+(cherry picked from commit 90fe79c82e9eb16547e3e4aa69f9f8cb8daa8bc6)
 ---
  keystone/auth/plugins/core.py       |  7 +--
  keystone/tests/unit/test_v3_auth.py | 75 +++++++++++++++++++++++++++++
