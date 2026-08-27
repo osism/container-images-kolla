@@ -98,7 +98,7 @@ RUN apt-get update ${"\\"}
 {% endblock %}
 
 {% block keystone_footer %}
-RUN python3 -m pip --no-cache-dir install keystone-keycloak-backend
+RUN python3 -m pip --no-cache-dir install -c /requirements/upper-constraints.txt keystone-keycloak-backend
 RUN apt-get update ${"\\"}
     && apt-get -y install --no-install-recommends ${"\\"}
            libapache2-mod-auth-openidc ${"\\"}
