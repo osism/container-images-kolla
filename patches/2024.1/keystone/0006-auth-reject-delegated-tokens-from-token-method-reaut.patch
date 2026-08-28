@@ -1,7 +1,7 @@
-From 8ee435054a4e4c6b65e82e27c4ba78dc58ff3538 Mon Sep 17 00:00:00 2001
+From 57407461384ee01a86adec6aabdd32240b009a09 Mon Sep 17 00:00:00 2001
 From: Grzegorz Grasza <xek@redhat.com>
 Date: Mon, 24 Aug 2026 13:13:51 +0200
-Subject: [PATCH 6/6] auth: reject delegated tokens from token-method
+Subject: [PATCH 6/7] auth: reject delegated tokens from token-method
  reauthentication
 
 token_authenticate() unconditionally blocks trust-scoped and

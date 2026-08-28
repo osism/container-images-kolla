@@ -1,7 +1,7 @@
-From 90d44890ec63a144b975254fc98f44d569009ea4 Mon Sep 17 00:00:00 2001
+From 1adf1f098ff52abf5cf5bce12e6afc1322cbaa68 Mon Sep 17 00:00:00 2001
 From: Grzegorz Grasza <xek@redhat.com>
 Date: Thu, 23 Jul 2026 09:32:00 +0200
-Subject: [PATCH 5/6] trusts, oauth1, app-creds: reject delegated tokens across
+Subject: [PATCH 5/7] trusts, oauth1, app-creds: reject delegated tokens across
  all endpoints
 
 _check_application_credential() in trusts.py only recognized
