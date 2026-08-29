@@ -1,5 +1,6 @@
 .patches-applied
 apt_preferences.ubuntu
+overlays/*/base/kolla-pip-check.py
 etc/kolla-build.conf
 images.lst
 images.yml

@@ -37,6 +37,7 @@ RUN curl -q -L -o /tmp/openstack-themes.tar.gz https://github.com/osism/openstac
 
 {% block base_header %}
 COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
+COPY kolla-pip-check.py /usr/local/bin/kolla-pip-check.py
 COPY *.gpg /etc/kolla/apt-keys/
 
 RUN apt-get update ${"\\"}
@@ -114,7 +115,7 @@ RUN rm -rf /usr/share/doc/* ${"\\"}
     && apt-get remove -y build-essential ${"\\"}
     && apt-get autoremove -y ${"\\"}
     && if [ -e /var/lib/kolla/venv/bin/python3 ]; then /var/lib/kolla/venv/bin/pip3 install --no-cache-dir pyclean==3.0.0; /var/lib/kolla/venv/bin/pyclean /var/lib/kolla/venv; /var/lib/kolla/venv/bin/pyclean /usr; /var/lib/kolla/venv/bin/pip3 uninstall -y pyclean; fi ${"\\"}
-    && if [ -e /var/lib/kolla/venv/bin/pip3 ]; then /var/lib/kolla/venv/bin/pip3 check; fi
+    && if [ -e /var/lib/kolla/venv/bin/pip3 ]; then /var/lib/kolla/venv/bin/python3 /usr/local/bin/kolla-pip-check.py; fi
 {% endblock %}
 
 {% block labels %}
