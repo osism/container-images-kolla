@@ -90,6 +90,13 @@ python3 src/generate-apt-preferences-files.py > overlays/$OPENSTACK_VERSION/base
 echo DEBUG apt_preferences.ubuntu
 cat overlays/$OPENSTACK_VERSION/base/apt_preferences.ubuntu
 
+# Prepare kolla-pip-check.py
+#
+# One shared copy for every release, staged into the base overlay so it
+# lands in the base image's build context like apt_preferences.ubuntu does.
+
+cp src/kolla-pip-check.py overlays/$OPENSTACK_VERSION/base/kolla-pip-check.py
+
 # Copy overlay files
 
 for image in $(find overlays/$OPENSTACK_VERSION -maxdepth 1 -mindepth 1 -type d); do
