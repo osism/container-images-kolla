@@ -57,39 +57,79 @@ export OPENSTACK_VERSION
 # clone-loop counts this is meant to correlate against.
 # ===========================================================================
 
+# Every git call is wrapped in `timeout`, and the loop honours an overall
+# deadline. Both are required, not defensive habit: in the buildset that
+# validated this probe, one node stalled diagnose-network's "Snapshot
+# dual-stack" task to ~308s and blew its `async: 300` budget. An unguarded
+# probe on such a node would hang on each of its calls and could consume that
+# whole budget by itself -- the diagnostic becoming the cause of the timeout it
+# exists to observe. Per-call 10s x 10 trials would still be 100s worst case,
+# hence the aggregate deadline too.
+#
+# Timeouts are counted SEPARATELY from refusals. Collapsing them would make a
+# stalled node report `ok=0/10` and read as a severe 401 event, which is a
+# different fault with a different owner.
 diag_probe_default_transport () {
     local url=$1
     local trials=${2:-10}
-    local ok=0 i
+    local budget=${3:-30}
+    local ok=0 refused=0 timedout=0 attempted=0
+    local deadline=$(( $(date +%s) + budget ))
+    local i rc
 
     for ((i = 1; i <= trials; i++)); do
-        GIT_TERMINAL_PROMPT=0 git -c http.version=HTTP/2 -c protocol.version=2 \
-            ls-remote "$url" HEAD >/dev/null 2>&1 && ok=$((ok + 1))
+        if (( $(date +%s) >= deadline )); then
+            break
+        fi
+        attempted=$((attempted + 1))
+        GIT_TERMINAL_PROMPT=0 timeout 10 git -c http.version=HTTP/2 \
+            -c protocol.version=2 ls-remote "$url" HEAD >/dev/null 2>&1
+        rc=$?
+        case $rc in
+            0)   ok=$((ok + 1)) ;;
+            124) timedout=$((timedout + 1)) ;;
+            *)   refused=$((refused + 1)) ;;
+        esac
     done
-    echo "DIAG-PROBE: default-transport ls-remote url=$url ok=$ok/$trials"
+    echo "DIAG-PROBE: default-transport ls-remote url=$url" \
+        "ok=$ok attempted=$attempted/$trials refused=$refused timedout=$timedout"
 }
 
+# Same guards as the probe. This one stays in the throwaway branch -- at ~18s
+# it would double diagnose-network's healthy runtime for a one-off experiment.
 diag_probe_matrix () {
     local url=$1
-    local label ok i d
+    local budget=${2:-120}
+    local deadline=$(( $(date +%s) + budget ))
+    local label ok timedout attempted i d rc
 
     for label in h2+v2 http1.1+v2 h2+v0 http1.1+v0; do
-        ok=0
+        ok=0; timedout=0; attempted=0
         for ((i = 1; i <= 5; i++)); do
+            if (( $(date +%s) >= deadline )); then
+                break
+            fi
             d=$(mktemp -d) || continue
+            attempted=$((attempted + 1))
             case $label in
-                h2+v2)      GIT_TERMINAL_PROMPT=0 git -c http.version=HTTP/2 \
+                h2+v2)      GIT_TERMINAL_PROMPT=0 timeout 30 git -c http.version=HTTP/2 \
                                 -c protocol.version=2 clone --depth=1 "$url" "$d/c" ;;
-                http1.1+v2) GIT_TERMINAL_PROMPT=0 git -c http.version=HTTP/1.1 \
+                http1.1+v2) GIT_TERMINAL_PROMPT=0 timeout 30 git -c http.version=HTTP/1.1 \
                                 -c protocol.version=2 clone --depth=1 "$url" "$d/c" ;;
-                h2+v0)      GIT_TERMINAL_PROMPT=0 git -c http.version=HTTP/2 \
+                h2+v0)      GIT_TERMINAL_PROMPT=0 timeout 30 git -c http.version=HTTP/2 \
                                 -c protocol.version=0 clone --depth=1 "$url" "$d/c" ;;
-                http1.1+v0) GIT_TERMINAL_PROMPT=0 git -c http.version=HTTP/1.1 \
+                http1.1+v0) GIT_TERMINAL_PROMPT=0 timeout 30 git -c http.version=HTTP/1.1 \
                                 -c protocol.version=0 clone --depth=1 "$url" "$d/c" ;;
-            esac >/dev/null 2>&1 && ok=$((ok + 1))
+            esac >/dev/null 2>&1
+            rc=$?
+            case $rc in
+                0)   ok=$((ok + 1)) ;;
+                124) timedout=$((timedout + 1)) ;;
+            esac
             rm -rf "$d"
         done
-        echo "DIAG-MATRIX: clone --depth=1 [$label] ok=$ok/5"
+        echo "DIAG-MATRIX: clone --depth=1 [$label]" \
+            "ok=$ok attempted=$attempted/5 timedout=$timedout"
     done
 }
 
