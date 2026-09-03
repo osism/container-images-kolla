@@ -1,0 +1,659 @@
+From 405f2b7b785aea1532146af077a66768c28552e0 Mon Sep 17 00:00:00 2001
+From: Abhishek Kekane <akekane@redhat.com>
+Date: Tue, 7 Jul 2026 06:37:32 +0000
+Subject: [PATCH 2/4] Block restricted addresses in web-download import URIs
+
+Reject import URIs targeting loopback, link-local, private, reserved,
+multicast, or unspecified addresses unless the host is listed in
+allowed_hosts. Also reject hostnames that resolve to those addresses.
+
+On stable/2025.1, FunctionalTest servers need allowed_hosts in conf
+(via self.allowed_hosts) because self.config() does not affect the
+API subprocess.
+
+Closes-Bug: #2158998
+SecurityImpact
+
+Assisted-By: Cursor (claude-4.5-sonnet)
+Change-Id: I49c926fdeeac75f72e19dbf8c2124b46a1f12f37
+Signed-off-by: Abhishek Kekane <akekane@redhat.com>
+(cherry picked from commit 2a2d51f606807428240215117fea358c98788b84)
+(cherry picked from commit 0bab125f7dbc3517d8957f28dd18a3994539a954)
+(cherry picked from commit 982de99d1ca2370113afde990454d1ca2893f7f9)
+
+Conflicts: glance/tests/functional/v2/test_images.py
+  glance/tests/functional/v2/test_multi_store_images.py
+  glance/tests/unit/async_/flows/plugins/test_image_conversion.py
+  glance/tests/unit/async_/flows/plugins/test_inject_image_metadata.py
+  glance/tests/unit/async_/flows/test_convert.py
+  glance/tests/unit/async_/flows/test_import.py
+  glance/tests/unit/async_/flows/test_introspect.py
+  glance/tests/unit/async_/test_async.py
+  glance/tests/unit/async_/test_taskflow_executor.py
+  glance/tests/unit/common/scripts/test_scripts_utils.py
+  glance/tests/unit/v2/test_tasks_resource.py
+---
+ .../admin/interoperable-image-import.rst      | 25 ++++++--
+ glance/common/utils.py                        | 43 +++++++++++++
+ glance/tests/functional/__init__.py           | 11 ++++
+ glance/tests/functional/v2/test_images.py     | 42 ++++++++++++-
+ .../flows/plugins/test_image_conversion.py    |  2 +-
+ .../plugins/test_inject_image_metadata.py     |  2 +-
+ .../tests/unit/async_/flows/test_convert.py   |  2 +-
+ .../unit/async_/flows/test_glance_download.py | 15 +++--
+ glance/tests/unit/async_/flows/test_import.py |  6 +-
+ .../unit/async_/flows/test_introspect.py      |  2 +-
+ glance/tests/unit/async_/test_async.py        |  2 +-
+ .../unit/async_/test_taskflow_executor.py     | 10 ++-
+ glance/tests/unit/common/test_utils.py        | 61 ++++++++++++++-----
+ .../notes/bug-2158998-a3c7d1e9f2b4a806.yaml   | 23 +++++++
+ 14 files changed, 212 insertions(+), 34 deletions(-)
+ create mode 100644 releasenotes/notes/bug-2158998-a3c7d1e9f2b4a806.yaml
+
+diff --git a/doc/source/admin/interoperable-image-import.rst b/doc/source/admin/interoperable-image-import.rst
+index fbcb0927d..23bcc3173 100644
+--- a/doc/source/admin/interoperable-image-import.rst
++++ b/doc/source/admin/interoperable-image-import.rst
+@@ -225,9 +225,15 @@ Validation of a URI happens as follows:
+ 
+    a. missing hostname: reject
+    b. If there's a whitelist, and the host is not in it: reject.  Otherwise,
+-      skip c and continue on to 3.
++      skip c and d and continue on to 3.
+    c. If there's a blacklist, and the host is in it: reject.
+ 
++   d. Unless the host is listed in ``allowed_hosts``, reject URIs that
++      target loopback or link-local IP addresses (for example
++      ``127.0.0.1`` or cloud metadata at ``169.254.169.254``). Hostnames
++      that resolve to any of those address types are also rejected.
++      Private RFC1918 addresses are not blocked by this check.
++
+ 3. If there's a port in the URI, the port is checked.
+ 
+    a. If there's a whitelist, and the port is not in it: reject.  Otherwise,
+@@ -254,10 +260,21 @@ settings for these options:
+ * ``allowed_ports`` - ``[80, 443]``
+ * ``disallowed_ports`` - empty list
+ 
++In addition to the host allow/deny lists above, Glance always rejects
++import URIs that target loopback or link-local IP addresses unless the
++host is explicitly listed in ``allowed_hosts``. Hostnames that resolve
++to any of those address types are also rejected. Private RFC1918
++addresses (for example ``10.0.0.0/8`` or ``192.168.0.0/16``) are not
++blocked by default.
++
+ Thus if you use the defaults, end users will only be able to access URIs
+-using the http or https scheme.  The only ports users will be able to specify
+-are 80 and 443.  (Users do not have to specify a port, but if they do, it must
+-be either 80 or 443.)
++using the http or https scheme. The only ports users will be able to
++specify are 80 and 443.  (Users do not have to specify a port, but if
++they do, it must be either 80 or 443.) Loopback and link-local
++destinations remain blocked unless listed in ``allowed_hosts``.
++
++To permit imports from loopback or link-local image sources, add the
++trusted hostnames or IP addresses to ``allowed_hosts``.
+ 
+ .. note::
+    The **glance-image-import.conf** is an optional file.  You can find an
+diff --git a/glance/common/utils.py b/glance/common/utils.py
+index f2dc6c123..fc0f618e1 100644
+--- a/glance/common/utils.py
++++ b/glance/common/utils.py
+@@ -186,6 +186,44 @@ def normalize_hostname(host):
+     return host
+ 
+ 
++def _is_restricted_import_host(normalized_host):
++    """Return True if host is or resolves to a restricted address.
++
++    Blocks loopback and link-local addresses (including cloud metadata
++    endpoints such as 169.254.169.254). Private RFC1918 ranges are not
++    blocked so private clouds can import from internal hosts. IPv4-mapped
++    IPv6 addresses are checked against the embedded IPv4 address. For
++    hostnames, any resolved address that is restricted causes rejection
++    (fail closed on DNS errors).
++    """
++    try:
++        addresses = [ipaddress.ip_address(normalized_host)]
++    except ValueError:
++        testhost = normalized_host if normalized_host.endswith('.') else (
++            normalized_host + '.')
++        try:
++            addresses = []
++            for result in socket.getaddrinfo(testhost, None):
++                ip = result[4][0]
++                if not ip:
++                    return True
++                if '%' in ip:
++                    ip = ip.split('%', 1)[0]
++                try:
++                    addresses.append(ipaddress.ip_address(ip))
++                except ValueError:
++                    return True
++        except socket.gaierror:
++            return True
++
++    for addr in addresses:
++        if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
++            addr = addr.ipv4_mapped
++        if addr.is_loopback or addr.is_link_local:
++            return True
++    return False
++
++
+ def validate_import_uri(uri):
+     """Validate requested uri for Image Import web-download.
+ 
+@@ -231,6 +269,11 @@ def validate_import_uri(uri):
+             normalized_host in bl_hosts):
+         return False
+ 
++    host_is_whitelisted = bool(wl_hosts and normalized_host in wl_hosts)
++    if not host_is_whitelisted and _is_restricted_import_host(
++            normalized_host):
++        return False
++
+     if port and ((wl_ports and port not in wl_ports) or
+                  port in bl_ports):
+         return False
+diff --git a/glance/tests/functional/__init__.py b/glance/tests/functional/__init__.py
+index b91b45468..65bff4b5e 100644
+--- a/glance/tests/functional/__init__.py
++++ b/glance/tests/functional/__init__.py
+@@ -117,6 +117,11 @@ class BaseServer(metaclass=abc.ABCMeta):
+         if kwargs:
+             conf_override.update(**kwargs)
+ 
++        # HostAddress ListOpt expects [host1,host2] without quotes.
++        allowed_hosts = conf_override.get('allowed_hosts')
++        if isinstance(allowed_hosts, (list, tuple)):
++            conf_override['allowed_hosts'] = '[%s]' % ','.join(allowed_hosts)
++
+         # A config file and paste.ini to use just for this test...we don't want
+         # to trample on currently-running Glance servers, now do we?
+ 
+@@ -342,6 +347,8 @@ class ApiServer(Server):
+         self.node_staging_uri = 'file://%s' % os.path.join(
+             self.test_dir, 'staging')
+ 
++        self.allowed_hosts = []
++
+         self.conf_base = """[DEFAULT]
+ debug = %(debug)s
+ default_log_levels = eventlet.wsgi.server=DEBUG,stevedore.extension=INFO
+@@ -380,6 +387,7 @@ flavor = %(deployment_flavor)s
+ filesystem_store_datadir=%(image_dir)s
+ default_store = %(default_store)s
+ [import_filtering_opts]
++allowed_hosts = %(allowed_hosts)s
+ allowed_ports = []
+ """
+         self.paste_conf_base = """[composite:glance-api]
+@@ -524,6 +532,8 @@ class ApiServerForMultipleBackend(Server):
+         self.user_storage_quota = '0'
+         self.lock_path = self.test_dir
+ 
++        self.allowed_hosts = []
++
+         self.conf_base = """[DEFAULT]
+ debug = %(debug)s
+ default_log_levels = eventlet.wsgi.server=DEBUG,stevedore.extension=INFO
+@@ -567,6 +577,7 @@ filesystem_store_datadir=%(image_dir_backend_2)s
+ [file3]
+ filesystem_store_datadir=%(image_dir_backend_3)s
+ [import_filtering_opts]
++allowed_hosts = %(allowed_hosts)s
+ allowed_ports = []
+ [os_glance_staging_store]
+ filesystem_store_datadir=%(staging_dir)s
+diff --git a/glance/tests/functional/v2/test_images.py b/glance/tests/functional/v2/test_images.py
+index cb19da337..ccfa568db 100644
+--- a/glance/tests/functional/v2/test_images.py
++++ b/glance/tests/functional/v2/test_images.py
+@@ -253,6 +253,7 @@ class TestImages(functional.FunctionalTest):
+         self.stop_servers()
+ 
+     def test_image_import_using_web_download(self):
++        self.allowed_hosts = ['localhost']
+         self.start_servers(**self.__dict__.copy())
+ 
+         # Image list should be empty
+@@ -397,6 +398,7 @@ class TestImages(functional.FunctionalTest):
+     def test_web_download_redirect_validation(self):
+         """Test that redirect destinations are validated."""
+         self.config(allowed_ports=[80], group='import_filtering_opts')
++        self.allowed_hosts = ['localhost']
+         self.config(disallowed_hosts=['127.0.0.1'],
+                     group='import_filtering_opts')
+         self.start_servers(**self.__dict__.copy())
+@@ -435,7 +437,7 @@ class TestImages(functional.FunctionalTest):
+         redirect_thread.daemon = True
+         redirect_thread.start()
+ 
+-        redirect_uri = 'http://127.0.0.1:%s/' % redirect_port
++        redirect_uri = 'http://localhost:%s/' % redirect_port
+         path = self._url('/v2/images/%s/import' % image_id)
+         headers = self._headers({
+             'content-type': 'application/json',
+@@ -490,6 +492,37 @@ class TestImages(functional.FunctionalTest):
+ 
+         self.stop_servers()
+ 
++    def test_web_download_blocks_restricted_hosts(self):
++        """Test that restricted addresses are rejected at import time."""
++        self.start_servers(**self.__dict__.copy())
++
++        path = self._url('/v2/images')
++        headers = self._headers({'content-type': 'application/json'})
++        data = jsonutils.dumps({
++            'name': 'ssrf-test', 'type': 'kernel',
++            'disk_format': 'aki', 'container_format': 'aki'})
++        response = requests.post(path, headers=headers, data=data)
++        self.assertEqual(http.CREATED, response.status_code)
++        image_id = jsonutils.loads(response.text)['id']
++
++        path = self._url('/v2/images/%s/import' % image_id)
++        headers = self._headers({
++            'content-type': 'application/json',
++            'X-Roles': 'admin',
++        })
++        data = jsonutils.dumps({'method': {
++            'name': 'web-download',
++            'uri': 'http://169.254.169.254/latest/meta-data/'
++        }})
++        response = requests.post(path, headers=headers, data=data)
++        self.assertEqual(http.BAD_REQUEST, response.status_code)
++
++        path = self._url('/v2/images/%s' % image_id)
++        response = requests.delete(path, headers=self._headers())
++        self.assertEqual(http.NO_CONTENT, response.status_code)
++
++        self.stop_servers()
++
+     def test_web_download_ip_normalization(self):
+         """Test that encoded IP addresses are normalized and blocked."""
+         self.config(allowed_ports=[80], group='import_filtering_opts')
+@@ -5437,6 +5470,7 @@ class TestImagesMultipleBackend(functional.MultipleBackendFunctionalTest):
+         self.stop_servers()
+ 
+     def test_image_import_using_web_download(self):
++        self.allowed_hosts = ['localhost']
+         self.start_servers(**self.__dict__.copy())
+ 
+         # Image list should be empty
+@@ -5601,6 +5635,7 @@ class TestImagesMultipleBackend(functional.MultipleBackendFunctionalTest):
+         self.stop_servers()
+ 
+     def test_image_import_using_web_download_different_backend(self):
++        self.allowed_hosts = ['localhost']
+         self.start_servers(**self.__dict__.copy())
+ 
+         # Image list should be empty
+@@ -5766,6 +5801,7 @@ class TestImagesMultipleBackend(functional.MultipleBackendFunctionalTest):
+         self.stop_servers()
+ 
+     def test_image_import_multi_stores(self):
++        self.allowed_hosts = ['localhost']
+         self.start_servers(**self.__dict__.copy())
+ 
+         # Image list should be empty
+@@ -5930,6 +5966,7 @@ class TestImagesMultipleBackend(functional.MultipleBackendFunctionalTest):
+         self.stop_servers()
+ 
+     def test_copy_image_lifecycle(self):
++        self.allowed_hosts = ['localhost']
+         self.start_servers(**self.__dict__.copy())
+ 
+         # Image list should be empty
+@@ -6156,6 +6193,7 @@ class TestImagesMultipleBackend(functional.MultipleBackendFunctionalTest):
+         # Test if copying task fails in between then the rollback
+         # should delete the data from only stores to which it is
+         # copied and not from the existing stores.
++        self.allowed_hosts = ['localhost']
+         self.start_servers(**self.__dict__.copy())
+ 
+         # Image list should be empty
+@@ -6415,6 +6453,7 @@ class TestImagesMultipleBackend(functional.MultipleBackendFunctionalTest):
+         self.stop_servers()
+ 
+     def test_image_import_multi_stores_specifying_all_stores(self):
++        self.allowed_hosts = ['localhost']
+         self.start_servers(**self.__dict__.copy())
+ 
+         # Image list should be empty
+@@ -7415,6 +7454,7 @@ class TestCopyImagePermissions(functional.MultipleBackendFunctionalTest):
+         return image_id
+ 
+     def _test_copy_public_image_as_non_admin(self):
++        self.allowed_hosts = ['localhost']
+         self.start_servers(**self.__dict__.copy())
+ 
+         # Create a publicly-visible image as TENANT1
+diff --git a/glance/tests/unit/async_/flows/plugins/test_image_conversion.py b/glance/tests/unit/async_/flows/plugins/test_image_conversion.py
+index ada82b50b..1ac7ff733 100644
+--- a/glance/tests/unit/async_/flows/plugins/test_image_conversion.py
++++ b/glance/tests/unit/async_/flows/plugins/test_image_conversion.py
+@@ -70,7 +70,7 @@ class TestConvertImageTask(test_utils.BaseTestCase):
+                                                 container_format='bare')
+ 
+         task_input = {
+-            "import_from": "http://cloud.foo/image.raw",
++            "import_from": "http://93.184.216.34/image.raw",
+             "import_from_format": "raw",
+             "image_properties": {'disk_format': 'raw',
+                                  'container_format': 'bare'}
+diff --git a/glance/tests/unit/async_/flows/plugins/test_inject_image_metadata.py b/glance/tests/unit/async_/flows/plugins/test_inject_image_metadata.py
+index 92a18a5e5..ac2ed2ee6 100644
+--- a/glance/tests/unit/async_/flows/plugins/test_inject_image_metadata.py
++++ b/glance/tests/unit/async_/flows/plugins/test_inject_image_metadata.py
+@@ -65,7 +65,7 @@ class TestInjectImageMetadataTask(test_utils.BaseTestCase):
+         self.img_repo.get.return_value = self.image
+ 
+         task_input = {
+-            "import_from": "http://cloud.foo/image.qcow2",
++            "import_from": "http://93.184.216.34/image.qcow2",
+             "import_from_format": "qcow2",
+             "image_properties": {'disk_format': 'qcow2',
+                                  'container_format': 'bare'}
+diff --git a/glance/tests/unit/async_/flows/test_convert.py b/glance/tests/unit/async_/flows/test_convert.py
+index aa65ab7ae..fb355aadb 100644
+--- a/glance/tests/unit/async_/flows/test_convert.py
++++ b/glance/tests/unit/async_/flows/test_convert.py
+@@ -56,7 +56,7 @@ class TestImportTask(test_utils.BaseTestCase):
+                                                 container_format='bare')
+ 
+         task_input = {
+-            "import_from": "http://cloud.foo/image.raw",
++            "import_from": "http://93.184.216.34/image.raw",
+             "import_from_format": "raw",
+             "image_properties": {'disk_format': 'qcow2',
+                                  'container_format': 'bare'}
+diff --git a/glance/tests/unit/async_/flows/test_glance_download.py b/glance/tests/unit/async_/flows/test_glance_download.py
+index a0ae04476..593635025 100644
+--- a/glance/tests/unit/async_/flows/test_glance_download.py
++++ b/glance/tests/unit/async_/flows/test_glance_download.py
+@@ -77,7 +77,8 @@ class TestGlanceDownloadTask(test_utils.BaseTestCase):
+     @mock.patch.object(filesystem.Store, 'add')
+     @mock.patch('glance.async_.utils.get_glance_endpoint')
+     def test_glance_download(self, mock_gge, mock_add, mock_getaddrinfo):
+-        mock_getaddrinfo.return_value = [('', '', '', '', ('', 80))]
++        mock_getaddrinfo.return_value = [
++            ('', '', '', '', ('93.184.216.34', 80))]
+         mock_gge.return_value = 'https://other.cloud.foo/image'
+         glance_download_task = glance_download._DownloadGlanceImage(
+             self.context, self.task.task_id, self.task_type,
+@@ -105,7 +106,8 @@ class TestGlanceDownloadTask(test_utils.BaseTestCase):
+     @mock.patch('glance.async_.utils.get_glance_endpoint')
+     def test_glance_download_failed(self, mock_gge, mock_add,
+                                     mock_getaddrinfo):
+-        mock_getaddrinfo.return_value = [('', '', '', '', ('', 80))]
++        mock_getaddrinfo.return_value = [
++            ('', '', '', '', ('93.184.216.34', 80))]
+         mock_gge.return_value = 'https://other.cloud.foo/image'
+         glance_download_task = glance_download._DownloadGlanceImage(
+             self.context, self.task.task_id, self.task_type,
+@@ -145,7 +147,8 @@ class TestGlanceDownloadTask(test_utils.BaseTestCase):
+     @mock.patch('glance.async_.utils.get_glance_endpoint')
+     def test_glance_download_size_mismatch(self, mock_gge, mock_add,
+                                            mock_getaddrinfo):
+-        mock_getaddrinfo.return_value = [('', '', '', '', ('', 80))]
++        mock_getaddrinfo.return_value = [
++            ('', '', '', '', ('93.184.216.34', 80))]
+         mock_gge.return_value = 'https://other.cloud.foo/image'
+         glance_download_task = glance_download._DownloadGlanceImage(
+             self.context, self.task.task_id, self.task_type,
+@@ -193,7 +196,8 @@ class TestGlanceDownloadTask(test_utils.BaseTestCase):
+                                                  mock_request,
+                                                  mock_getaddrinfo):
+         """Test redirect destinations are validated during image download."""
+-        mock_getaddrinfo.return_value = [('', '', '', '', ('', 80))]
++        mock_getaddrinfo.return_value = [
++            ('', '', '', '', ('93.184.216.34', 80))]
+         mock_gge.return_value = 'https://other.cloud.foo/image'
+         glance_download_task = glance_download._DownloadGlanceImage(
+             self.context, self.task.task_id, self.task_type,
+@@ -226,7 +230,8 @@ class TestGlanceDownloadTask(test_utils.BaseTestCase):
+     def test_glance_download_uses_safe_redirect_handler(
+             self, mock_gge, mock_request, mock_add, mock_getaddrinfo):
+         """Test that SafeRedirectHandler is used and allows valid execution."""
+-        mock_getaddrinfo.return_value = [('', '', '', '', ('', 80))]
++        mock_getaddrinfo.return_value = [
++            ('', '', '', '', ('93.184.216.34', 80))]
+         mock_gge.return_value = 'https://other.cloud.foo/image'
+         glance_download_task = glance_download._DownloadGlanceImage(
+             self.context, self.task.task_id, self.task_type,
+diff --git a/glance/tests/unit/async_/flows/test_import.py b/glance/tests/unit/async_/flows/test_import.py
+index 5774e3e31..a34e19433 100644
+--- a/glance/tests/unit/async_/flows/test_import.py
++++ b/glance/tests/unit/async_/flows/test_import.py
+@@ -77,7 +77,7 @@ class TestImportTask(test_utils.BaseTestCase):
+                                                 container_format='bare')
+ 
+         task_input = {
+-            "import_from": "http://cloud.foo/image.qcow2",
++            "import_from": "http://93.184.216.34/image.qcow2",
+             "import_from_format": "qcow2",
+             "image_properties": {'disk_format': 'qcow2',
+                                  'container_format': 'bare'}
+@@ -458,10 +458,10 @@ class TestImportTask(test_utils.BaseTestCase):
+                                               self.task_type)
+ 
+         data = [b"test"]
+-
++        image_size = len(b"test")
+         store = glance_store.get_store_from_scheme('file')
+         path = glance_store.store_add_to_backend(mock.sentinel.image_id, data,
+-                                                 mock.sentinel.image_size,
++                                                 image_size,
+                                                  store, context=None)[0]
+ 
+         path_wo_scheme = path.split("file://")[1]
+diff --git a/glance/tests/unit/async_/flows/test_introspect.py b/glance/tests/unit/async_/flows/test_introspect.py
+index f7c654232..2d074c3bb 100644
+--- a/glance/tests/unit/async_/flows/test_introspect.py
++++ b/glance/tests/unit/async_/flows/test_introspect.py
+@@ -37,7 +37,7 @@ class TestImportTask(test_utils.BaseTestCase):
+         super(TestImportTask, self).setUp()
+         self.task_factory = domain.TaskFactory()
+         task_input = {
+-            "import_from": "http://cloud.foo/image.qcow2",
++            "import_from": "http://93.184.216.34/image.qcow2",
+             "import_from_format": "qcow2",
+             "image_properties": mock.sentinel.image_properties
+         }
+diff --git a/glance/tests/unit/async_/test_async.py b/glance/tests/unit/async_/test_async.py
+index 96c6e6ee3..043a9f7f0 100644
+--- a/glance/tests/unit/async_/test_async.py
++++ b/glance/tests/unit/async_/test_async.py
+@@ -131,7 +131,7 @@ class TestImportTaskFlow(test_utils.BaseTestCase):
+         import_req = {
+             'method': {
+                 'name': 'web-download',
+-                'uri': 'http://cloud.foo/image.qcow2'
++                'uri': 'http://93.184.216.34/image.qcow2'
+             }
+         }
+ 
+diff --git a/glance/tests/unit/async_/test_taskflow_executor.py b/glance/tests/unit/async_/test_taskflow_executor.py
+index 397fac9ec..257d6bddb 100644
+--- a/glance/tests/unit/async_/test_taskflow_executor.py
++++ b/glance/tests/unit/async_/test_taskflow_executor.py
+@@ -55,7 +55,7 @@ class TestTaskExecutor(test_utils.BaseTestCase):
+         self.image_factory = mock.Mock()
+ 
+         task_input = {
+-            "import_from": "http://cloud.foo/image.qcow2",
++            "import_from": "http://93.184.216.34/image.qcow2",
+             "import_from_format": "qcow2",
+             "image_properties": {'disk_format': 'qcow2',
+                                  'container_format': 'bare'}
+@@ -79,6 +79,12 @@ class TestTaskExecutor(test_utils.BaseTestCase):
+             self.image_repo,
+             self.image_factory)
+ 
++        self._addrinfo_patcher = mock.patch(
++            'glance.common.utils.socket.getaddrinfo',
++            return_value=[(None, None, None, None, ('93.184.216.34', 80))])
++        self._addrinfo_patcher.start()
++        self.addCleanup(self._addrinfo_patcher.stop)
++
+     def test_fetch_an_executor_parallel(self):
+         self.config(engine_mode='parallel', group='taskflow_executor')
+         pool = self.executor._fetch_an_executor()
+@@ -142,7 +148,7 @@ class TestTaskExecutor(test_utils.BaseTestCase):
+                          'image_factory': self.image_factory,
+                          'backend': None,
+                          'admin_repo': admin_repo,
+-                         'uri': 'http://cloud.foo/image.qcow2'})
++                         'uri': 'http://93.184.216.34/image.qcow2'})
+ 
+     @mock.patch('stevedore.driver.DriverManager')
+     @mock.patch.object(taskflow_executor, 'LOG')
+diff --git a/glance/tests/unit/common/test_utils.py b/glance/tests/unit/common/test_utils.py
+index 7c33ba97b..94cbab487 100644
+--- a/glance/tests/unit/common/test_utils.py
++++ b/glance/tests/unit/common/test_utils.py
+@@ -956,7 +956,15 @@ class EvaluateFilterOpTestCase(test_utils.BaseTestCase):
+ 
+ class ImportURITestCase(test_utils.BaseTestCase):
+ 
+-    def test_validate_import_uri(self):
++    @mock.patch("glance.common.utils.socket.getaddrinfo")
++    def test_validate_import_uri(self, mock_getaddrinfo):
++        # This avoid internet access in validate_import_uri()
++        # (ie: DNS resolution of foo.com)
++        mock_getaddrinfo.return_value = [
++            (socket.AF_INET, socket.SOCK_STREAM, 6, '',
++             ('93.184.216.34', 80))
++        ]
++
+         self.assertTrue(utils.validate_import_uri("http://foo.com"))
+ 
+         self.config(allowed_schemes=['http'],
+@@ -985,7 +993,15 @@ class ImportURITestCase(test_utils.BaseTestCase):
+                     group='import_filtering_opts')
+         self.assertFalse(utils.validate_import_uri("http://localhost:8484"))
+ 
+-    def test_ignored_filtering_options(self):
++    @mock.patch("glance.common.utils.socket.getaddrinfo")
++    def test_ignored_filtering_options(self, mock_getaddrinfo):
++        # This avoid internet access in validate_import_uri()
++        # (ie: DNS resolution of foo.com)
++        mock_getaddrinfo.return_value = [
++            (socket.AF_INET, socket.SOCK_STREAM, 6, '',
++             ('93.184.216.34', 80))
++        ]
++
+         LOG = logging.getLogger('glance.common.utils')
+         with mock.patch.object(LOG, 'debug') as mock_run:
+             self.config(allowed_schemes=['https', 'ftp'],
+@@ -1019,12 +1035,13 @@ class ImportURITestCase(test_utils.BaseTestCase):
+ 
+     def test_validate_import_uri_ip_rejection(self):
+         """Test that encoded IP addresses are rejected (not normalized)."""
+-        # Test that standard IP is blocked when in blacklist
+-        self.config(disallowed_hosts=['127.0.0.1'],
+-                    group='import_filtering_opts')
+-        self.config(allowed_ports=[80],
+-                    group='import_filtering_opts')
++        self.config(allowed_ports=[80], group='import_filtering_opts')
++        # Loopback and link-local addresses are blocked by default
+         self.assertFalse(utils.validate_import_uri("http://127.0.0.1:80/"))
++        self.assertFalse(utils.validate_import_uri("http://169.254.169.254/"))
++        # Private RFC1918 addresses are allowed by default
++        self.assertTrue(utils.validate_import_uri("http://10.0.0.1/"))
++        self.assertTrue(utils.validate_import_uri("http://192.168.1.1/"))
+ 
+         # Test that encoded IP (decimal) is rejected
+         result = utils.validate_import_uri("http://2130706433:80/")
+@@ -1035,7 +1052,7 @@ class ImportURITestCase(test_utils.BaseTestCase):
+         self.assertFalse(utils.validate_import_uri("http://10.1:80/"))
+         self.assertFalse(utils.validate_import_uri("http://192.168.1:80/"))
+ 
+-        # Test with allowed host - encoded IP should still be rejected
++        # Test with allowed host - loopback may be allowed via whitelist
+         self.config(disallowed_hosts=[],
+                     group='import_filtering_opts')
+         self.config(allowed_hosts=['127.0.0.1'],
+@@ -1165,7 +1182,16 @@ class ImportURITestCase(test_utils.BaseTestCase):
+         self.assertFalse(
+             utils.validate_import_uri("http://[::1]:80/"))
+ 
+-        # Test that IPv6 address not in blacklist is allowed
++        # Test that IPv6 localhost is blocked by default
++        self.config(disallowed_hosts=[],
++                    group='import_filtering_opts')
++        self.config(allowed_hosts=[],
++                    group='import_filtering_opts')
++        self.config(allowed_ports=[80],
++                    group='import_filtering_opts')
++        self.assertFalse(utils.validate_import_uri("http://[::1]:80/"))
++
++        # Test that IPv6 address not in blacklist is allowed when whitelisted
+         self.config(disallowed_hosts=[],
+                     group='import_filtering_opts')
+         self.config(allowed_hosts=['2001:db8::1'],
+@@ -1181,18 +1207,25 @@ class ImportURITestCase(test_utils.BaseTestCase):
+                     group='import_filtering_opts')
+         self.config(allowed_ports=[80],
+                     group='import_filtering_opts')
+-        # IPv6 localhost should pass if not in blacklist (no whitelist)
+-        # The fix ensures IPv6 is normalized and can be blacklisted separately
++        # IPv6 localhost is blocked by default even when only IPv4 is listed
++        # in disallowed_hosts
+         result = utils.validate_import_uri("http://[::1]:80/")
+-        # If ::1 is not in blacklist and no whitelist, it will pass
+-        # Administrators should add both IPv4 and IPv6 to blacklist if needed
+-        self.assertTrue(result)
++        self.assertFalse(result)
+ 
+         # Test that IPv6 can be blacklisted separately
+         self.config(disallowed_hosts=['127.0.0.1', '::1'],
+                     group='import_filtering_opts')
+         self.assertFalse(utils.validate_import_uri("http://[::1]:80/"))
+ 
++    @mock.patch("glance.common.utils.socket.getaddrinfo")
++    def test_validate_import_uri_blocks_dns_rebinding(self, mock_getaddrinfo):
++        """Hostnames resolving to restricted addresses are rejected."""
++        mock_getaddrinfo.return_value = [
++            (socket.AF_INET, socket.SOCK_STREAM, 6, '',
++             ('169.254.169.254', 80))
++        ]
++        self.assertFalse(utils.validate_import_uri("http://metadata.example/"))
++
+ 
+ class S3CredentialUpdateTestCase(test_utils.BaseTestCase):
+ 
+diff --git a/releasenotes/notes/bug-2158998-a3c7d1e9f2b4a806.yaml b/releasenotes/notes/bug-2158998-a3c7d1e9f2b4a806.yaml
+new file mode 100644
+index 000000000..2f5ea2cde
+--- /dev/null
++++ b/releasenotes/notes/bug-2158998-a3c7d1e9f2b4a806.yaml
+@@ -0,0 +1,23 @@
++---
++security:
++  - |
++    Fixed a Server-Side Request Forgery (SSRF) vulnerability in the
++    ``web-download`` image import method. With the default
++    ``import_filtering_opts`` configuration, authenticated users could
++    supply URIs targeting loopback or link-local addresses (for example
++    cloud metadata at ``169.254.169.254``) and read the response through
++    the imported image data.
++
++    Glance now rejects import URIs that target loopback or link-local
++    IP addresses unless the host is explicitly listed in
++    ``allowed_hosts``. Hostnames that resolve to any of those address
++    types are also rejected. Private RFC1918 addresses are not blocked
++    by this check so private clouds can continue to import from
++    internal hosts.
++
++fixes:
++  - |
++    `Bug 2158998 <https://bugs.launchpad.net/glance/+bug/2158998>`_:
++    Block loopback and link-local destination addresses during
++    web-download URI validation to prevent SSRF against local services
++    and cloud metadata endpoints.
+-- 
+2.47.3
+
