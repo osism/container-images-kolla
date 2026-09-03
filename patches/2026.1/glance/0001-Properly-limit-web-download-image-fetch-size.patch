@@ -1,0 +1,189 @@
+From 62d07093e03395fea916e140639743b0fec658c0 Mon Sep 17 00:00:00 2001
+From: Dan Smith <dansmith@redhat.com>
+Date: Wed, 15 Jul 2026 06:37:45 -0700
+Subject: [PATCH 1/4] Properly limit web-download image fetch size
+
+If web-download is pointed at a source that does not provide a
+Content-Length header, we will read until the end of stream. This
+could fill our disk if the source is unlimited (or insanely large).
+This change makes us honor the existing image_size_cap restriction
+we enforce elsewhere to avoid this unbounded behavior.
+
+Closes-Bug: #2160020
+Generated-By: Claude Opus 4.6
+Change-Id: Ie8d11f2b822d85fb5f4ed5c96fe9c5ed352d5a9c
+(cherry picked from commit 6ff0200f994c065cb8b25a1a9e8381e452daafc5)
+---
+ glance/common/scripts/utils.py                | 11 +++++--
+ .../unit/async_/flows/test_web_download.py    | 19 +++++++++++
+ .../unit/common/scripts/test_scripts_utils.py | 32 +++++++++++++------
+ ...bounded-web-download-80b90558aa417f6c.yaml |  9 ++++++
+ 4 files changed, 60 insertions(+), 11 deletions(-)
+ create mode 100644 releasenotes/notes/unbounded-web-download-80b90558aa417f6c.yaml
+
+diff --git a/glance/common/scripts/utils.py b/glance/common/scripts/utils.py
+index 81f24fd14..73046954c 100644
+--- a/glance/common/scripts/utils.py
++++ b/glance/common/scripts/utils.py
+@@ -27,6 +27,7 @@ import urllib
+ import urllib.error
+ import urllib.request
+ 
++from oslo_config import cfg
+ from oslo_log import log as logging
+ from oslo_utils import timeutils
+ 
+@@ -34,6 +35,7 @@ from glance.common import exception
+ from glance.common import utils as common_utils
+ from glance.i18n import _, _LE
+ 
++CONF = cfg.CONF
+ LOG = logging.getLogger(__name__)
+ 
+ 
+@@ -172,7 +174,10 @@ def get_image_data_iter(uri):
+         # We're not using StringIO or other tools to avoid reading everything
+         # into memory. Some images may be quite heavy.
+         size = os.path.getsize(uri)
+-        return open(uri, "rb"), size
++        data = open(uri, "rb")
++        return common_utils.LimitingReader(
++            common_utils.CooperativeReader(data),
++            CONF.image_size_cap), size
+ 
+     opener = urllib.request.build_opener(SafeRedirectHandler)
+     urlopen = opener.open(uri)
+@@ -181,7 +186,9 @@ def get_image_data_iter(uri):
+     except (KeyError, ValueError, TypeError):
+         pass
+ 
+-    return urlopen, size
++    return common_utils.LimitingReader(
++        common_utils.CooperativeReader(urlopen),
++        CONF.image_size_cap), size
+ 
+ 
+ class CallbackIterator(object):
+diff --git a/glance/tests/unit/async_/flows/test_web_download.py b/glance/tests/unit/async_/flows/test_web_download.py
+index 6913d10e3..15fef5c02 100644
+--- a/glance/tests/unit/async_/flows/test_web_download.py
++++ b/glance/tests/unit/async_/flows/test_web_download.py
+@@ -22,6 +22,7 @@ from glance.async_.flows._internal_plugins import web_download
+ from glance.async_.flows import api_image_import
+ import glance.common.exception
+ import glance.common.scripts.utils as script_utils
++from glance.common import utils as common_utils
+ from glance import domain
+ import glance.tests.utils as test_utils
+ 
+@@ -159,3 +160,21 @@ class TestWebDownloadTask(test_utils.BaseTestCase):
+             mock_iter.return_value = (data_mock, 4)
+             self.assertRaises(glance.common.exception.ImportTaskError,
+                               self.web_download_task.execute)
++
++    @mock.patch.object(filesystem.Store, 'add')
++    @mock.patch('urllib.request.build_opener')
++    def test_web_download_data_is_size_limited(self, mock_build_opener,
++                                               mock_add):
++        mock_response = mock.MagicMock()
++        mock_response.headers = {'content-length': '4'}
++        mock_opener = mock.MagicMock()
++        mock_opener.open.return_value = mock_response
++        mock_build_opener.return_value = mock_opener
++        mock_add.return_value = ["path", 4]
++
++        self.web_download_task.uri = 'http://example.com/image.qcow2'
++        self.web_download_task.execute()
++
++        data_arg = mock_add.call_args[0][1]
++        self.assertIsInstance(data_arg, common_utils.LimitingReader)
++        self.assertEqual(data_arg.limit, CONF.image_size_cap)
+diff --git a/glance/tests/unit/common/scripts/test_scripts_utils.py b/glance/tests/unit/common/scripts/test_scripts_utils.py
+index 922d4a2fb..57c16e0b1 100644
+--- a/glance/tests/unit/common/scripts/test_scripts_utils.py
++++ b/glance/tests/unit/common/scripts/test_scripts_utils.py
+@@ -20,6 +20,7 @@ import urllib.request
+ 
+ from glance.common import exception
+ from glance.common.scripts import utils as script_utils
++from glance.common import utils as common_utils
+ import glance.tests.utils as test_utils
+ 
+ 
+@@ -312,29 +313,40 @@ class TestGetImageDataIter(test_utils.BaseTestCase):
+     def setUp(self):
+         super(TestGetImageDataIter, self).setUp()
+ 
++    @mock.patch.object(common_utils, 'LimitingReader')
++    @mock.patch.object(common_utils, 'CooperativeReader')
+     @mock.patch('builtins.open', create=True)
+     @mock.patch('glance.common.scripts.utils.os.path.getsize')
+-    def test_get_image_data_iter_file_uri(self, mock_getsize, mock_open):
++    def test_get_image_data_iter_file_uri(self, mock_getsize, mock_open,
++                                          mock_coop, mock_limit):
+         """Test file:// URI handling."""
+         mock_file = mock.Mock()
+         mock_open.return_value = mock_file
+         mock_getsize.return_value = 42
+ 
+-        result = script_utils.get_image_data_iter("file:///tmp/test.img")
++        data, size = script_utils.get_image_data_iter("file:///tmp/test.img")
+ 
+         mock_getsize.assert_called_once_with("/tmp/test.img")
+         mock_open.assert_called_once_with("/tmp/test.img", "rb")
+-        self.assertEqual(result, (mock_file, 42))
+-
++        mock_coop.assert_called_once_with(mock_file)
++        mock_limit.assert_called_once_with(mock_coop.return_value,
++                                           script_utils.CONF.image_size_cap)
++        self.assertEqual(data, mock_limit.return_value)
++        self.assertEqual(size, 42)
++
++    @mock.patch.object(common_utils, 'LimitingReader')
++    @mock.patch.object(common_utils, 'CooperativeReader')
+     @mock.patch('urllib.request.build_opener')
+-    def test_get_image_data_iter_http_uri(self, mock_build_opener):
++    def test_get_image_data_iter_http_uri(self, mock_build_opener,
++                                          mock_coop, mock_limit):
+         """Test HTTP URI handling with redirect validation."""
+         mock_opener = mock.Mock()
+         mock_response = mock.Mock()
+         mock_opener.open.return_value = mock_response
+         mock_build_opener.return_value = mock_opener
+ 
+-        result = script_utils.get_image_data_iter("http://example.com/image")
++        data, size = script_utils.get_image_data_iter(
++            "http://example.com/image")
+ 
+         # Should use build_opener with SafeRedirectHandler
+         mock_build_opener.assert_called_once()
+@@ -361,6 +373,8 @@ class TestGetImageDataIter(test_utils.BaseTestCase):
+             "SafeRedirectHandler should be passed to build_opener")
+ 
+         mock_opener.open.assert_called_once_with("http://example.com/image")
+-        self.assertEqual(len(result), 2)
+-        self.assertEqual(result[0], mock_response)
+-        self.assertEqual(result[1], 0)
++        mock_coop.assert_called_once_with(mock_response)
++        mock_limit.assert_called_once_with(mock_coop.return_value,
++                                           script_utils.CONF.image_size_cap)
++        self.assertEqual(data, mock_limit.return_value)
++        self.assertEqual(size, 0)
+diff --git a/releasenotes/notes/unbounded-web-download-80b90558aa417f6c.yaml b/releasenotes/notes/unbounded-web-download-80b90558aa417f6c.yaml
+new file mode 100644
+index 000000000..e3de7e448
+--- /dev/null
++++ b/releasenotes/notes/unbounded-web-download-80b90558aa417f6c.yaml
+@@ -0,0 +1,9 @@
++---
++security:
++  - |
++    A bug in the web-download import plugin was fixed which would allow a
++    remote URI to omit the Content-Length header and feed glance data forever
++    until the staging disk filled. We now honor the image_size_cap limit for
++    these streams. Note that the default value for this limit is 1TiB, which
++    may be higher than is reasonable for some deployments. Operators should
++    take this opportunity to review that setting for correctness.
+-- 
+2.47.3
+
