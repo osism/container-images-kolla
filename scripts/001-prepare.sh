@@ -32,34 +32,64 @@ reset_patch_manifest
 export VERSION
 export OPENSTACK_VERSION
 
+# clone_repository <url> <path>
+#
+# Clones <url> and aborts the build when it cannot. Retrying first is
+# deliberate: an anonymous clone from a public forge is a single HTTPS call
+# that the far side rejects or drops often enough to take a whole nightly
+# build with it. A clone that still fails after the retries is fatal, because
+# every later step assumes the checkout is there -- the `git checkout` below
+# picks the wrong tree, the patch loop runs `patch` in this repository instead
+# of the clone, and the build dies reporting "No file to patch", which reads
+# like a patch that was merged upstream rather than a failed clone.
+clone_repository () {
+    local url=$1
+    local path=$2
+    local attempt
+
+    for attempt in 1 2 3; do
+        if git clone "$url" "$path"; then
+            return 0
+        fi
+        echo "WARNING: cloning $url failed (attempt $attempt of 3)" >&2
+        rm -rf "$path"
+        sleep $((attempt * 10))
+    done
+
+    echo "ERROR: cloning $url into $path failed" >&2
+    exit 1
+}
+
 # Clone release repository
 
 if [[ ! -e $RELEASE_REPOSITORY_PATH ]]; then
-    git clone $RELEASE_REPOSITORY $RELEASE_REPOSITORY_PATH
+    clone_repository "$RELEASE_REPOSITORY" "$RELEASE_REPOSITORY_PATH"
 fi
 
 # NOTE: For builds for a specific release, the OpenStack version is taken from the release repository.
 if [[ $VERSION != "latest" ]]; then
-    ( cd $RELEASE_REPOSITORY_PATH || exit; git fetch --all --force; git checkout "kolla-$VERSION" )
+    ( cd $RELEASE_REPOSITORY_PATH || exit 1; git fetch --all --force || exit 1; git checkout "kolla-$VERSION" || exit 1 ) || exit 1
     OPENSTACK_VERSION=$(grep "openstack_version:" release/latest/openstack.yml | awk -F': ' '{ print $2 }' | tr -d '"')
 fi
 
 # Clone repository
 
 if [[ ! -e $PROJECT_REPOSITORY_PATH ]]; then
-    git clone $PROJECT_REPOSITORY $PROJECT_REPOSITORY_PATH
+    clone_repository "$PROJECT_REPOSITORY" "$PROJECT_REPOSITORY_PATH"
 fi
 
 # Use required kolla release for dockerfiles
 
-pushd $PROJECT_REPOSITORY_PATH > /dev/null
+pushd $PROJECT_REPOSITORY_PATH > /dev/null || exit 1
+# An unresolvable ref is fatal as well: without this the checkout stays on the
+# default branch and the release gets built from the wrong kolla tree.
 if [[ "$OPENSTACK_VERSION" != "latest" ]]; then
     if [[ "$OPENSTACK_VERSION" == "2024.1" ]]; then
-        git checkout origin/unmaintained/$OPENSTACK_VERSION
+        git checkout origin/unmaintained/$OPENSTACK_VERSION || exit 1
     elif [[ "$OPENSTACK_VERSION" == "2024.2" ]]; then
-        git checkout 2024.2-eol
+        git checkout 2024.2-eol || exit 1
     else
-        git checkout origin/stable/$OPENSTACK_VERSION
+        git checkout origin/stable/$OPENSTACK_VERSION || exit 1
     fi
 fi
 export HASH_KOLLA=$(git rev-parse --short HEAD)
