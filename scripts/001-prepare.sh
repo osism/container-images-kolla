@@ -32,6 +32,67 @@ reset_patch_manifest
 export VERSION
 export OPENSTACK_VERSION
 
+# ===========================================================================
+# THROWAWAY DIAGNOSTIC BRANCH -- never merge. Validates the transport probe
+# that is destined for zuul-config's diagnose-network role.
+#
+# zuul-config is a TRUSTED config-project, so its playbooks always run from
+# the branch tip and its changes are never executed speculatively from a PR.
+# A DNM PR there would run merged main and the probe would simply not fire.
+# container-images-kolla is untrusted, so speculative execution works here --
+# hence validating the snippet in this repo first and porting it afterwards.
+#
+# The probe uses GIT, not curl. That is not a style preference: curl POSTs to
+# /git-upload-pack returned 200 on 24 of 24 probes while git was failing ~84%
+# of attempts on the same node in the same seconds, so a curl-based probe is a
+# verified NON-reproducer and would report healthy through an active fault.
+# `git ls-remote` with protocol v2 does reproduce (measured 2/5).
+#
+# Both axes are set explicitly in every cell so the measurement is unaffected
+# by any node-level `http.version` pin (verified: `-c` overrides the pin).
+#
+# Run AFTER the build's own clones on purpose. These probes issue ~30 extra
+# requests; if the fault has any per-client rate component, running them first
+# could induce the very refusals we are trying to observe and corrupt the
+# clone-loop counts this is meant to correlate against.
+# ===========================================================================
+
+diag_probe_default_transport () {
+    local url=$1
+    local trials=${2:-10}
+    local ok=0 i
+
+    for ((i = 1; i <= trials; i++)); do
+        GIT_TERMINAL_PROMPT=0 git -c http.version=HTTP/2 -c protocol.version=2 \
+            ls-remote "$url" HEAD >/dev/null 2>&1 && ok=$((ok + 1))
+    done
+    echo "DIAG-PROBE: default-transport ls-remote url=$url ok=$ok/$trials"
+}
+
+diag_probe_matrix () {
+    local url=$1
+    local label ok i d
+
+    for label in h2+v2 http1.1+v2 h2+v0 http1.1+v0; do
+        ok=0
+        for ((i = 1; i <= 5; i++)); do
+            d=$(mktemp -d) || continue
+            case $label in
+                h2+v2)      GIT_TERMINAL_PROMPT=0 git -c http.version=HTTP/2 \
+                                -c protocol.version=2 clone --depth=1 "$url" "$d/c" ;;
+                http1.1+v2) GIT_TERMINAL_PROMPT=0 git -c http.version=HTTP/1.1 \
+                                -c protocol.version=2 clone --depth=1 "$url" "$d/c" ;;
+                h2+v0)      GIT_TERMINAL_PROMPT=0 git -c http.version=HTTP/2 \
+                                -c protocol.version=0 clone --depth=1 "$url" "$d/c" ;;
+                http1.1+v0) GIT_TERMINAL_PROMPT=0 git -c http.version=HTTP/1.1 \
+                                -c protocol.version=0 clone --depth=1 "$url" "$d/c" ;;
+            esac >/dev/null 2>&1 && ok=$((ok + 1))
+            rm -rf "$d"
+        done
+        echo "DIAG-MATRIX: clone --depth=1 [$label] ok=$ok/5"
+    done
+}
+
 # clone_repository <url> <path>
 #
 # Clones <url> and aborts the build when it cannot. Retrying first is
@@ -120,6 +181,14 @@ fi
 if [[ ! -e $PROJECT_REPOSITORY_PATH ]]; then
     clone_repository "$PROJECT_REPOSITORY" "$PROJECT_REPOSITORY_PATH"
 fi
+
+# THROWAWAY -- unconditional, so it reports on green builds too. The whole
+# point is a time series plus a same-build correlation against any refusals
+# the clone loop logged above.
+echo "DIAG: ==== transport diagnostics ($(git --version 2>&1)) ===="
+diag_probe_default_transport "$RELEASE_REPOSITORY" 10
+diag_probe_matrix "$RELEASE_REPOSITORY"
+echo "DIAG: ==== end transport diagnostics ===="
 
 # Use required kolla release for dockerfiles
 
