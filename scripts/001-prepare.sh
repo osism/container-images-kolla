@@ -45,18 +45,61 @@ export OPENSTACK_VERSION
 clone_repository () {
     local url=$1
     local path=$2
+    local attempts=3
     local attempt
 
-    for attempt in 1 2 3; do
+    for ((attempt = 1; attempt <= attempts; attempt++)); do
         if git clone "$url" "$path"; then
             return 0
         fi
-        echo "WARNING: cloning $url failed (attempt $attempt of 3)" >&2
+        echo "WARNING: cloning $url failed (attempt $attempt of $attempts)" >&2
         rm -rf "$path"
         sleep $((attempt * 10))
     done
 
-    echo "ERROR: cloning $url into $path failed" >&2
+    # TEMPORARY WORKAROUND for a GitHub-side fault -- see "Retiring this"
+    # below. Retry once over HTTP/1.1.
+    #
+    # Since 2026-09-02, anonymous clones of public github.com repositories are
+    # intermittently refused: the `GET .../info/refs` succeeds with 200, then
+    # the `POST .../git-upload-pack` that follows returns 401 with
+    # `www-authenticate: Basic realm="GitHub"`, so git tries to prompt for a
+    # password, finds no terminal, and aborts. The transport decides it.
+    # Measured on nodes while they were being refused: git's default
+    # (HTTP/2 with git protocol v2) took 15 refusals in one buildset, while
+    # HTTP/1.1 succeeded 9 times out of 9, four of those on the first attempt
+    # immediately after three consecutive default refusals of the same URL.
+    #
+    # This is a fallback and NOT a global `http.version` pin. A pin would work
+    # equally well, but it would also make the fault invisible the moment it
+    # recurs, and it is not understood well enough to stop watching. Reaching
+    # this code is the signal, so both markers below are stable, greppable
+    # strings with machine-readable `url=` and `after=` fields.
+    #
+    # Retiring this:
+    #
+    #   Judge it on REFUSALS, not on these markers. A marker only appears when
+    #   the default transport fails all $attempts times; if the fault merely
+    #   becomes rarer, a plain retry recovers and no marker is emitted at all
+    #   (observed: two jobs in the validating buildset took a refusal each and
+    #   recovered without reaching the fallback). Zero markers therefore does
+    #   NOT mean the fault is gone.
+    #
+    #   Retire when `could not read Username for 'https://github.com'` stops
+    #   appearing across CI for a sustained window -- not merely when
+    #   FALLBACK-HTTP11 stops appearing. Then revert this commit; the retry
+    #   loop and fail-fast behaviour above are independent of it and stay.
+    #
+    #   Note both markers are echoed under `set -x`, so each appears twice in
+    #   the job log. Halve any count.
+    echo "WARNING: FALLBACK-HTTP11 url=$url after=$attempts refused attempts" >&2
+    if git -c http.version=HTTP/1.1 clone "$url" "$path"; then
+        echo "WARNING: FALLBACK-HTTP11-SUCCEEDED url=$url after=$attempts refused attempts" >&2
+        return 0
+    fi
+    rm -rf "$path"
+
+    echo "ERROR: cloning $url into $path failed (HTTP/1.1 fallback also failed)" >&2
     exit 1
 }
 
