@@ -1,0 +1,733 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Abhishek Kekane <akekane@redhat.com>
+Date: Wed, 22 Jul 2026 07:41:29 +0000
+Subject: [PATCH 5/5] Block restricted hosts when adding HTTP image locations
+
+Apply import_filtering_opts to HTTP(S) locations and validate
+the URI before contacting the backend, so location add cannot
+SSRF glance-api into loopback or link-local targets.
+
+On stable/2025.1, FunctionalTest location fixtures whitelist
+127.0.0.1/localhost via self.allowed_hosts because self.config()
+does not affect the API subprocess.
+
+OSISM: rebased onto the 2024.1 code base from the 2024.2 series
+(osism/container-images-kolla#790), with one deliberate omission. glance
+28.x has no add-location API -- POST /v2/images/{id}/locations arrived in
+2024.2 -- so the hunk adding the restricted-host check to add_location(),
+its unit test and its functional test are dropped; there is no such entry
+point on 2024.1 to harden. Everything that does apply is kept unchanged:
+the switch to validate_uri() in the web-download path, the pre-backend
+validation in _check_location_uri() that also covers the older
+PATCH /locations route, the store_utils and common/utils changes, and the
+test_update_locations_blocks_restricted_http_hosts functional test.
+
+Closes-Bug: #2161330
+SecurityImpact
+
+Conflicts:
+  glance/common/scripts/utils.py
+  glance/tests/functional/v2/test_images.py
+  glance/tests/unit/v2/test_images_resource.py
+
+Assisted-By: Cursor (claude-4.5-sonnet)
+Change-Id: Iff9793480ad6da44490afc6c686771bd85908a5a
+Signed-off-by: Abhishek Kekane <akekane@redhat.com>
+(cherry picked from commit 232b1fb65346b2cca9a7be4456e3a497c2e87875)
+(cherry picked from commit d3da720ed5241b178b09d10e7df524493c88f77d)
+(cherry picked from commit f150aa131810ac17b3b902a8f3bafac3c0325edb)
+---
+ .../admin/interoperable-image-import.rst      |  6 ++
+ glance/api/v2/images.py                       |  2 +-
+ glance/common/scripts/utils.py                |  4 +-
+ glance/common/store_utils.py                  | 18 ++++-
+ glance/common/utils.py                        | 52 ++++++------
+ glance/location.py                            |  9 ++-
+ glance/tests/functional/v2/test_images.py     | 45 +++++++++++
+ .../unit/common/scripts/test_scripts_utils.py |  4 +-
+ glance/tests/unit/common/test_store_utils.py  | 38 +++++++++
+ glance/tests/unit/common/test_utils.py        | 79 ++++++++++---------
+ glance/tests/unit/test_store_location.py      | 11 +++
+ glance/tests/unit/v2/test_images_resource.py  |  8 ++
+ .../notes/bug-2161330-f8a1c3e5b7d90214.yaml   | 23 ++++++
+ 13 files changed, 229 insertions(+), 70 deletions(-)
+ create mode 100644 glance/tests/unit/common/test_store_utils.py
+ create mode 100644 releasenotes/notes/bug-2161330-f8a1c3e5b7d90214.yaml
+
+diff --git a/doc/source/admin/interoperable-image-import.rst b/doc/source/admin/interoperable-image-import.rst
+index 365c72c..150f68c 100644
+--- a/doc/source/admin/interoperable-image-import.rst
++++ b/doc/source/admin/interoperable-image-import.rst
+@@ -191,6 +191,12 @@ method.
+ You can do this by configuring options in the
+ ``[import_filtering_opts]`` section of the **glance-image-import.conf** file.
+ 
++.. note::
++   The same ``import_filtering_opts`` host filtering also applies to HTTP(S)
++   image locations added via ``POST /v2/images/{image_id}/locations`` or the
++   legacy PATCH locations API. Operators who enable the HTTP store should
++   configure these options for location adds as well as web-download.
++
+ .. note::
+    The **glance-image-import.conf** is an optional file.  (See below for a
+    discussion of the default settings if you don't include this file.)
+diff --git a/glance/api/v2/images.py b/glance/api/v2/images.py
+index 19adbb6..de2bd34 100644
+--- a/glance/api/v2/images.py
++++ b/glance/api/v2/images.py
+@@ -453,7 +453,7 @@ class ImagesController(object):
+             ctxt, admin_context=admin_context)
+ 
+         if (import_method == 'web-download' and
+-                not utils.validate_import_uri(uri)):
++                not utils.validate_uri(uri)):
+             LOG.debug("URI for web-download does not pass filtering: %s", uri)
+             msg = (_("URI for web-download does not pass filtering: %s") % uri)
+             raise webob.exc.HTTPBadRequest(explanation=msg)
+diff --git a/glance/common/scripts/utils.py b/glance/common/scripts/utils.py
+index 2790d87..1dd429d 100644
+--- a/glance/common/scripts/utils.py
++++ b/glance/common/scripts/utils.py
+@@ -127,7 +127,7 @@ def validate_location_uri(location):
+ class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+     """HTTP redirect handler that validates redirect destinations."""
+     def redirect_request(self, req, fp, code, msg, headers, newurl):
+-        if not common_utils.validate_import_uri(newurl):
++        if not common_utils.validate_uri(newurl):
+             msg = (_("Redirect to disallowed URL: %s") % newurl)
+             raise exception.InvalidRedirect(msg)
+         return super().redirect_request(req, fp, code, msg, headers, newurl)
+@@ -174,7 +174,7 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+ def _pinned_ip_for_request(req):
+     """Return a pinned destination IP for an external HTTP(S) URI."""
+     try:
+-        return common_utils.get_validated_import_address(req.full_url)
++        return common_utils.get_validated_address(req.full_url)
+     except ValueError as exc:
+         msg = (_("URI does not pass filtering: %s") % req.full_url)
+         LOG.debug("%s (%s)", msg, exc)
+diff --git a/glance/common/store_utils.py b/glance/common/store_utils.py
+index e3a94d2..aa93875 100644
+--- a/glance/common/store_utils.py
++++ b/glance/common/store_utils.py
+@@ -20,6 +20,7 @@ from oslo_config import cfg
+ from oslo_log import log as logging
+ from oslo_utils import encodeutils
+ 
++from glance.common import utils as common_utils
+ import glance.db as db_api
+ from glance.i18n import _LE, _LW
+ from glance import scrubber
+@@ -139,6 +140,10 @@ def validate_external_location(uri):
+     see LP bug #942118, 1400966, 'swift+config://' is also
+     absent for security reasons, see LP bug #1334196.
+ 
++    HTTP(S) locations are additionally checked with the same
++    ``import_filtering_opts`` host/port rules used for web-download
++    (see LP bug #2161330).
++
+     :param uri: The URI of external image location.
+     :returns: Whether given URI of external image location are OK.
+     """
+@@ -152,8 +157,17 @@ def validate_external_location(uri):
+     if CONF.enabled_backends:
+         known_schemes = store_api.get_known_schemes_for_multi_store()
+ 
+-    return (scheme in known_schemes and
+-            scheme not in RESTRICTED_URI_SCHEMAS)
++    if (scheme not in known_schemes or
++            scheme in RESTRICTED_URI_SCHEMAS):
++        return False
++
++    # NOTE(abhishekk): Apply import host filtering to HTTP(S) locations so
++    # location add cannot SSRF glance-api into loopback/link-local targets
++    # (or other hosts blocked by import_filtering_opts).
++    if scheme in ('http', 'https'):
++        return common_utils.validate_uri(uri)
++
++    return True
+ 
+ 
+ def _get_store_id_from_uri(uri):
+diff --git a/glance/common/utils.py b/glance/common/utils.py
+index d9d6e8f..fc083ea 100644
+--- a/glance/common/utils.py
++++ b/glance/common/utils.py
+@@ -190,29 +190,32 @@ def normalize_hostname(host):
+     return host
+ 
+ 
+-def default_import_port(scheme):
+-    """Return the default port for an import URI scheme."""
++def default_port(scheme):
++    """Return the default port for an external HTTP(S) URI scheme."""
+     return 443 if scheme == 'https' else 80
+ 
+ 
+-def resolve_pinned_import_address(hostname, port):
+-    """Resolve hostname and return the first import-allowed IP address.
++def resolve_pinned_address(hostname, port):
++    """Resolve hostname and return the first allowed IP address.
+ 
+     Blocks loopback and link-local addresses (including cloud metadata
+     endpoints such as 169.254.169.254) unless the host is listed in
+     allowed_hosts. Private RFC1918 ranges are not blocked so private
+-    clouds can import from internal hosts. IPv4-mapped IPv6 addresses
++    clouds can fetch from internal hosts. IPv4-mapped IPv6 addresses
+     are checked against the embedded IPv4 address. Matching
+     disallowed_hosts IP entries also reject resolved addresses.
+ 
+-    :param hostname: hostname or IP from the import URI
+-    :param port: destination port from the import URI
++    Used for web-download import and other external HTTP(S) fetches that
++    apply ``import_filtering_opts`` (for example HTTP image locations).
++
++    :param hostname: hostname or IP from the external URI
++    :param port: destination port from the external URI
+     :returns: IP address string to connect to
+-    :raises ValueError: if the host cannot be used for import
++    :raises ValueError: if the host cannot be used for an external fetch
+     """
+     normalized_host = normalize_hostname(hostname)
+     if not normalized_host:
+-        raise ValueError('invalid import host: %s' % hostname)
++        raise ValueError('invalid external host: %s' % hostname)
+ 
+     bl_hosts = list(CONF.import_filtering_opts.disallowed_hosts)
+     wl_hosts = CONF.import_filtering_opts.allowed_hosts
+@@ -237,7 +240,7 @@ def resolve_pinned_import_address(hostname, port):
+                 if addr not in addresses:
+                     addresses.append(addr)
+     except (socket.gaierror, ValueError) as exc:
+-        raise ValueError('failed to resolve import host %s: %s' %
++        raise ValueError('failed to resolve external host %s: %s' %
+                          (hostname, exc))
+ 
+     for addr in addresses:
+@@ -266,17 +269,18 @@ def resolve_pinned_import_address(hostname, port):
+         if not blocked:
+             return str(addr)
+ 
+-    raise ValueError('no allowed addresses for import host: %s' % hostname)
++    raise ValueError('no allowed addresses for external host: %s' % hostname)
+ 
+ 
+-def get_validated_import_address(uri):
+-    """Validate an import URI and return a pinned destination IP.
++def get_validated_address(uri):
++    """Validate an external URI and return a pinned destination IP.
+ 
+-    Applies scheme/host/port filtering, resolves DNS, and returns the first
+-    allowed address. Raises ValueError if the URI must not be fetched.
++    Applies ``import_filtering_opts`` scheme/host/port filtering, resolves
++    DNS, and returns the first allowed address. Raises ValueError if the
++    URI must not be fetched.
+     """
+     if not uri:
+-        raise ValueError('empty import URI')
++        raise ValueError('empty external URI')
+ 
+     parsed_uri = urllib.parse.urlparse(uri)
+     scheme = parsed_uri.scheme
+@@ -306,26 +310,26 @@ def get_validated_import_address(uri):
+ 
+     if not scheme or ((wl_schemes and scheme not in wl_schemes) or
+                       parsed_uri.scheme in bl_schemes):
+-        raise ValueError('scheme not allowed for import URI: %s' % uri)
++        raise ValueError('scheme not allowed for external URI: %s' % uri)
+ 
+     normalized_host = normalize_hostname(host)
+     if not normalized_host or (
+             (wl_hosts and normalized_host not in wl_hosts) or
+             normalized_host in bl_hosts):
+-        raise ValueError('host not allowed for import URI: %s' % uri)
++        raise ValueError('host not allowed for external URI: %s' % uri)
+ 
+     if port and ((wl_ports and port not in wl_ports) or
+                  port in bl_ports):
+-        raise ValueError('port not allowed for import URI: %s' % uri)
++        raise ValueError('port not allowed for external URI: %s' % uri)
+ 
+-    resolve_port = port or default_import_port(scheme)
+-    return resolve_pinned_import_address(normalized_host, resolve_port)
++    resolve_port = port or default_port(scheme)
++    return resolve_pinned_address(normalized_host, resolve_port)
+ 
+ 
+-def validate_import_uri(uri):
+-    """Return True if the URI passes image-import filtering."""
++def validate_uri(uri):
++    """Return True if the URI passes ``import_filtering_opts`` filtering."""
+     try:
+-        get_validated_import_address(uri)
++        get_validated_address(uri)
+         return True
+     except ValueError:
+         return False
+diff --git a/glance/location.py b/glance/location.py
+index 6012071..f4a232a 100644
+--- a/glance/location.py
++++ b/glance/location.py
+@@ -130,6 +130,12 @@ def _check_location_uri(context, store_api, store_utils, uri,
+     :param backend: A backend name for the store
+     """
+ 
++    # NOTE(abhishekk): Validate before contacting the backend so restricted
++    # HTTP(S) URIs never trigger an outbound request (SSRF).
++    if not store_utils.validate_external_location(uri):
++        reason = _('Invalid location')
++        raise exception.BadStoreUri(message=reason)
++
+     try:
+         # NOTE(zhiyan): Some stores return zero when it catch exception
+         if CONF.enabled_backends:
+@@ -139,8 +145,7 @@ def _check_location_uri(context, store_api, store_utils, uri,
+             size_from_backend = store_api.get_size_from_backend(
+                 uri, context=context)
+ 
+-        is_ok = (store_utils.validate_external_location(uri) and
+-                 size_from_backend > 0)
++        is_ok = size_from_backend > 0
+     except (store.UnknownScheme, store.NotFound, store.BadStoreUri):
+         is_ok = False
+     if not is_ok:
+diff --git a/glance/tests/functional/v2/test_images.py b/glance/tests/functional/v2/test_images.py
+index e14c8ac..4148183 100644
+--- a/glance/tests/functional/v2/test_images.py
++++ b/glance/tests/functional/v2/test_images.py
+@@ -69,6 +69,12 @@ class TestImages(functional.FunctionalTest):
+         self.cleanup()
+         self.include_scrubber = False
+         self.api_server.deployment_flavor = 'noauth'
++        # Location fixtures use 127.0.0.1 with ephemeral ports. Whitelist
++        # those hosts so SSRF filtering does not break fixture URLs.
++        self.allowed_hosts = ['127.0.0.1', 'localhost']
++        node_staging_uri = 'file://%s' % os.path.join(self.test_dir, 'staging')
++        utils.safe_mkdirs(node_staging_uri[7:])
++        self.config(node_staging_uri=node_staging_uri)
+         for i in range(3):
+             ret = test_utils.start_http_server("foo_image_id%d" % i,
+                                                "foo_image%d" % i)
+@@ -510,6 +516,8 @@ class TestImages(functional.FunctionalTest):
+ 
+     def test_web_download_ip_normalization(self):
+         """Test that encoded IP addresses are normalized and blocked."""
++        # Clear fixture whitelist so loopback encodings are blocked.
++        self.allowed_hosts = []
+         self.config(allowed_ports=[80], group='import_filtering_opts')
+         self.config(disallowed_hosts=['127.0.0.1'],
+                     group='import_filtering_opts')
+@@ -3886,6 +3894,41 @@ class TestImages(functional.FunctionalTest):
+         response = requests.patch(path, headers=headers, data=data)
+         self.assertEqual(http.BAD_REQUEST, response.status_code, response.text)
+ 
++    def test_update_locations_blocks_restricted_http_hosts(self):
++        """Old PATCH locations API also blocks restricted HTTP hosts."""
++        self.allowed_hosts = []
++        self.api_server.show_multiple_locations = True
++        self.start_servers(**self.__dict__.copy())
++
++        path = self._url('/v2/images')
++        headers = self._headers({'content-type': 'application/json'})
++        data = jsonutils.dumps({'name': 'ssrf-patch-location',
++                                'disk_format': 'aki',
++                                'container_format': 'aki'})
++        response = requests.post(path, headers=headers, data=data)
++        self.assertEqual(http.CREATED, response.status_code)
++        image_id = jsonutils.loads(response.text)['id']
++
++        path = self._url('/v2/images/%s' % image_id)
++        media_type = 'application/openstack-images-v2.1-json-patch'
++        headers = self._headers({'content-type': media_type})
++        data = jsonutils.dumps([{
++            'op': 'replace',
++            'path': '/locations',
++            'value': [{
++                'url': 'http://169.254.169.254/latest/meta-data/',
++                'metadata': {}
++            }]
++        }])
++        response = requests.patch(path, headers=headers, data=data)
++        self.assertEqual(http.BAD_REQUEST, response.status_code, response.text)
++
++        path = self._url('/v2/images/%s' % image_id)
++        response = requests.delete(path, headers=self._headers())
++        self.assertEqual(http.NO_CONTENT, response.status_code)
++
++        self.stop_servers()
++
+ 
+ class TestImagesIPv6(functional.FunctionalTest):
+     """Verify that API and REG servers running IPv6 can communicate"""
+@@ -4137,6 +4180,7 @@ class TestImageLocationSelectionStrategy(functional.FunctionalTest):
+         self.cleanup()
+         self.include_scrubber = False
+         self.api_server.deployment_flavor = 'noauth'
++        self.allowed_hosts = ['127.0.0.1', 'localhost']
+         for i in range(3):
+             ret = test_utils.start_http_server("foo_image_id%d" % i,
+                                                "foo_image%d" % i)
+@@ -4681,6 +4725,7 @@ class TestImagesMultipleBackend(functional.MultipleBackendFunctionalTest):
+         self.cleanup()
+         self.include_scrubber = False
+         self.api_server_multiple_backend.deployment_flavor = 'noauth'
++        self.allowed_hosts = ['127.0.0.1', 'localhost']
+         for i in range(3):
+             ret = test_utils.start_http_server("foo_image_id%d" % i,
+                                                "foo_image%d" % i)
+diff --git a/glance/tests/unit/common/scripts/test_scripts_utils.py b/glance/tests/unit/common/scripts/test_scripts_utils.py
+index 11d28a4..5d5a86c 100644
+--- a/glance/tests/unit/common/scripts/test_scripts_utils.py
++++ b/glance/tests/unit/common/scripts/test_scripts_utils.py
+@@ -214,7 +214,7 @@ class TestSafeRedirectHandler(test_utils.BaseTestCase):
+     def setUp(self):
+         super(TestSafeRedirectHandler, self).setUp()
+ 
+-    @mock.patch('glance.common.utils.validate_import_uri')
++    @mock.patch('glance.common.utils.validate_uri')
+     def test_redirect_to_allowed_url(self, mock_validate):
+         """Test redirect to allowed URL is accepted."""
+         mock_validate.return_value = True
+@@ -239,7 +239,7 @@ class TestSafeRedirectHandler(test_utils.BaseTestCase):
+         # Should return a request object (not None)
+         self.assertIsNotNone(result)
+ 
+-    @mock.patch('glance.common.utils.validate_import_uri')
++    @mock.patch('glance.common.utils.validate_uri')
+     def test_redirect_to_disallowed_url(self, mock_validate):
+         """Test redirect to disallowed URL raises error."""
+         mock_validate.return_value = False
+diff --git a/glance/tests/unit/common/test_store_utils.py b/glance/tests/unit/common/test_store_utils.py
+new file mode 100644
+index 0000000..6e20a31
+--- /dev/null
++++ b/glance/tests/unit/common/test_store_utils.py
+@@ -0,0 +1,38 @@
++# Copyright 2026 Red Hat, Inc.
++# All Rights Reserved.
++#
++#    Licensed under the Apache License, Version 2.0 (the "License"); you may
++#    not use this file except in compliance with the License. You may obtain
++#    a copy of the License at
++#
++#         http://www.apache.org/licenses/LICENSE-2.0
++#
++#    Unless required by applicable law or agreed to in writing, software
++#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++#    License for the specific language governing permissions and limitations
++#    under the License.
++
++from glance.common import store_utils
++from glance.tests.unit import base as unit_base
++
++
++class TestValidateExternalLocation(unit_base.StoreClearingUnitTest):
++
++    def test_http_restricted_hosts_rejected(self):
++        self.assertFalse(
++            store_utils.validate_external_location('http://127.0.0.1/x'))
++        self.assertFalse(
++            store_utils.validate_external_location(
++                'http://169.254.169.254/latest/meta-data/'))
++
++    def test_http_restricted_hosts_allowed_when_whitelisted(self):
++        self.config(allowed_hosts=['127.0.0.1'],
++                    group='import_filtering_opts')
++        self.config(allowed_ports=[80], group='import_filtering_opts')
++        self.assertTrue(
++            store_utils.validate_external_location('http://127.0.0.1:80/x'))
++
++    def test_file_scheme_still_rejected(self):
++        self.assertFalse(
++            store_utils.validate_external_location('file:///etc/passwd'))
+diff --git a/glance/tests/unit/common/test_utils.py b/glance/tests/unit/common/test_utils.py
+index 8b15340..1ed8b79 100644
+--- a/glance/tests/unit/common/test_utils.py
++++ b/glance/tests/unit/common/test_utils.py
+@@ -905,45 +905,45 @@ class EvaluateFilterOpTestCase(test_utils.BaseTestCase):
+ class ImportURITestCase(test_utils.BaseTestCase):
+ 
+     @mock.patch("glance.common.utils.socket.getaddrinfo")
+-    def test_validate_import_uri(self, mock_getaddrinfo):
+-        # This avoid internet access in validate_import_uri()
++    def test_validate_uri(self, mock_getaddrinfo):
++        # This avoid internet access in validate_uri()
+         # (ie: DNS resolution of foo.com)
+         mock_getaddrinfo.return_value = [
+             (socket.AF_INET, socket.SOCK_STREAM, 6, '',
+              ('93.184.216.34', 80))
+         ]
+ 
+-        self.assertTrue(utils.validate_import_uri("http://foo.com"))
++        self.assertTrue(utils.validate_uri("http://foo.com"))
+ 
+         self.config(allowed_schemes=['http'],
+                     group='import_filtering_opts')
+         self.config(allowed_hosts=['example.com'],
+                     group='import_filtering_opts')
+-        self.assertTrue(utils.validate_import_uri("http://example.com"))
++        self.assertTrue(utils.validate_uri("http://example.com"))
+ 
+         self.config(allowed_ports=['8080'],
+                     group='import_filtering_opts')
+-        self.assertTrue(utils.validate_import_uri("http://example.com:8080"))
++        self.assertTrue(utils.validate_uri("http://example.com:8080"))
+ 
+     def test_invalid_import_uri(self):
+-        self.assertFalse(utils.validate_import_uri(""))
++        self.assertFalse(utils.validate_uri(""))
+ 
+-        self.assertFalse(utils.validate_import_uri("fake_uri"))
++        self.assertFalse(utils.validate_uri("fake_uri"))
+         self.config(disallowed_schemes=['ftp'],
+                     group='import_filtering_opts')
+-        self.assertFalse(utils.validate_import_uri("ftp://example.com"))
++        self.assertFalse(utils.validate_uri("ftp://example.com"))
+ 
+         self.config(disallowed_hosts=['foo.com'],
+                     group='import_filtering_opts')
+-        self.assertFalse(utils.validate_import_uri("ftp://foo.com"))
++        self.assertFalse(utils.validate_uri("ftp://foo.com"))
+ 
+         self.config(disallowed_ports=['8484'],
+                     group='import_filtering_opts')
+-        self.assertFalse(utils.validate_import_uri("http://localhost:8484"))
++        self.assertFalse(utils.validate_uri("http://localhost:8484"))
+ 
+     @mock.patch("glance.common.utils.socket.getaddrinfo")
+     def test_ignored_filtering_options(self, mock_getaddrinfo):
+-        # This avoid internet access in validate_import_uri()
++        # This avoid internet access in validate_uri()
+         # (ie: DNS resolution of foo.com)
+         mock_getaddrinfo.return_value = [
+             (socket.AF_INET, socket.SOCK_STREAM, 6, '',
+@@ -956,7 +956,7 @@ class ImportURITestCase(test_utils.BaseTestCase):
+                         group='import_filtering_opts')
+             self.config(disallowed_schemes=['ftp'],
+                         group='import_filtering_opts')
+-            self.assertTrue(utils.validate_import_uri("ftp://foo.com"))
++            self.assertTrue(utils.validate_uri("ftp://foo.com"))
+             mock_run.assert_called_once()
+         with mock.patch.object(LOG, 'debug') as mock_run:
+             self.config(allowed_schemes=[],
+@@ -967,7 +967,7 @@ class ImportURITestCase(test_utils.BaseTestCase):
+                         group='import_filtering_opts')
+             self.config(disallowed_hosts=['foo.com'],
+                         group='import_filtering_opts')
+-            self.assertTrue(utils.validate_import_uri("ftp://foo.com"))
++            self.assertTrue(utils.validate_uri("ftp://foo.com"))
+             mock_run.assert_called_once()
+         with mock.patch.object(LOG, 'debug') as mock_run:
+             self.config(allowed_hosts=[],
+@@ -978,35 +978,36 @@ class ImportURITestCase(test_utils.BaseTestCase):
+                         group='import_filtering_opts')
+             self.config(disallowed_ports=[8484],
+                         group='import_filtering_opts')
+-            self.assertTrue(utils.validate_import_uri("ftp://foo.com:8484"))
++            self.assertTrue(utils.validate_uri("ftp://foo.com:8484"))
+             mock_run.assert_called_once()
+ 
+-    def test_validate_import_uri_ip_rejection(self):
++    def test_validate_uri_ip_rejection(self):
+         """Test that encoded IP addresses are rejected (not normalized)."""
+         self.config(allowed_ports=[80], group='import_filtering_opts')
+         # Loopback and link-local addresses are blocked by default
+-        self.assertFalse(utils.validate_import_uri("http://127.0.0.1:80/"))
+-        self.assertFalse(utils.validate_import_uri("http://169.254.169.254/"))
++        self.assertFalse(utils.validate_uri("http://127.0.0.1:80/"))
++        self.assertFalse(
++            utils.validate_uri("http://169.254.169.254/"))
+         # Private RFC1918 addresses are allowed by default
+-        self.assertTrue(utils.validate_import_uri("http://10.0.0.1/"))
+-        self.assertTrue(utils.validate_import_uri("http://192.168.1.1/"))
++        self.assertTrue(utils.validate_uri("http://10.0.0.1/"))
++        self.assertTrue(utils.validate_uri("http://192.168.1.1/"))
+ 
+         # Test that encoded IP (decimal) is rejected
+-        result = utils.validate_import_uri("http://2130706433:80/")
++        result = utils.validate_uri("http://2130706433:80/")
+         self.assertFalse(result)
+ 
+         # Test that shorthand IP addresses are rejected
+-        self.assertFalse(utils.validate_import_uri("http://127.1:80/"))
+-        self.assertFalse(utils.validate_import_uri("http://10.1:80/"))
+-        self.assertFalse(utils.validate_import_uri("http://192.168.1:80/"))
++        self.assertFalse(utils.validate_uri("http://127.1:80/"))
++        self.assertFalse(utils.validate_uri("http://10.1:80/"))
++        self.assertFalse(utils.validate_uri("http://192.168.1:80/"))
+ 
+         # Test with allowed host - loopback may be allowed via whitelist
+         self.config(disallowed_hosts=[],
+                     group='import_filtering_opts')
+         self.config(allowed_hosts=['127.0.0.1'],
+                     group='import_filtering_opts')
+-        self.assertTrue(utils.validate_import_uri("http://127.0.0.1:80/"))
+-        self.assertFalse(utils.validate_import_uri("http://2130706433:80/"))
++        self.assertTrue(utils.validate_uri("http://127.0.0.1:80/"))
++        self.assertFalse(utils.validate_uri("http://2130706433:80/"))
+ 
+     @mock.patch('glance.common.utils.socket.getaddrinfo')
+     def test_normalize_hostname(self, mock_getaddrinfo):
+@@ -1118,7 +1119,7 @@ class ImportURITestCase(test_utils.BaseTestCase):
+         mock_getaddrinfo.assert_called_once_with(
+             "invalid-hostname-12345.", 80)
+ 
+-    def test_validate_import_uri_ipv6_validation(self):
++    def test_validate_uri_ipv6_validation(self):
+         """Test IPv6 addresses are properly validated against blacklist."""
+         # Test that IPv6 localhost is blocked when in blacklist
+         self.config(disallowed_hosts=['::1'],
+@@ -1128,7 +1129,7 @@ class ImportURITestCase(test_utils.BaseTestCase):
+         # IPv6 addresses in URLs are in brackets, but urlparse removes them
+         # So we test with the hostname directly
+         self.assertFalse(
+-            utils.validate_import_uri("http://[::1]:80/"))
++            utils.validate_uri("http://[::1]:80/"))
+ 
+         # Test that IPv6 localhost is blocked by default
+         self.config(disallowed_hosts=[],
+@@ -1137,14 +1138,15 @@ class ImportURITestCase(test_utils.BaseTestCase):
+                     group='import_filtering_opts')
+         self.config(allowed_ports=[80],
+                     group='import_filtering_opts')
+-        self.assertFalse(utils.validate_import_uri("http://[::1]:80/"))
++        self.assertFalse(utils.validate_uri("http://[::1]:80/"))
+ 
+         # Test that IPv6 address not in blacklist is allowed when whitelisted
+         self.config(disallowed_hosts=[],
+                     group='import_filtering_opts')
+         self.config(allowed_hosts=['2001:db8::1'],
+                     group='import_filtering_opts')
+-        self.assertTrue(utils.validate_import_uri("http://[2001:db8::1]:80/"))
++        self.assertTrue(
++            utils.validate_uri("http://[2001:db8::1]:80/"))
+ 
+         # Test that IPv6 localhost can be blocked separately from IPv4
+         # This ensures IPv6 addresses are properly normalized and can be
+@@ -1157,25 +1159,27 @@ class ImportURITestCase(test_utils.BaseTestCase):
+                     group='import_filtering_opts')
+         # IPv6 localhost is blocked by default even when only IPv4 is listed
+         # in disallowed_hosts
+-        result = utils.validate_import_uri("http://[::1]:80/")
++        result = utils.validate_uri("http://[::1]:80/")
+         self.assertFalse(result)
+ 
+         # Test that IPv6 can be blacklisted separately
+         self.config(disallowed_hosts=['127.0.0.1', '::1'],
+                     group='import_filtering_opts')
+-        self.assertFalse(utils.validate_import_uri("http://[::1]:80/"))
++        self.assertFalse(utils.validate_uri("http://[::1]:80/"))
+ 
+     @mock.patch("glance.common.utils.socket.getaddrinfo")
+-    def test_validate_import_uri_blocks_dns_rebinding(self, mock_getaddrinfo):
++    def test_validate_uri_blocks_dns_rebinding(
++            self, mock_getaddrinfo):
+         """Hostnames resolving to restricted addresses are rejected."""
+         mock_getaddrinfo.return_value = [
+             (socket.AF_INET, socket.SOCK_STREAM, 6, '',
+              ('169.254.169.254', 80))
+         ]
+-        self.assertFalse(utils.validate_import_uri("http://metadata.example/"))
++        self.assertFalse(
++            utils.validate_uri("http://metadata.example/"))
+ 
+     @mock.patch("glance.common.utils.socket.getaddrinfo")
+-    def test_validate_import_uri_blocks_disallowed_resolved_ip(
++    def test_validate_uri_blocks_disallowed_resolved_ip(
+             self, mock_getaddrinfo):
+         """Hostnames resolving to disallowed public IPs are rejected."""
+         mock_getaddrinfo.return_value = [
+@@ -1185,14 +1189,15 @@ class ImportURITestCase(test_utils.BaseTestCase):
+         self.config(disallowed_hosts=['93.184.216.34'],
+                     group='import_filtering_opts')
+         self.config(allowed_ports=[80], group='import_filtering_opts')
+-        self.assertFalse(utils.validate_import_uri("http://blocked.example/"))
++        self.assertFalse(
++            utils.validate_uri("http://blocked.example/"))
+ 
+     @mock.patch("glance.common.utils.socket.getaddrinfo")
+-    def test_resolve_pinned_import_address(self, mock_getaddrinfo):
++    def test_resolve_pinned_address(self, mock_getaddrinfo):
+         """Pinned address comes from validated DNS resolution."""
+         mock_getaddrinfo.return_value = [
+             (socket.AF_INET, socket.SOCK_STREAM, 6, '',
+              ('93.184.216.34', 80))
+         ]
+-        pinned = utils.resolve_pinned_import_address('example.com', 80)
++        pinned = utils.resolve_pinned_address('example.com', 80)
+         self.assertEqual(pinned, '93.184.216.34')
+diff --git a/glance/tests/unit/test_store_location.py b/glance/tests/unit/test_store_location.py
+index 40d7ce0..3c03cc3 100644
+--- a/glance/tests/unit/test_store_location.py
++++ b/glance/tests/unit/test_store_location.py
+@@ -82,3 +82,14 @@ class TestStoreLocation(base.StoreClearingUnitTest):
+         locations = glance.location.StoreLocations(image2, [loc1])
+         self.assertRaises(exception.BadStoreUri, locations.insert, 0, loc2)
+         self.assertNotIn(loc2, locations)
++
++    def test_add_http_location_blocks_restricted_hosts(self):
++        """HTTP locations to loopback/link-local are rejected before fetch."""
++        image = TestStoreLocation.FakeImageProxy()
++        locations = glance.location.StoreLocations(image, [])
++        for url in ('http://127.0.0.1/secret',
++                    'http://169.254.169.254/latest/meta-data/'):
++            loc = {'url': url, 'metadata': {}}
++            self.assertRaises(exception.BadStoreUri,
++                              locations.insert, 0, loc)
++            self.assertNotIn(loc, locations)
+diff --git a/glance/tests/unit/v2/test_images_resource.py b/glance/tests/unit/v2/test_images_resource.py
+index da34025..eefeef4 100644
+--- a/glance/tests/unit/v2/test_images_resource.py
++++ b/glance/tests/unit/v2/test_images_resource.py
+@@ -18,6 +18,7 @@ import hashlib
+ import http.client as http
+ import os
+ import requests
++import socket
+ from unittest import mock
+ import uuid
+ 
+@@ -218,6 +219,13 @@ class TestImagesController(base.IsolatedUnitTest):
+         self.controller.gateway.store_utils = self.store_utils
+         self.controller._key_manager = fake_keymgr.fake_api()
+         store.create_stores()
++        # Avoid real DNS for HTTP location URI filtering in controller tests.
++        getaddrinfo = mock.patch(
++            'glance.common.utils.socket.getaddrinfo',
++            return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, '',
++                           ('93.184.216.34', 0))])
++        getaddrinfo.start()
++        self.addCleanup(getaddrinfo.stop)
+ 
+     def _create_images(self):
+         self.images = [
+diff --git a/releasenotes/notes/bug-2161330-f8a1c3e5b7d90214.yaml b/releasenotes/notes/bug-2161330-f8a1c3e5b7d90214.yaml
+new file mode 100644
+index 0000000..0f0630e
+--- /dev/null
++++ b/releasenotes/notes/bug-2161330-f8a1c3e5b7d90214.yaml
+@@ -0,0 +1,23 @@
++---
++security:
++  - |
++    Fixed a Server-Side Request Forgery (SSRF) vulnerability when adding
++    HTTP(S) image locations. Authenticated users could supply location URLs
++    targeting loopback or link-local addresses (for example cloud metadata
++    at ``169.254.169.254``). Glance would fetch those URLs from glance-api
++    during location validation and hashing.
++
++    HTTP(S) locations are now checked with the same
++    ``import_filtering_opts`` host filtering used for web-download. Glance
++    validates the URI before contacting the backend so restricted destinations
++    never trigger an outbound request from the location-add path.
++
++    This applies to ``POST /v2/images/{id}/locations`` and the legacy PATCH
++    locations API when HTTP store is enabled.
++
++fixes:
++  - |
++    `Bug 2161330 <https://bugs.launchpad.net/glance/+bug/2161330>`_:
++    Block restricted destination addresses when adding HTTP(S) image
++    locations to prevent SSRF against local services and cloud metadata
++    endpoints.
