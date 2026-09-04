@@ -1,11 +1,13 @@
-From fc911ce5ff3d775e3331be4ea8f2d5a61cabfbbb Mon Sep 17 00:00:00 2001
+From fa75db8b669d7f9816ab1b1cfb168d9a09007d2f Mon Sep 17 00:00:00 2001
 From: Abhishek Kekane <akekane@redhat.com>
 Date: Wed, 22 Jul 2026 07:41:29 +0000
-Subject: [PATCH 4/4] Block restricted hosts when adding HTTP image locations
+Subject: [PATCH 2/2] Block restricted hosts when adding HTTP image locations
 
 Apply import_filtering_opts to HTTP(S) locations and validate
 the URI before contacting the backend, so location add cannot
 SSRF glance-api into loopback or link-local targets.
+
+Depends-On: https://review.opendev.org/c/openstack/tempest/+/1003560
 
 Closes-Bug: #2161330
 SecurityImpact
@@ -13,8 +15,8 @@ SecurityImpact
 Assisted-By: Cursor (claude-4.5-sonnet)
 Change-Id: Iff9793480ad6da44490afc6c686771bd85908a5a
 Signed-off-by: Abhishek Kekane <akekane@redhat.com>
+Signed-off-by: Brian Rosmaita <rosmaita.fossdev@gmail.com>
 (cherry picked from commit 232b1fb65346b2cca9a7be4456e3a497c2e87875)
-
 Conflicts:
   glance/common/store_utils.py
 ---
@@ -84,10 +86,10 @@ index 809815946..17c9cbaed 100644
                  # NOTE(pdeore): This will raise exception.Conflict if the
                  # lock is present and valid, or return if absent or invalid.
 diff --git a/glance/common/scripts/utils.py b/glance/common/scripts/utils.py
-index 3f221955a..6891ddcb5 100644
+index 7ff2dbf6d..6349ba285 100644
 --- a/glance/common/scripts/utils.py
 +++ b/glance/common/scripts/utils.py
-@@ -137,7 +137,7 @@ def validate_location_uri(location):
+@@ -135,7 +135,7 @@ def validate_location_uri(location):
  def validate_legacy_import_from_uri(location):
      """Validate legacy ``import_from`` URI (scheme + import filter)."""
      uri = validate_location_uri(location)
@@ -96,7 +98,7 @@ index 3f221955a..6891ddcb5 100644
          msg = (_("URI for legacy import task does not pass filtering: %s") %
                 uri)
          raise exception.Invalid(msg)
-@@ -147,7 +147,7 @@ def validate_legacy_import_from_uri(location):
+@@ -145,7 +145,7 @@ def validate_legacy_import_from_uri(location):
  class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
      """HTTP redirect handler that validates redirect destinations."""
      def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -105,7 +107,7 @@ index 3f221955a..6891ddcb5 100644
              msg = (_("Redirect to disallowed URL: %s") % newurl)
              raise exception.InvalidRedirect(msg)
          return super().redirect_request(req, fp, code, msg, headers, newurl)
-@@ -194,7 +194,7 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+@@ -192,7 +192,7 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
  def _pinned_ip_for_request(req):
      """Return a pinned destination IP for an external HTTP(S) URI."""
      try:
@@ -431,10 +433,10 @@ index bc42c368d..605eb7321 100644
              mock_enf.return_value = self.policy
              super(TestMultipleBackendsLocationApi, self).start_server()
 diff --git a/glance/tests/unit/common/scripts/test_scripts_utils.py b/glance/tests/unit/common/scripts/test_scripts_utils.py
-index f2880ef35..34e4f2311 100644
+index 673461a33..7d569a2b3 100644
 --- a/glance/tests/unit/common/scripts/test_scripts_utils.py
 +++ b/glance/tests/unit/common/scripts/test_scripts_utils.py
-@@ -260,7 +260,7 @@ class TestSafeRedirectHandler(test_utils.BaseTestCase):
+@@ -259,7 +259,7 @@ class TestSafeRedirectHandler(test_utils.BaseTestCase):
      def setUp(self):
          super(TestSafeRedirectHandler, self).setUp()
  
@@ -443,7 +445,7 @@ index f2880ef35..34e4f2311 100644
      def test_redirect_to_allowed_url(self, mock_validate):
          """Test redirect to allowed URL is accepted."""
          mock_validate.return_value = True
-@@ -285,7 +285,7 @@ class TestSafeRedirectHandler(test_utils.BaseTestCase):
+@@ -284,7 +284,7 @@ class TestSafeRedirectHandler(test_utils.BaseTestCase):
          # Should return a request object (not None)
          self.assertIsNotNone(result)
  
@@ -497,10 +499,10 @@ index 000000000..6e20a316d
 +        self.assertFalse(
 +            store_utils.validate_external_location('file:///etc/passwd'))
 diff --git a/glance/tests/unit/common/test_utils.py b/glance/tests/unit/common/test_utils.py
-index e9ba51cfc..65b7112c6 100644
+index 687773075..39158cacf 100644
 --- a/glance/tests/unit/common/test_utils.py
 +++ b/glance/tests/unit/common/test_utils.py
-@@ -957,45 +957,45 @@ class EvaluateFilterOpTestCase(test_utils.BaseTestCase):
+@@ -957,47 +957,47 @@ class EvaluateFilterOpTestCase(test_utils.BaseTestCase):
  class ImportURITestCase(test_utils.BaseTestCase):
  
      @mock.patch("glance.common.utils.socket.getaddrinfo")
@@ -529,6 +531,8 @@ index e9ba51cfc..65b7112c6 100644
 -        self.assertTrue(utils.validate_import_uri("http://example.com:8080"))
 +        self.assertTrue(utils.validate_uri("http://example.com:8080"))
  
+     # No need to mock eventlet.green.socket.getaddrinfo here,
+     # because this test checks that example and foo.com are blacklisted.
      def test_invalid_import_uri(self):
 -        self.assertFalse(utils.validate_import_uri(""))
 +        self.assertFalse(utils.validate_uri(""))
@@ -557,7 +561,7 @@ index e9ba51cfc..65b7112c6 100644
          # (ie: DNS resolution of foo.com)
          mock_getaddrinfo.return_value = [
              (socket.AF_INET, socket.SOCK_STREAM, 6, '',
-@@ -1008,7 +1008,7 @@ class ImportURITestCase(test_utils.BaseTestCase):
+@@ -1010,7 +1010,7 @@ class ImportURITestCase(test_utils.BaseTestCase):
                          group='import_filtering_opts')
              self.config(disallowed_schemes=['ftp'],
                          group='import_filtering_opts')
@@ -566,7 +570,7 @@ index e9ba51cfc..65b7112c6 100644
              mock_run.assert_called_once()
          with mock.patch.object(LOG, 'debug') as mock_run:
              self.config(allowed_schemes=[],
-@@ -1019,7 +1019,7 @@ class ImportURITestCase(test_utils.BaseTestCase):
+@@ -1021,7 +1021,7 @@ class ImportURITestCase(test_utils.BaseTestCase):
                          group='import_filtering_opts')
              self.config(disallowed_hosts=['foo.com'],
                          group='import_filtering_opts')
@@ -575,7 +579,7 @@ index e9ba51cfc..65b7112c6 100644
              mock_run.assert_called_once()
          with mock.patch.object(LOG, 'debug') as mock_run:
              self.config(allowed_hosts=[],
-@@ -1030,35 +1030,36 @@ class ImportURITestCase(test_utils.BaseTestCase):
+@@ -1032,35 +1032,36 @@ class ImportURITestCase(test_utils.BaseTestCase):
                          group='import_filtering_opts')
              self.config(disallowed_ports=[8484],
                          group='import_filtering_opts')
@@ -624,7 +628,7 @@ index e9ba51cfc..65b7112c6 100644
  
      @mock.patch('glance.common.utils.socket.getaddrinfo')
      def test_normalize_hostname(self, mock_getaddrinfo):
-@@ -1170,7 +1171,7 @@ class ImportURITestCase(test_utils.BaseTestCase):
+@@ -1172,7 +1173,7 @@ class ImportURITestCase(test_utils.BaseTestCase):
          mock_getaddrinfo.assert_called_once_with(
              "invalid-hostname-12345.", 80)
  
@@ -633,7 +637,7 @@ index e9ba51cfc..65b7112c6 100644
          """Test IPv6 addresses are properly validated against blacklist."""
          # Test that IPv6 localhost is blocked when in blacklist
          self.config(disallowed_hosts=['::1'],
-@@ -1180,7 +1181,7 @@ class ImportURITestCase(test_utils.BaseTestCase):
+@@ -1182,7 +1183,7 @@ class ImportURITestCase(test_utils.BaseTestCase):
          # IPv6 addresses in URLs are in brackets, but urlparse removes them
          # So we test with the hostname directly
          self.assertFalse(
@@ -642,7 +646,7 @@ index e9ba51cfc..65b7112c6 100644
  
          # Test that IPv6 localhost is blocked by default
          self.config(disallowed_hosts=[],
-@@ -1189,14 +1190,15 @@ class ImportURITestCase(test_utils.BaseTestCase):
+@@ -1191,14 +1192,15 @@ class ImportURITestCase(test_utils.BaseTestCase):
                      group='import_filtering_opts')
          self.config(allowed_ports=[80],
                      group='import_filtering_opts')
@@ -660,7 +664,7 @@ index e9ba51cfc..65b7112c6 100644
  
          # Test that IPv6 localhost can be blocked separately from IPv4
          # This ensures IPv6 addresses are properly normalized and can be
-@@ -1209,25 +1211,27 @@ class ImportURITestCase(test_utils.BaseTestCase):
+@@ -1211,25 +1213,27 @@ class ImportURITestCase(test_utils.BaseTestCase):
                      group='import_filtering_opts')
          # IPv6 localhost is blocked by default even when only IPv4 is listed
          # in disallowed_hosts
@@ -693,7 +697,7 @@ index e9ba51cfc..65b7112c6 100644
              self, mock_getaddrinfo):
          """Hostnames resolving to disallowed public IPs are rejected."""
          mock_getaddrinfo.return_value = [
-@@ -1237,16 +1241,17 @@ class ImportURITestCase(test_utils.BaseTestCase):
+@@ -1239,16 +1243,17 @@ class ImportURITestCase(test_utils.BaseTestCase):
          self.config(disallowed_hosts=['93.184.216.34'],
                      group='import_filtering_opts')
          self.config(allowed_ports=[80], group='import_filtering_opts')

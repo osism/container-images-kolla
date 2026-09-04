@@ -1,16 +1,12 @@
-From af34b4de224de594dbb78b71c95b95fb33789641 Mon Sep 17 00:00:00 2001
+From 62339d1a271b09069c866351b61f617a3ec13fb7 Mon Sep 17 00:00:00 2001
 From: Abhishek Kekane <akekane@redhat.com>
 Date: Thu, 23 Jul 2026 07:07:52 -0700
-Subject: [PATCH 3/4] Pin import downloads to validated destination addresses
+Subject: [PATCH 1/2] Pin import downloads to validated destination addresses
 
 Re-validate import URIs at fetch time, resolve DNS when the download
 starts, and pin HTTP connections to the validated destination address.
 This closes the DNS rebinding window between API validation and async
 worker download.
-
-On stable/2025.2, get_image_data_iter continues to return a single
-iterable via _size_limited_reader (not the (data, size) tuple used on
-newer branches).
 
 Closes-Bug: #2158999
 SecurityImpact
@@ -18,11 +14,10 @@ SecurityImpact
 Assisted-By: Cursor (claude-4.5-sonnet)
 Change-Id: Ie4fbbf28262e4c5650b40798dde6007748cc9760
 Signed-off-by: Abhishek Kekane <akekane@redhat.com>
+Signed-off-by: Brian Rosmaita <rosmaita.fossdev@gmail.com>
 (cherry picked from commit df123cffa318b484fa6d55729858e48afa17aa57)
-(cherry picked from commit 67280eb044a5f39458ba8afcf306833d884c69cc)
-
-Conflicts: glance/common/scripts/utils.py
-  glance/tests/functional/v2/test_image_decompression.py
+Conflicts: glance/tests/functional/__init__.py
+  glance/tests/functional/v2/test_parallel_store_import.py
 ---
  .../admin/interoperable-image-import.rst      |   8 ++
  .../_internal_plugins/glance_download.py      |  11 +-
@@ -31,6 +26,7 @@ Conflicts: glance/common/scripts/utils.py
  glance/common/scripts/utils.py                | 100 +++++++++++++-
  glance/common/utils.py                        | 122 ++++++++++++------
  glance/tests/functional/__init__.py           |  23 ++++
+ .../functional/v2/test_image_decompression.py |   1 +
  glance/tests/functional/v2/test_images.py     |   2 +
  .../functional/v2/test_multi_store_images.py  |   1 +
  .../async_/flows/test_api_image_import.py     |  53 ++------
@@ -38,10 +34,10 @@ Conflicts: glance/common/scripts/utils.py
  .../unit/async_/flows/test_ovf_process.py     |  54 +++-----
  .../unit/common/scripts/test_scripts_utils.py |   4 +-
  glance/tests/unit/common/test_utils.py        |  23 ++++
- 14 files changed, 295 insertions(+), 199 deletions(-)
+ 15 files changed, 296 insertions(+), 199 deletions(-)
 
 diff --git a/doc/source/admin/interoperable-image-import.rst b/doc/source/admin/interoperable-image-import.rst
-index 17a7318ec..822ffadcb 100644
+index 9e06c08ba..880c80ee4 100644
 --- a/doc/source/admin/interoperable-image-import.rst
 +++ b/doc/source/admin/interoperable-image-import.rst
 @@ -242,6 +242,14 @@ Validation of a URI happens as follows:
@@ -146,22 +142,21 @@ index 36d719666..1dea6896c 100644
      def execute(self, image_id, file_path):
          """
 diff --git a/glance/common/scripts/utils.py b/glance/common/scripts/utils.py
-index 04beb32ec..0815ed9d1 100644
+index 81f24fd14..7ff2dbf6d 100644
 --- a/glance/common/scripts/utils.py
 +++ b/glance/common/scripts/utils.py
-@@ -20,9 +20,11 @@ __all__ = [
+@@ -20,8 +20,10 @@ __all__ = [
      'validate_location_uri',
      'validate_legacy_import_from_uri',
      'get_image_data_iter',
 +    'open_external_uri',
      'SafeRedirectHandler',
  ]
- 
 +import http.client
+ import os
  import urllib
  import urllib.error
- import urllib.request
-@@ -147,20 +149,105 @@ class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+@@ -145,21 +147,106 @@ class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
      def redirect_request(self, req, fp, code, msg, headers, newurl):
          if not common_utils.validate_import_uri(newurl):
              msg = (_("Redirect to disallowed URL: %s") % newurl)
@@ -267,21 +262,22 @@ index 04beb32ec..0815ed9d1 100644
 +    connection is pinned to the validated destination address to close the
 +    DNS rebinding window between API validation and worker download.
      """
+     size = 0
 -    # NOTE(flaper87): This is safe because the input uri is already
 -    # verified before the task is created.
      if uri.startswith("file://"):
          uri = uri.split("file://")[-1]
          # NOTE(flaper87): The caller of this function expects to have
-@@ -175,8 +262,7 @@ def get_image_data_iter(uri):
-         data = open(uri, "rb")
-         return _size_limited_reader(data)
+@@ -174,8 +261,7 @@ def get_image_data_iter(uri):
+         size = os.path.getsize(uri)
+         return open(uri, "rb"), size
  
 -    opener = urllib.request.build_opener(SafeRedirectHandler)
--    return _size_limited_reader(opener.open(uri))
-+    return _size_limited_reader(open_external_uri(uri))
- 
- 
- def _size_limited_reader(data):
+-    urlopen = opener.open(uri)
++    urlopen = open_external_uri(uri)
+     try:
+         size = int(urlopen.headers['content-length'])
+     except (KeyError, ValueError, TypeError):
 diff --git a/glance/common/utils.py b/glance/common/utils.py
 index fc0f618e1..8db81fd6b 100644
 --- a/glance/common/utils.py
@@ -449,10 +445,10 @@ index fc0f618e1..8db81fd6b 100644
  
  class CooperativeReader(object):
 diff --git a/glance/tests/functional/__init__.py b/glance/tests/functional/__init__.py
-index df1fa1e0f..dcb73c999 100644
+index 8c742e466..da631f72c 100644
 --- a/glance/tests/functional/__init__.py
 +++ b/glance/tests/functional/__init__.py
-@@ -1525,6 +1525,29 @@ class SynchronousAPIBase(test_utils.BaseTestCase):
+@@ -1008,6 +1008,29 @@ class SynchronousAPIBase(test_utils.BaseTestCase):
          dst_file_name = os.path.join(dst_dir, file_name)
          return dst_file_name
  
@@ -481,9 +477,21 @@ index df1fa1e0f..dcb73c999 100644
 +
      def start_server(self, enable_cache=True, set_worker_url=True,
                       use_fake_auth=False, run_staging_cleaner=False,
-                      enable_cors=False):
+                      enable_cors=False, enable_version_negotiation=False):
+diff --git a/glance/tests/functional/v2/test_image_decompression.py b/glance/tests/functional/v2/test_image_decompression.py
+index def44896b..4b474651d 100644
+--- a/glance/tests/functional/v2/test_image_decompression.py
++++ b/glance/tests/functional/v2/test_image_decompression.py
+@@ -39,6 +39,7 @@ class TestImageDecompression(functional.SynchronousAPIBase):
+ 
+     def setUp(self, single_store=True):
+         super(TestImageDecompression, self).setUp(single_store=single_store)
++        self._mock_localhost_dns()
+         # Import to register image_import_opts config group otherwise tests
+         # will fail with NoSuchOptGroup error.
+         from glance.async_.flows import api_image_import  # noqa
 diff --git a/glance/tests/functional/v2/test_images.py b/glance/tests/functional/v2/test_images.py
-index a808f5858..145f55a61 100644
+index dc9b716d8..bc42c368d 100644
 --- a/glance/tests/functional/v2/test_images.py
 +++ b/glance/tests/functional/v2/test_images.py
 @@ -380,6 +380,7 @@ class TestImagesSingleStore(functional.SynchronousAPIBase):
@@ -494,7 +502,7 @@ index a808f5858..145f55a61 100644
          self.api_methods = ImageAPIHelper(self.api_get, self.api_post,
                                            self.api_put, self.api_delete)
          self.http_servers = []
-@@ -4091,6 +4092,7 @@ class TestCopyImagePermissions(functional.SynchronousAPIBase):
+@@ -3238,6 +3239,7 @@ class TestCopyImagePermissions(functional.SynchronousAPIBase):
  
      def setUp(self):
          super(TestCopyImagePermissions, self).setUp()
@@ -610,7 +618,7 @@ index 16d41931e..ff0f4f782 100644
  
      def test_revert_rollback_metadata_value(self):
 diff --git a/glance/tests/unit/async_/flows/test_glance_download.py b/glance/tests/unit/async_/flows/test_glance_download.py
-index 593635025..8801589c3 100644
+index a2ab914a5..95c809f81 100644
 --- a/glance/tests/unit/async_/flows/test_glance_download.py
 +++ b/glance/tests/unit/async_/flows/test_glance_download.py
 @@ -13,6 +13,7 @@
@@ -830,10 +838,10 @@ index 9a8f5a122..78da3e8d9 100644
 -        mock_request.build_opener.assert_called_once()
 +        mock_open.assert_called_once_with('http://example.com/package.ova')
 diff --git a/glance/tests/unit/common/scripts/test_scripts_utils.py b/glance/tests/unit/common/scripts/test_scripts_utils.py
-index aaed31fda..b7b3028a3 100644
+index af2f6527b..673461a33 100644
 --- a/glance/tests/unit/common/scripts/test_scripts_utils.py
 +++ b/glance/tests/unit/common/scripts/test_scripts_utils.py
-@@ -296,9 +296,9 @@ class TestSafeRedirectHandler(test_utils.BaseTestCase):
+@@ -295,9 +295,9 @@ class TestSafeRedirectHandler(test_utils.BaseTestCase):
          fp = mock.Mock()
          headers = mock.Mock()
  
@@ -846,10 +854,10 @@ index aaed31fda..b7b3028a3 100644
              req, fp, 302, 'Found', headers, 'http://127.0.0.1:5000/'
          )
 diff --git a/glance/tests/unit/common/test_utils.py b/glance/tests/unit/common/test_utils.py
-index 9501960e9..62477594e 100644
+index bef8f54df..687773075 100644
 --- a/glance/tests/unit/common/test_utils.py
 +++ b/glance/tests/unit/common/test_utils.py
-@@ -1226,6 +1226,29 @@ class ImportURITestCase(test_utils.BaseTestCase):
+@@ -1228,6 +1228,29 @@ class ImportURITestCase(test_utils.BaseTestCase):
          ]
          self.assertFalse(utils.validate_import_uri("http://metadata.example/"))
  
