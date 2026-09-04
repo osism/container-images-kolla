@@ -1,0 +1,1030 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Abhishek Kekane <akekane@redhat.com>
+Date: Thu, 23 Jul 2026 07:07:52 -0700
+Subject: [PATCH 4/5] Pin import downloads to validated destination addresses
+
+Re-validate import URIs at fetch time, resolve DNS when the download
+starts, and pin HTTP connections to the validated destination address.
+This closes the DNS rebinding window between API validation and async
+worker download.
+
+On stable/2025.1, get_image_data_iter continues to return a single
+iterable via _size_limited_reader (not the (data, size) tuple used on
+newer branches). FunctionalTest web-download fixtures use 127.0.0.1 so
+the pin-download path matches the IPv4-only test HTTP server; a DNS mock
+cannot reach the glance-api subprocess. SynchronousAPIBase patches
+glance.common.utils.socket.getaddrinfo for in-process dual-stack hosts.
+
+OSISM: rebased onto the 2024.1 code base from the identical patch in
+the 2024.2 series (osism/container-images-kolla#790). Content is
+unchanged; only hunk offsets and context differ, so the From line above
+carries no upstream commit id.
+
+Closes-Bug: #2158999
+SecurityImpact
+
+Assisted-By: Cursor (claude-4.5-sonnet)
+Change-Id: Ie4fbbf28262e4c5650b40798dde6007748cc9760
+Signed-off-by: Abhishek Kekane <akekane@redhat.com>
+(cherry picked from commit df123cffa318b484fa6d55729858e48afa17aa57)
+(cherry picked from commit 67280eb044a5f39458ba8afcf306833d884c69cc)
+(cherry picked from commit 6f5fcf86896061f575955187775b9e01d87fd9b5)
+
+Conflicts: glance/tests/functional/__init__.py
+  glance/tests/functional/v2/test_images.py
+  glance/tests/functional/v2/test_multi_store_images.py
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ .../admin/interoperable-image-import.rst      |   8 ++
+ .../_internal_plugins/glance_download.py      |  11 +-
+ glance/async_/flows/api_image_import.py       |   4 +-
+ glance/async_/flows/ovf_process.py            |  12 +-
+ glance/common/scripts/utils.py                | 100 +++++++++++++-
+ glance/common/utils.py                        | 122 ++++++++++++------
+ glance/tests/functional/__init__.py           |  23 ++++
+ glance/tests/functional/v2/test_images.py     |  33 ++---
+ .../async_/flows/test_api_image_import.py     |  53 ++------
+ .../unit/async_/flows/test_glance_download.py |  77 ++++-------
+ .../unit/async_/flows/test_ovf_process.py     |  54 +++-----
+ .../unit/common/scripts/test_scripts_utils.py |   4 +-
+ glance/tests/unit/common/test_utils.py        |  23 ++++
+ glance/tests/utils.py                         |   6 +
+ 14 files changed, 315 insertions(+), 215 deletions(-)
+
+diff --git a/doc/source/admin/interoperable-image-import.rst b/doc/source/admin/interoperable-image-import.rst
+index b00bb3d..365c72c 100644
+--- a/doc/source/admin/interoperable-image-import.rst
++++ b/doc/source/admin/interoperable-image-import.rst
+@@ -242,6 +242,14 @@ Validation of a URI happens as follows:
+ 
+ 4. The URI is accepted as valid.
+ 
++When Glance later downloads the image data, the URI is validated again and
++DNS is resolved at fetch time. Every returned address is checked against the
++same host filtering rules, including ``disallowed_hosts`` entries that list
++IP addresses. The HTTP connection is pinned to the validated destination
++address so a DNS change between API validation and worker download cannot
++redirect the fetch to a different target. Redirect destinations are
++validated and pinned on each hop.
++
+ Note that if you allow a scheme, either by whitelisting it or by not
+ blacklisting it, any URI that uses the default port for that scheme by not
+ including a port in the URI is allowed.  If it does include a port in the URI,
+diff --git a/glance/async_/flows/_internal_plugins/glance_download.py b/glance/async_/flows/_internal_plugins/glance_download.py
+index ce12111..ca4588f 100644
+--- a/glance/async_/flows/_internal_plugins/glance_download.py
++++ b/glance/async_/flows/_internal_plugins/glance_download.py
+@@ -25,7 +25,6 @@ from glance.async_.flows._internal_plugins import base_download
+ from glance.async_ import utils
+ from glance.common import exception
+ from glance.common.scripts import utils as script_utils
+-from glance.common import utils as common_utils
+ from glance.i18n import _, _LI, _LE
+ 
+ LOG = logging.getLogger(__name__)
+@@ -57,19 +56,11 @@ class _DownloadGlanceImage(base_download.BaseDownload):
+                 self.glance_service_interface)
+             image_download_url = '%s/v2/images/%s/file' % (
+                 glance_endpoint, self.glance_image_id)
+-            if not common_utils.validate_import_uri(image_download_url):
+-                LOG.debug("Processed URI for glance-download does not pass "
+-                          "filtering: %s", image_download_url)
+-                msg = (_("Processed URI for glance-download does not pass "
+-                         "filtering: %s") % image_download_url)
+-                raise exception.ImportTaskError(msg)
+             LOG.info(_LI("Downloading glance image %s"), image_download_url)
+             token = self.context.auth_token
+             request = urllib.request.Request(image_download_url,
+                                              headers={'X-Auth-Token': token})
+-            opener = urllib.request.build_opener(
+-                script_utils.SafeRedirectHandler)
+-            data = opener.open(request)
++            data = script_utils.open_external_uri(request)
+         except Exception as e:
+             with excutils.save_and_reraise_exception():
+                 LOG.error(
+diff --git a/glance/async_/flows/api_image_import.py b/glance/async_/flows/api_image_import.py
+index 73c5112..90f80c4 100644
+--- a/glance/async_/flows/api_image_import.py
++++ b/glance/async_/flows/api_image_import.py
+@@ -817,9 +817,7 @@ class _ImportMetadata(task.Task):
+             token = self.context.auth_token
+             request = urllib.request.Request(image_download_metadata_url,
+                                              headers={'X-Auth-Token': token})
+-            opener = urllib.request.build_opener(
+-                script_utils.SafeRedirectHandler)
+-            with opener.open(request) as payload:
++            with script_utils.open_external_uri(request) as payload:
+                 data = json.loads(payload.read().decode('utf-8'))
+ 
+             if data.get('status') != 'active':
+diff --git a/glance/async_/flows/ovf_process.py b/glance/async_/flows/ovf_process.py
+index 06505ee..65d0f28 100644
+--- a/glance/async_/flows/ovf_process.py
++++ b/glance/async_/flows/ovf_process.py
+@@ -17,8 +17,6 @@ import os
+ import re
+ import shutil
+ import tarfile
+-import urllib
+-import urllib.request
+ 
+ try:
+     from defusedxml import cElementTree as ET
+@@ -31,9 +29,7 @@ from oslo_serialization import jsonutils as json
+ from taskflow.patterns import linear_flow as lf
+ from taskflow import task
+ 
+-from glance.common import exception
+ from glance.common.scripts import utils as script_utils
+-from glance.common import utils as common_utils
+ from glance.i18n import _, _LW
+ 
+ LOG = logging.getLogger(__name__)
+@@ -82,13 +78,7 @@ class _OVF_Process(task.Task):
+             uri = uri.split("file://")[-1]
+             return open(uri, "rb")
+ 
+-        if not common_utils.validate_import_uri(uri):
+-            msg = (_("URI for OVF processing does not pass filtering: %s") %
+-                   uri)
+-            raise exception.ImportTaskError(msg)
+-
+-        opener = urllib.request.build_opener(script_utils.SafeRedirectHandler)
+-        return opener.open(uri)
++        return script_utils.open_external_uri(uri)
+ 
+     def execute(self, image_id, file_path):
+         """
+diff --git a/glance/common/scripts/utils.py b/glance/common/scripts/utils.py
+index 666a6a5..2790d87 100644
+--- a/glance/common/scripts/utils.py
++++ b/glance/common/scripts/utils.py
+@@ -19,9 +19,11 @@ __all__ = [
+     'set_base_image_properties',
+     'validate_location_uri',
+     'get_image_data_iter',
++    'open_external_uri',
+     'SafeRedirectHandler',
+ ]
+ 
++import http.client
+ import urllib
+ import urllib.error
+ import urllib.request
+@@ -127,20 +129,105 @@ class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+     def redirect_request(self, req, fp, code, msg, headers, newurl):
+         if not common_utils.validate_import_uri(newurl):
+             msg = (_("Redirect to disallowed URL: %s") % newurl)
+-            raise exception.ImportTaskError(msg)
++            raise exception.InvalidRedirect(msg)
+         return super().redirect_request(req, fp, code, msg, headers, newurl)
+ 
+ 
++class _PinnedHTTPConnection(http.client.HTTPConnection):
++    """HTTP connection that connects to a pre-validated IP address."""
++
++    def __init__(self, host, port=None, *, pinned_ip=None, **kwargs):
++        self._pinned_ip = pinned_ip
++        super().__init__(host, port=port, **kwargs)
++
++    def connect(self):
++        if self._pinned_ip:
++            self.sock = self._create_connection(
++                (self._pinned_ip, self.port), self.timeout,
++                self.source_address)
++            return
++        super().connect()
++
++
++class _PinnedHTTPSConnection(http.client.HTTPSConnection):
++    """HTTPS connection that connects to a pre-validated IP address."""
++
++    def __init__(self, host, port=None, *, pinned_ip=None, **kwargs):
++        self._pinned_ip = pinned_ip
++        super().__init__(host, port=port, **kwargs)
++
++    def connect(self):
++        if self._pinned_ip:
++            sock = self._create_connection(
++                (self._pinned_ip, self.port), self.timeout,
++                self.source_address)
++            if self._tunnel_host:
++                self.sock = sock
++                self._tunnel()
++            else:
++                self.sock = self._context.wrap_socket(
++                    sock, server_hostname=self.host)
++            return
++        super().connect()
++
++
++def _pinned_ip_for_request(req):
++    """Return a pinned destination IP for an external HTTP(S) URI."""
++    try:
++        return common_utils.get_validated_import_address(req.full_url)
++    except ValueError as exc:
++        msg = (_("URI does not pass filtering: %s") % req.full_url)
++        LOG.debug("%s (%s)", msg, exc)
++        raise exception.Invalid(msg)
++
++
++class _ValidatedExternalHTTPHandler(urllib.request.HTTPHandler):
++    """Open HTTP URIs using validated, pinned destination addresses."""
++
++    def http_open(self, req):
++        pinned_ip = _pinned_ip_for_request(req)
++        return self.do_open(
++            lambda host, **kwargs: _PinnedHTTPConnection(
++                host, pinned_ip=pinned_ip, **kwargs),
++            req)
++
++
++class _ValidatedExternalHTTPSHandler(urllib.request.HTTPSHandler):
++    """Open HTTPS URIs using validated, pinned destination addresses."""
++
++    def https_open(self, req):
++        pinned_ip = _pinned_ip_for_request(req)
++        return self.do_open(
++            lambda host, **kwargs: _PinnedHTTPSConnection(
++                host, pinned_ip=pinned_ip, **kwargs),
++            req)
++
++
++def open_external_uri(uri_or_request):
++    """Open an external URL string or Request with validation and IP pinning.
++
++    The destination is re-checked at fetch time and the TCP connection is
++    pinned to the validated address so DNS cannot rebind mid-download.
++    Suitable for import downloads and other outbound HTTP(S) fetches that
++    need the same host filtering protections.
++    """
++    opener = urllib.request.build_opener(
++        SafeRedirectHandler,
++        _ValidatedExternalHTTPHandler,
++        _ValidatedExternalHTTPSHandler,
++    )
++    return opener.open(uri_or_request)
++
++
+ def get_image_data_iter(uri):
+     """Returns iterable object either for local file or uri
+ 
+     :param uri: uri (remote or local) to the datasource we want to iterate
+ 
+-    Validation/sanitization of the uri is expected to happen before we get
+-    here.
++    Remote HTTP(S) URIs are validated and resolved at fetch time. The
++    connection is pinned to the validated destination address to close the
++    DNS rebinding window between API validation and worker download.
+     """
+-    # NOTE(flaper87): This is safe because the input uri is already
+-    # verified before the task is created.
+     if uri.startswith("file://"):
+         uri = uri.split("file://")[-1]
+         # NOTE(flaper87): The caller of this function expects to have
+@@ -155,8 +242,7 @@ def get_image_data_iter(uri):
+         data = open(uri, "rb")
+         return _size_limited_reader(data)
+ 
+-    opener = urllib.request.build_opener(SafeRedirectHandler)
+-    return _size_limited_reader(opener.open(uri))
++    return _size_limited_reader(open_external_uri(uri))
+ 
+ 
+ def _size_limited_reader(data):
+diff --git a/glance/common/utils.py b/glance/common/utils.py
+index bc544d8..d9d6e8f 100644
+--- a/glance/common/utils.py
++++ b/glance/common/utils.py
+@@ -190,51 +190,93 @@ def normalize_hostname(host):
+     return host
+ 
+ 
+-def _is_restricted_import_host(normalized_host):
+-    """Return True if host is or resolves to a restricted address.
++def default_import_port(scheme):
++    """Return the default port for an import URI scheme."""
++    return 443 if scheme == 'https' else 80
++
++
++def resolve_pinned_import_address(hostname, port):
++    """Resolve hostname and return the first import-allowed IP address.
+ 
+     Blocks loopback and link-local addresses (including cloud metadata
+-    endpoints such as 169.254.169.254). Private RFC1918 ranges are not
+-    blocked so private clouds can import from internal hosts. IPv4-mapped
+-    IPv6 addresses are checked against the embedded IPv4 address. For
+-    hostnames, any resolved address that is restricted causes rejection
+-    (fail closed on DNS errors).
+-    """
++    endpoints such as 169.254.169.254) unless the host is listed in
++    allowed_hosts. Private RFC1918 ranges are not blocked so private
++    clouds can import from internal hosts. IPv4-mapped IPv6 addresses
++    are checked against the embedded IPv4 address. Matching
++    disallowed_hosts IP entries also reject resolved addresses.
++
++    :param hostname: hostname or IP from the import URI
++    :param port: destination port from the import URI
++    :returns: IP address string to connect to
++    :raises ValueError: if the host cannot be used for import
++    """
++    normalized_host = normalize_hostname(hostname)
++    if not normalized_host:
++        raise ValueError('invalid import host: %s' % hostname)
++
++    bl_hosts = list(CONF.import_filtering_opts.disallowed_hosts)
++    wl_hosts = CONF.import_filtering_opts.allowed_hosts
++    if wl_hosts and bl_hosts:
++        bl_hosts = []
++    host_is_whitelisted = bool(wl_hosts and normalized_host in wl_hosts)
++
+     try:
+-        addresses = [ipaddress.ip_address(normalized_host)]
+-    except ValueError:
+-        testhost = normalized_host if normalized_host.endswith('.') else (
+-            normalized_host + '.')
+         try:
++            addresses = [ipaddress.ip_address(normalized_host)]
++        except ValueError:
++            testhost = (normalized_host if normalized_host.endswith('.')
++                        else normalized_host + '.')
+             addresses = []
+-            for result in socket.getaddrinfo(testhost, None):
++            for result in socket.getaddrinfo(testhost, port):
+                 ip = result[4][0]
+                 if not ip:
+-                    return True
++                    raise ValueError('empty address in getaddrinfo result')
+                 if '%' in ip:
+                     ip = ip.split('%', 1)[0]
+-                try:
+-                    addresses.append(ipaddress.ip_address(ip))
+-                except ValueError:
+-                    return True
+-        except socket.gaierror:
+-            return True
++                addr = ipaddress.ip_address(ip)
++                if addr not in addresses:
++                    addresses.append(addr)
++    except (socket.gaierror, ValueError) as exc:
++        raise ValueError('failed to resolve import host %s: %s' %
++                         (hostname, exc))
+ 
+     for addr in addresses:
++        if host_is_whitelisted:
++            return str(addr)
++
++        check = addr
+         if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
+-            addr = addr.ipv4_mapped
+-        if addr.is_loopback or addr.is_link_local:
+-            return True
+-    return False
++            check = addr.ipv4_mapped
++        if check.is_loopback or check.is_link_local:
++            continue
+ 
++        addr_str = str(addr)
++        blocked = False
++        for blocked_host in bl_hosts:
++            if blocked_host == normalized_host:
++                continue
++            try:
++                if addr == ipaddress.ip_address(blocked_host):
++                    blocked = True
++                    break
++            except ValueError:
++                if addr_str == blocked_host:
++                    blocked = True
++                    break
++        if not blocked:
++            return str(addr)
+ 
+-def validate_import_uri(uri):
+-    """Validate requested uri for Image Import web-download.
++    raise ValueError('no allowed addresses for import host: %s' % hostname)
+ 
+-    :param uri: target uri to be validated
++
++def get_validated_import_address(uri):
++    """Validate an import URI and return a pinned destination IP.
++
++    Applies scheme/host/port filtering, resolves DNS, and returns the first
++    allowed address. Raises ValueError if the URI must not be fetched.
+     """
+     if not uri:
+-        return False
++        raise ValueError('empty import URI')
+ 
+     parsed_uri = urllib.parse.urlparse(uri)
+     scheme = parsed_uri.scheme
+@@ -264,25 +306,29 @@ def validate_import_uri(uri):
+ 
+     if not scheme or ((wl_schemes and scheme not in wl_schemes) or
+                       parsed_uri.scheme in bl_schemes):
+-        return False
++        raise ValueError('scheme not allowed for import URI: %s' % uri)
+ 
+     normalized_host = normalize_hostname(host)
+-
+     if not normalized_host or (
+             (wl_hosts and normalized_host not in wl_hosts) or
+             normalized_host in bl_hosts):
+-        return False
+-
+-    host_is_whitelisted = bool(wl_hosts and normalized_host in wl_hosts)
+-    if not host_is_whitelisted and _is_restricted_import_host(
+-            normalized_host):
+-        return False
++        raise ValueError('host not allowed for import URI: %s' % uri)
+ 
+     if port and ((wl_ports and port not in wl_ports) or
+                  port in bl_ports):
+-        return False
++        raise ValueError('port not allowed for import URI: %s' % uri)
++
++    resolve_port = port or default_import_port(scheme)
++    return resolve_pinned_import_address(normalized_host, resolve_port)
+ 
+-    return True
++
++def validate_import_uri(uri):
++    """Return True if the URI passes image-import filtering."""
++    try:
++        get_validated_import_address(uri)
++        return True
++    except ValueError:
++        return False
+ 
+ 
+ class CooperativeReader(object):
+diff --git a/glance/tests/functional/__init__.py b/glance/tests/functional/__init__.py
+index 38d1fb7..cf256a3 100644
+--- a/glance/tests/functional/__init__.py
++++ b/glance/tests/functional/__init__.py
+@@ -1640,6 +1640,29 @@ class SynchronousAPIBase(test_utils.BaseTestCase):
+         self.setup_simple_paste()
+         self.setup_stores()
+ 
++    def _mock_localhost_dns(self):
++        """Force localhost to resolve to 127.0.0.1 only.
++
++        Test HTTP servers bind to 127.0.0.1. On hosts where getaddrinfo
++        returns ::1 first, DNS-pinned connections fail with ECONNREFUSED.
++        """
++        # Patch the socket used by glance.common.utils. After eventlet
++        # monkey-patching, mock.patch('socket.getaddrinfo') does not affect
++        # the pin-download path.
++        real_getaddrinfo = utils.socket.getaddrinfo
++
++        def _ipv4_only(host, port, *args, **kwargs):
++            results = real_getaddrinfo(host, port, *args, **kwargs)
++            if host in ('localhost', 'localhost.'):
++                results = [r for r in results if r[0] == socket.AF_INET]
++            return results
++
++        patcher = mock.patch(
++            'glance.common.utils.socket.getaddrinfo',
++            side_effect=_ipv4_only)
++        patcher.start()
++        self.addCleanup(patcher.stop)
++
+     def start_server(self, enable_cache=True, set_worker_url=True):
+         """Builds and "starts" the API server.
+ 
+diff --git a/glance/tests/functional/v2/test_images.py b/glance/tests/functional/v2/test_images.py
+index 03aab83..e14c8ac 100644
+--- a/glance/tests/functional/v2/test_images.py
++++ b/glance/tests/functional/v2/test_images.py
+@@ -238,7 +238,7 @@ class TestImages(functional.FunctionalTest):
+         self.stop_servers()
+ 
+     def test_image_import_using_web_download(self):
+-        self.allowed_hosts = ['localhost']
++        self.allowed_hosts = ['127.0.0.1', 'localhost']
+         self.start_servers(**self.__dict__.copy())
+ 
+         # Image list should be empty
+@@ -333,7 +333,7 @@ class TestImages(functional.FunctionalTest):
+         # Start http server locally
+         thread, httpd, port = test_utils.start_standalone_http_server()
+ 
+-        image_data_uri = 'http://localhost:%s/' % port
++        image_data_uri = 'http://127.0.0.1:%s/' % port
+         data = jsonutils.dumps({'method': {
+             'name': 'web-download',
+             'uri': image_data_uri
+@@ -382,6 +382,7 @@ class TestImages(functional.FunctionalTest):
+     def test_web_download_redirect_validation(self):
+         """Test that redirect destinations are validated."""
+         self.config(allowed_ports=[80], group='import_filtering_opts')
++        # Keep 127.0.0.1 off the whitelist so the redirect hop is rejected.
+         self.allowed_hosts = ['localhost']
+         self.config(disallowed_hosts=['127.0.0.1'],
+                     group='import_filtering_opts')
+@@ -5037,7 +5038,7 @@ class TestImagesMultipleBackend(functional.MultipleBackendFunctionalTest):
+         self.stop_servers()
+ 
+     def test_image_import_using_web_download(self):
+-        self.allowed_hosts = ['localhost']
++        self.allowed_hosts = ['127.0.0.1', 'localhost']
+         self.start_servers(**self.__dict__.copy())
+ 
+         # Image list should be empty
+@@ -5149,7 +5150,7 @@ class TestImagesMultipleBackend(functional.MultipleBackendFunctionalTest):
+         # Start http server locally
+         thread, httpd, port = test_utils.start_standalone_http_server()
+ 
+-        image_data_uri = 'http://localhost:%s/' % port
++        image_data_uri = 'http://127.0.0.1:%s/' % port
+         data = jsonutils.dumps({'method': {
+             'name': 'web-download',
+             'uri': image_data_uri
+@@ -5201,7 +5202,7 @@ class TestImagesMultipleBackend(functional.MultipleBackendFunctionalTest):
+         self.stop_servers()
+ 
+     def test_image_import_using_web_download_different_backend(self):
+-        self.allowed_hosts = ['localhost']
++        self.allowed_hosts = ['127.0.0.1', 'localhost']
+         self.start_servers(**self.__dict__.copy())
+ 
+         # Image list should be empty
+@@ -5313,7 +5314,7 @@ class TestImagesMultipleBackend(functional.MultipleBackendFunctionalTest):
+         # Start http server locally
+         thread, httpd, port = test_utils.start_standalone_http_server()
+ 
+-        image_data_uri = 'http://localhost:%s/' % port
++        image_data_uri = 'http://127.0.0.1:%s/' % port
+         data = jsonutils.dumps({'method': {
+             'name': 'web-download',
+             'uri': image_data_uri
+@@ -5366,7 +5367,7 @@ class TestImagesMultipleBackend(functional.MultipleBackendFunctionalTest):
+         self.stop_servers()
+ 
+     def test_image_import_multi_stores(self):
+-        self.allowed_hosts = ['localhost']
++        self.allowed_hosts = ['127.0.0.1', 'localhost']
+         self.start_servers(**self.__dict__.copy())
+ 
+         # Image list should be empty
+@@ -5477,7 +5478,7 @@ class TestImagesMultipleBackend(functional.MultipleBackendFunctionalTest):
+         # Start http server locally
+         thread, httpd, port = test_utils.start_standalone_http_server()
+ 
+-        image_data_uri = 'http://localhost:%s/' % port
++        image_data_uri = 'http://127.0.0.1:%s/' % port
+         data = jsonutils.dumps(
+             {'method': {'name': 'web-download', 'uri': image_data_uri},
+              'stores': ['file1', 'file2']})
+@@ -5530,7 +5531,7 @@ class TestImagesMultipleBackend(functional.MultipleBackendFunctionalTest):
+         self.stop_servers()
+ 
+     def test_copy_image_lifecycle(self):
+-        self.allowed_hosts = ['localhost']
++        self.allowed_hosts = ['127.0.0.1', 'localhost']
+         self.start_servers(**self.__dict__.copy())
+ 
+         # Image list should be empty
+@@ -5641,7 +5642,7 @@ class TestImagesMultipleBackend(functional.MultipleBackendFunctionalTest):
+         # Start http server locally
+         thread, httpd, port = test_utils.start_standalone_http_server()
+ 
+-        image_data_uri = 'http://localhost:%s/' % port
++        image_data_uri = 'http://127.0.0.1:%s/' % port
+         data = jsonutils.dumps(
+             {'method': {'name': 'web-download', 'uri': image_data_uri},
+              'stores': ['file1']})
+@@ -5756,7 +5757,7 @@ class TestImagesMultipleBackend(functional.MultipleBackendFunctionalTest):
+         # Test if copying task fails in between then the rollback
+         # should delete the data from only stores to which it is
+         # copied and not from the existing stores.
+-        self.allowed_hosts = ['localhost']
++        self.allowed_hosts = ['127.0.0.1', 'localhost']
+         self.start_servers(**self.__dict__.copy())
+ 
+         # Image list should be empty
+@@ -5867,7 +5868,7 @@ class TestImagesMultipleBackend(functional.MultipleBackendFunctionalTest):
+         # Start http server locally
+         thread, httpd, port = test_utils.start_standalone_http_server()
+ 
+-        image_data_uri = 'http://localhost:%s/' % port
++        image_data_uri = 'http://127.0.0.1:%s/' % port
+         data = jsonutils.dumps(
+             {'method': {'name': 'web-download', 'uri': image_data_uri},
+              'stores': ['file1']})
+@@ -6015,7 +6016,7 @@ class TestImagesMultipleBackend(functional.MultipleBackendFunctionalTest):
+         self.stop_servers()
+ 
+     def test_image_import_multi_stores_specifying_all_stores(self):
+-        self.allowed_hosts = ['localhost']
++        self.allowed_hosts = ['127.0.0.1', 'localhost']
+         self.start_servers(**self.__dict__.copy())
+ 
+         # Image list should be empty
+@@ -6126,7 +6127,7 @@ class TestImagesMultipleBackend(functional.MultipleBackendFunctionalTest):
+         # Start http server locally
+         thread, httpd, port = test_utils.start_standalone_http_server()
+ 
+-        image_data_uri = 'http://localhost:%s/' % port
++        image_data_uri = 'http://127.0.0.1:%s/' % port
+         data = jsonutils.dumps(
+             {'method': {'name': 'web-download', 'uri': image_data_uri},
+              'all_stores': True})
+@@ -6978,7 +6979,7 @@ class TestCopyImagePermissions(functional.MultipleBackendFunctionalTest):
+         # Start http server locally
+         thread, httpd, port = test_utils.start_standalone_http_server()
+ 
+-        image_data_uri = 'http://localhost:%s/' % port
++        image_data_uri = 'http://127.0.0.1:%s/' % port
+         data = jsonutils.dumps(
+             {'method': {'name': 'web-download', 'uri': image_data_uri},
+              'stores': ['file1']})
+@@ -7012,7 +7013,7 @@ class TestCopyImagePermissions(functional.MultipleBackendFunctionalTest):
+         return image_id
+ 
+     def _test_copy_public_image_as_non_admin(self):
+-        self.allowed_hosts = ['localhost']
++        self.allowed_hosts = ['127.0.0.1', 'localhost']
+         self.start_servers(**self.__dict__.copy())
+ 
+         # Create a publicly-visible image as TENANT1
+diff --git a/glance/tests/unit/async_/flows/test_api_image_import.py b/glance/tests/unit/async_/flows/test_api_image_import.py
+index 16d4193..ff0f4f7 100644
+--- a/glance/tests/unit/async_/flows/test_api_image_import.py
++++ b/glance/tests/unit/async_/flows/test_api_image_import.py
+@@ -25,7 +25,6 @@ import taskflow
+ import glance.async_.flows.api_image_import as import_flow
+ from glance.common import exception
+ from glance.common.scripts.image_import import main as image_import
+-from glance.common.scripts import utils as script_utils
+ from glance import context
+ from glance.domain import ExtraProperties
+ from glance import gateway
+@@ -1292,41 +1291,27 @@ class TestImportMetadata(test_utils.BaseTestCase):
+             'os_hash': 'hash'
+         })
+ 
+-    @mock.patch('urllib.request')
++    @mock.patch('glance.common.scripts.utils.open_external_uri')
+     @mock.patch('glance.async_.utils.get_glance_endpoint')
+     def test_import_metadata_redirect_validation(self, mock_gge,
+-                                                 mock_request):
++                                                 mock_open_external_uri):
+         """Test redirect destinations are validated during metadata fetch."""
+         mock_gge.return_value = 'https://other.cloud.foo/image'
+         task = import_flow._ImportMetadata(TASK_ID1, TASK_TYPE,
+                                            self.context, self.wrapper,
+                                            self.import_req)
+-        mock_opener = mock.MagicMock()
+-        # Simulate redirect to disallowed URL
+-        mock_opener.open.side_effect = exception.ImportTaskError(
++        mock_open_external_uri.side_effect = exception.InvalidRedirect(
+             "Redirect to disallowed URL: http://127.0.0.1:5000/")
+-        mock_request.build_opener.return_value = mock_opener
+-        self.assertRaises(exception.ImportTaskError, task.execute)
+-        # Verify SafeRedirectHandler is used
+-        mock_request.build_opener.assert_called_once()
+-        # Verify the handler passed is SafeRedirectHandler
+-        call_args = mock_request.build_opener.call_args
+-        # Check if SafeRedirectHandler class or instance is in args
+-        found_handler = (
+-            any(isinstance(arg, script_utils.SafeRedirectHandler)
+-                for arg in call_args.args) or
+-            script_utils.SafeRedirectHandler in call_args.args)
+-        self.assertTrue(
+-            found_handler,
+-            "SafeRedirectHandler should be used for redirect validation")
++        self.assertRaises(exception.InvalidRedirect, task.execute)
++        mock_open_external_uri.assert_called_once()
+ 
+-    @mock.patch('urllib.request')
++    @mock.patch('glance.common.scripts.utils.open_external_uri')
+     @mock.patch('glance.async_.flows.api_image_import.json')
+     @mock.patch('glance.async_.utils.get_glance_endpoint')
+-    def test_import_metadata_uses_safe_redirect_handler(self, mock_gge,
+-                                                        mock_json,
+-                                                        mock_request):
+-        """Test that SafeRedirectHandler is used and allows valid redirects."""
++    def test_import_metadata_uses_external_uri_opener(self, mock_gge,
++                                                      mock_json,
++                                                      mock_open_external_uri):
++        """Test metadata fetch uses open_external_uri for HTTP(S)."""
+         mock_gge.return_value = 'https://other.cloud.foo/image'
+         mock_json.loads.return_value = {
+             'status': 'active',
+@@ -1334,27 +1319,15 @@ class TestImportMetadata(test_utils.BaseTestCase):
+             'container_format': 'bare',
+             'size': '12345'
+         }
+-        mock_opener = mock.MagicMock()
+         mock_payload = mock.MagicMock()
+         mock_payload.read.return_value = b'{"status": "active"}'
+-        mock_opener.open.return_value.__enter__.return_value = mock_payload
+-        mock_request.build_opener.return_value = mock_opener
++        mock_open_external_uri.return_value.__enter__.return_value = (
++            mock_payload)
+         task = import_flow._ImportMetadata(TASK_ID1, TASK_TYPE,
+                                            self.context, self.wrapper,
+                                            self.import_req)
+-        # Execute should succeed with valid redirect
+         result = task.execute()
+-        # Verify build_opener was called with SafeRedirectHandler
+-        mock_request.build_opener.assert_called_once()
+-        call_args = mock_request.build_opener.call_args
+-        found_handler = (
+-            any(isinstance(arg, script_utils.SafeRedirectHandler)
+-                for arg in call_args.args) or
+-            script_utils.SafeRedirectHandler in call_args.args)
+-        self.assertTrue(
+-            found_handler,
+-            "SafeRedirectHandler should be passed to build_opener")
+-        # Verify execution succeeded (handler allows valid redirects)
++        mock_open_external_uri.assert_called_once()
+         self.assertEqual(12345, result)
+ 
+     def test_revert_rollback_metadata_value(self):
+diff --git a/glance/tests/unit/async_/flows/test_glance_download.py b/glance/tests/unit/async_/flows/test_glance_download.py
+index 5936350..8801589 100644
+--- a/glance/tests/unit/async_/flows/test_glance_download.py
++++ b/glance/tests/unit/async_/flows/test_glance_download.py
+@@ -13,6 +13,7 @@
+ #    License for the specific language governing permissions and limitations
+ #    under the License.
+ 
++import socket
+ from unittest import mock
+ import urllib.error
+ 
+@@ -23,7 +24,6 @@ from oslo_utils.fixture import uuidsentinel
+ from glance.async_.flows._internal_plugins import glance_download
+ from glance.async_.flows import api_image_import
+ from glance.common import exception
+-from glance.common.scripts import utils as script_utils
+ import glance.context
+ from glance import domain
+ import glance.tests.utils as test_utils
+@@ -171,89 +171,62 @@ class TestGlanceDownloadTask(test_utils.BaseTestCase):
+                 headers={'X-Auth-Token': self.context.auth_token})
+         mock_gge.assert_called_once_with(self.context, 'RegionTwo', 'public')
+ 
+-    @mock.patch('urllib.request')
+-    @mock.patch('glance.common.utils.validate_import_uri')
++    @mock.patch('glance.common.scripts.utils.open_external_uri')
+     @mock.patch('glance.async_.utils.get_glance_endpoint')
+-    def test_glance_download_wrong_download_url(self, mock_gge, mock_validate,
+-                                                mock_request):
+-        mock_validate.return_value = False
++    def test_glance_download_wrong_download_url(self, mock_gge,
++                                                mock_open_external_uri):
++        mock_open_external_uri.side_effect = exception.Invalid(
++            'URI does not pass filtering')
+         mock_gge.return_value = 'https://other.cloud.foo/image'
+         glance_download_task = glance_download._DownloadGlanceImage(
+             self.context, self.task.task_id, self.task_type,
+             self.action_wrapper, ['foo'],
+             'RegionTwo', uuidsentinel.remote_image, 'public')
+-        self.assertRaises(glance.common.exception.ImportTaskError,
++        self.assertRaises(exception.Invalid,
+                           glance_download_task.execute, 12345)
+-        mock_request.assert_not_called()
+-        mock_validate.assert_called_once_with(
+-            'https://other.cloud.foo/image/v2/images/%s/file' % (
+-                uuidsentinel.remote_image))
++        mock_open_external_uri.assert_called_once()
+ 
+     @mock.patch('glance.common.utils.socket.getaddrinfo')
+-    @mock.patch('urllib.request')
++    @mock.patch('glance.common.scripts.utils.open_external_uri')
+     @mock.patch('glance.async_.utils.get_glance_endpoint')
+     def test_glance_download_redirect_validation(self, mock_gge,
+-                                                 mock_request,
++                                                 mock_open_external_uri,
+                                                  mock_getaddrinfo):
+         """Test redirect destinations are validated during image download."""
+         mock_getaddrinfo.return_value = [
+-            ('', '', '', '', ('93.184.216.34', 80))]
++            (socket.AF_INET, socket.SOCK_STREAM, 6, '',
++             ('93.184.216.34', 80))]
+         mock_gge.return_value = 'https://other.cloud.foo/image'
+         glance_download_task = glance_download._DownloadGlanceImage(
+             self.context, self.task.task_id, self.task_type,
+             self.action_wrapper, ['foo'],
+             'RegionTwo', uuidsentinel.remote_image, 'public')
+-        mock_opener = mock.MagicMock()
+-        # Simulate redirect to disallowed URL
+-        mock_opener.open.side_effect = exception.ImportTaskError(
++        # Simulate redirect to disallowed URL rejected by external opener
++        mock_open_external_uri.side_effect = exception.InvalidRedirect(
+             "Redirect to disallowed URL: http://127.0.0.1:5000/")
+-        mock_request.build_opener.return_value = mock_opener
+-        self.assertRaises(exception.ImportTaskError,
++        self.assertRaises(exception.InvalidRedirect,
+                           glance_download_task.execute, 12345)
+-        # Verify SafeRedirectHandler is used
+-        mock_request.build_opener.assert_called_once()
+-        # Verify the handler passed is SafeRedirectHandler
+-        call_args = mock_request.build_opener.call_args
+-        # Check if SafeRedirectHandler class or instance is in args
+-        found_handler = (
+-            any(isinstance(arg, script_utils.SafeRedirectHandler)
+-                for arg in call_args.args) or
+-            script_utils.SafeRedirectHandler in call_args.args)
+-        self.assertTrue(
+-            found_handler,
+-            "SafeRedirectHandler should be used for redirect validation")
++        mock_open_external_uri.assert_called_once()
+ 
+     @mock.patch('glance.common.utils.socket.getaddrinfo')
+     @mock.patch.object(filesystem.Store, 'add')
+-    @mock.patch('urllib.request')
++    @mock.patch('glance.common.scripts.utils.open_external_uri')
+     @mock.patch('glance.async_.utils.get_glance_endpoint')
+-    def test_glance_download_uses_safe_redirect_handler(
+-            self, mock_gge, mock_request, mock_add, mock_getaddrinfo):
+-        """Test that SafeRedirectHandler is used and allows valid execution."""
++    def test_glance_download_uses_external_uri_opener(
++            self, mock_gge, mock_open_external_uri, mock_add,
++            mock_getaddrinfo):
++        """Test that glance-download uses open_external_uri for fetches."""
+         mock_getaddrinfo.return_value = [
+-            ('', '', '', '', ('93.184.216.34', 80))]
++            (socket.AF_INET, socket.SOCK_STREAM, 6, '',
++             ('93.184.216.34', 80))]
+         mock_gge.return_value = 'https://other.cloud.foo/image'
+         glance_download_task = glance_download._DownloadGlanceImage(
+             self.context, self.task.task_id, self.task_type,
+             self.action_wrapper, ['foo'],
+             'RegionTwo', uuidsentinel.remote_image, 'public')
+-        mock_opener = mock.MagicMock()
+         mock_response = mock.MagicMock()
+-        mock_opener.open.return_value = mock_response
+-        mock_request.build_opener.return_value = mock_opener
++        mock_open_external_uri.return_value = mock_response
+         mock_add.return_value = ["path", 12345]
+         result = glance_download_task.execute(12345)
+-        # Verify build_opener was called with SafeRedirectHandler
+-        mock_request.build_opener.assert_called_once()
+-        # Verify SafeRedirectHandler was passed
+-        call_args = mock_request.build_opener.call_args
+-        # Check if SafeRedirectHandler class or instance is in args
+-        found_handler = (
+-            any(isinstance(arg, script_utils.SafeRedirectHandler)
+-                for arg in call_args.args) or
+-            script_utils.SafeRedirectHandler in call_args.args)
+-        self.assertTrue(
+-            found_handler,
+-            "SafeRedirectHandler should be passed to build_opener")
+-        # Verify execution succeeded (handler allows valid execution)
++        mock_open_external_uri.assert_called_once()
+         self.assertEqual("path", result)
+diff --git a/glance/tests/unit/async_/flows/test_ovf_process.py b/glance/tests/unit/async_/flows/test_ovf_process.py
+index 9a8f5a1..78da3e8 100644
+--- a/glance/tests/unit/async_/flows/test_ovf_process.py
++++ b/glance/tests/unit/async_/flows/test_ovf_process.py
+@@ -18,7 +18,6 @@ import shutil
+ import tarfile
+ import tempfile
+ from unittest import mock
+-import urllib.error
+ 
+ from defusedxml.ElementTree import ParseError
+ 
+@@ -167,55 +166,38 @@ class TestOvfProcessTask(test_utils.BaseTestCase):
+         with open(ova_file_path, 'rb') as ova_file:
+             self.assertRaises(ParseError, iextractor._parse_OVF, ova_file)
+ 
+-    @mock.patch('glance.common.utils.validate_import_uri')
+-    def test_get_ova_iter_objects_uri_validation_fails(self, mock_validate):
+-        """Test that disallowed URIs raise ImportTaskError"""
+-        mock_validate.return_value = False
++    @mock.patch('glance.common.scripts.utils.open_external_uri')
++    def test_get_ova_iter_objects_uri_validation_fails(self, mock_open):
++        """Test that disallowed URIs raise Invalid"""
++        mock_open.side_effect = exception.Invalid(
++            'URI does not pass filtering')
+         oprocess = ovf_process._OVF_Process('task_id', 'ovf_proc',
+                                             self.img_repo)
+-        self.assertRaises(exception.ImportTaskError,
++        self.assertRaises(exception.Invalid,
+                           oprocess._get_ova_iter_objects,
+                           'http://127.0.0.1:5000/package.ova')
+-        mock_validate.assert_called_once_with(
+-            'http://127.0.0.1:5000/package.ova')
+-
+-    @mock.patch('urllib.request')
+-    @mock.patch('glance.common.utils.validate_import_uri')
+-    def test_get_ova_iter_objects_uri_validation_passes(self, mock_validate,
+-                                                        mock_request):
+-        """Test that allowed URIs use SafeRedirectHandler"""
+-        mock_validate.return_value = True
+-        mock_opener = mock.MagicMock()
++        mock_open.assert_called_once_with('http://127.0.0.1:5000/package.ova')
++
++    @mock.patch('glance.common.scripts.utils.open_external_uri')
++    def test_get_ova_iter_objects_uri_validation_passes(self, mock_open):
++        """Test that allowed URIs use open_external_uri"""
+         mock_response = mock.MagicMock()
+-        mock_opener.open.return_value = mock_response
+-        mock_request.build_opener.return_value = mock_opener
++        mock_open.return_value = mock_response
+         oprocess = ovf_process._OVF_Process('task_id', 'ovf_proc',
+                                             self.img_repo)
+         result = oprocess._get_ova_iter_objects(
+             'http://example.com/package.ova')
+         self.assertEqual(mock_response, result)
+-        mock_validate.assert_called_once_with(
+-            'http://example.com/package.ova')
+-        mock_request.build_opener.assert_called_once()
++        mock_open.assert_called_once_with('http://example.com/package.ova')
+ 
+-    @mock.patch('urllib.request')
+-    @mock.patch('glance.common.utils.validate_import_uri')
+-    def test_get_ova_iter_objects_redirect_validation(self, mock_validate,
+-                                                      mock_request):
++    @mock.patch('glance.common.scripts.utils.open_external_uri')
++    def test_get_ova_iter_objects_redirect_validation(self, mock_open):
+         """Test that redirects to disallowed URLs are blocked"""
+-        # First call (initial URL) passes validation
+-        # Second call (redirect destination) fails validation
+-        mock_validate.side_effect = [True, False]
+-        mock_opener = mock.MagicMock()
+-        # Simulate redirect to disallowed URL
+-        mock_opener.open.side_effect = urllib.error.URLError(
++        mock_open.side_effect = exception.InvalidRedirect(
+             "Redirect to disallowed URL: http://127.0.0.1:5000/package.ova")
+-        mock_request.build_opener.return_value = mock_opener
+         oprocess = ovf_process._OVF_Process('task_id', 'ovf_proc',
+                                             self.img_repo)
+-        self.assertRaises(urllib.error.URLError,
++        self.assertRaises(exception.InvalidRedirect,
+                           oprocess._get_ova_iter_objects,
+                           'http://example.com/package.ova')
+-        mock_validate.assert_called_once_with(
+-            'http://example.com/package.ova')
+-        mock_request.build_opener.assert_called_once()
++        mock_open.assert_called_once_with('http://example.com/package.ova')
+diff --git a/glance/tests/unit/common/scripts/test_scripts_utils.py b/glance/tests/unit/common/scripts/test_scripts_utils.py
+index 9df7e6e..11d28a4 100644
+--- a/glance/tests/unit/common/scripts/test_scripts_utils.py
++++ b/glance/tests/unit/common/scripts/test_scripts_utils.py
+@@ -250,9 +250,9 @@ class TestSafeRedirectHandler(test_utils.BaseTestCase):
+         fp = mock.Mock()
+         headers = mock.Mock()
+ 
+-        # Redirect to disallowed URL should raise ImportTaskError
++        # Redirect to disallowed URL should raise InvalidRedirect
+         self.assertRaises(
+-            exception.ImportTaskError,
++            exception.InvalidRedirect,
+             handler.redirect_request,
+             req, fp, 302, 'Found', headers, 'http://127.0.0.1:5000/'
+         )
+diff --git a/glance/tests/unit/common/test_utils.py b/glance/tests/unit/common/test_utils.py
+index 20b4ee0..8b15340 100644
+--- a/glance/tests/unit/common/test_utils.py
++++ b/glance/tests/unit/common/test_utils.py
+@@ -1173,3 +1173,26 @@ class ImportURITestCase(test_utils.BaseTestCase):
+              ('169.254.169.254', 80))
+         ]
+         self.assertFalse(utils.validate_import_uri("http://metadata.example/"))
++
++    @mock.patch("glance.common.utils.socket.getaddrinfo")
++    def test_validate_import_uri_blocks_disallowed_resolved_ip(
++            self, mock_getaddrinfo):
++        """Hostnames resolving to disallowed public IPs are rejected."""
++        mock_getaddrinfo.return_value = [
++            (socket.AF_INET, socket.SOCK_STREAM, 6, '',
++             ('93.184.216.34', 80))
++        ]
++        self.config(disallowed_hosts=['93.184.216.34'],
++                    group='import_filtering_opts')
++        self.config(allowed_ports=[80], group='import_filtering_opts')
++        self.assertFalse(utils.validate_import_uri("http://blocked.example/"))
++
++    @mock.patch("glance.common.utils.socket.getaddrinfo")
++    def test_resolve_pinned_import_address(self, mock_getaddrinfo):
++        """Pinned address comes from validated DNS resolution."""
++        mock_getaddrinfo.return_value = [
++            (socket.AF_INET, socket.SOCK_STREAM, 6, '',
++             ('93.184.216.34', 80))
++        ]
++        pinned = utils.resolve_pinned_import_address('example.com', 80)
++        self.assertEqual(pinned, '93.184.216.34')
+diff --git a/glance/tests/utils.py b/glance/tests/utils.py
+index dafe0cf..8564cc9 100644
+--- a/glance/tests/utils.py
++++ b/glance/tests/utils.py
+@@ -707,6 +707,12 @@ def db_sync(version='heads', engine=None):
+ 
+ 
+ def start_standalone_http_server():
++    """Serve fixture image data on an ephemeral IPv4 port.
++
++    The server binds 127.0.0.1 only. Web-download tests must use that
++    address in the import URI so pin-download does not connect to ::1 on
++    dual-stack hosts.
++    """
+     def _get_http_handler_class():
+         class StaticHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
+             def do_GET(self):
