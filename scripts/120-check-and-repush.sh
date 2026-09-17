@@ -186,8 +186,31 @@ compare_layer_digests() {
         return 1
     fi
 
-    # Tag the pulled image with temporary tag
-    if ! docker tag "$image" "$temp_remote_tag" >/dev/null 2>&1; then
+    # From here until the tag is restored below, $image names the image that
+    # was pulled, not the one that was built, so no path may return before
+    # the restore. docker pull can only fetch an image to its own tag, so
+    # the pull above re-pointed $image at what the registry already held and
+    # left the built image untagged. Every later use of $image -- the
+    # verbose layer dump, and in particular the re-push the caller performs
+    # when this function reports a mismatch -- would otherwise operate on
+    # the pulled image, publishing back exactly what was already there and
+    # reporting success.
+    local tag_rc=0
+    docker tag "$image" "$temp_remote_tag" >/dev/null 2>&1 || tag_rc=1
+
+    # Restore the tag to the built image, which $local_id still addresses
+    # because it was captured before the pull. Unconditional: it has to
+    # happen whether or not the temporary tag was created.
+    if ! docker tag "$local_id" "$image" >/dev/null 2>&1; then
+        log_error "Failed to restore the built image's tag after pulling for comparison: $image"
+        log_error "Not comparing further; $image must not be re-pushed from this state"
+        return 2
+    fi
+
+    if [[ $tag_rc -ne 0 ]]; then
+        # No comparison is possible, but the tag is back on the built image,
+        # so the caller's re-push publishes what was built. Reporting a
+        # mismatch is the conservative answer when we cannot tell.
         log_verbose "Failed to create temporary tag: $temp_remote_tag"
         return 1
     fi
@@ -289,6 +312,13 @@ main() {
                     if compare_layer_digests "$image"; then
                         existing_images+=("$image")
                         log_success "[$current/$total_images] DIGESTS MATCH: $image"
+                    elif [[ $? -eq 2 ]]; then
+                        # The built image could not be restored to its tag
+                        # after the comparison pull, so a re-push here would
+                        # publish the pulled image. Count it as a failure
+                        # rather than publish the wrong thing.
+                        push_failed_images+=("$image")
+                        log_error "[$current/$total_images] CANNOT VERIFY, not re-pushing: $image"
                     else
                         digest_mismatch_images+=("$image")
                         log_warning "[$current/$total_images] DIGEST MISMATCH: $image"
