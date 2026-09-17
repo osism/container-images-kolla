@@ -57,6 +57,7 @@
       environment:
         COSIGN_PASSWORD: "{{ secret.COSIGN_PASSWORD }}"
         COSIGN_PRIVATE_KEY: "{{ secret.COSIGN_PRIVATE_KEY }}"
+        PUSH_LOG_DIR: "{{ ansible_user_dir }}/zuul-output/logs/push"
       when:
         - push_images | bool
         - not is_release | default(false) | bool

@@ -67,6 +67,27 @@
         name: docker
         state: restarted
 
+    # docker info does not report max-concurrent-uploads, so the closest we
+    # get to confirming the running daemon applies it is the file it was
+    # started from plus the time it started. Without this the setting is
+    # only known to have been written, not to be in effect.
+    - name: Record docker daemon configuration
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          out={{ ansible_user_dir }}/zuul-output/logs/docker-daemon.txt
+          mkdir -p "$(dirname "$out")"
+          {
+            echo "=== /etc/docker/daemon.json ==="
+            cat /etc/docker/daemon.json
+            echo "=== daemon start time ==="
+            systemctl show docker --property=ExecMainStartTimestamp
+            echo "=== docker info ==="
+            docker info
+          } > "$out" 2>&1
+      changed_when: false
+      failed_when: false
+
     - name: Install requirements
       ansible.builtin.pip:
         requirements: "{{ ansible_user_dir }}/{{ zuul.project.src_dir }}/requirements.txt"
