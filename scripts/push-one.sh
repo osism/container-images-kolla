@@ -18,6 +18,9 @@
 # runs, with its output going to the job log as before: this is an
 # observability wrapper and it must not be able to fail a publication.
 #
+# stderr goes to both the per-image file and the job log. stdout goes to
+# the file only, as it went to /dev/null before this wrapper existed.
+#
 # Available environment variables
 #
 # PUSH_LOG_DIR
@@ -75,8 +78,21 @@ record start "$START" - -
 if [[ $LOGGING == true ]]; then
     echo "=== attempt started $START ===" >> "$OUT" 2>/dev/null || true
     echo "=== attempt started $START ===" >> "$ERR" 2>/dev/null || true
+
+    # Where this attempt's stderr will begin, so it can be mirrored to the
+    # job log below without repeating earlier attempts.
+    ERR_OFFSET=$(wc -c < "$ERR" 2>/dev/null) || ERR_OFFSET=0
+
     docker push "$IMAGE" >> "$OUT" 2>> "$ERR"
     RC=$?
+
+    # Mirror this attempt's stderr to the job log as well as the per-image
+    # file. Sending it only to the file removes it from job-output.txt,
+    # where docker's push errors used to appear and where they are looked
+    # for first. Taken from the recorded offset rather than tee'd, so the
+    # exit status above is docker's and nothing is lost to a writer that
+    # has not flushed by the time this script exits.
+    tail -c "+$((ERR_OFFSET + 1))" "$ERR" >&2 2>/dev/null || true
 else
     docker push "$IMAGE"
     RC=$?
