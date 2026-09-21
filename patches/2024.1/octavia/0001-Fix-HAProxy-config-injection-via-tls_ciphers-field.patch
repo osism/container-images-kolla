@@ -1,0 +1,222 @@
+From 0c0fa9694120d3e3a08b86dcc7ae99c699ebfad6 Mon Sep 17 00:00:00 2001
+From: Gregory Thiemonge <gthiemon@redhat.com>
+Date: Thu, 30 Jul 2026 15:09:06 +0000
+Subject: [PATCH 1/2] Fix HAProxy config injection via tls_ciphers field
+
+The tls_ciphers field on listeners and pools was not validated for
+control characters, allowing injection of arbitrary HAProxy
+configuration directives by embedding spaces or newlines in the cipher
+string.
+
+Add input validation at the API layer to reject cipher strings
+containing characters outside the set allowed by OpenSSL cipher
+strings. Also add a safety check at config generation time to detect
+and replace invalid values that may already exist in the database,
+falling back to the configured default ciphers.
+
+Addresses OSSA-2026-039 (HAProxy configuration injection leading to
+remote code execution in Octavia). Taken verbatim from the merged
+stable/2025.1 commit 0c0fa9694120, which applies unchanged to the
+2024.1 and 2024.2 code base. Upstream stops at 2025.1: openstack/octavia
+has no 2024.2 branch left at all, and the unmaintained/2024.1 backports
+are still open, so OSISM carries the fix here.
+
+Must be applied before the L7 redirect patch, which uses the LOG and
+validate imports added to jinja_cfg.py here.
+
+Closes-Bug: #2162101
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+Change-Id: Ia6affaafcaa8b22ec2e0c94b3c4007cccaae41ba
+Signed-off-by: Gregory Thiemonge <gthiemon@redhat.com>
+(cherry picked from commit cad62902e4984a46ad80cbfa943e90006d8d599d)
+(cherry picked from commit 8f9e00a9bcdd35937fa328072cdec6cf18a95e76)
+(cherry picked from commit 7d94ab79418f20649c56d49042d4d99ceed251f0)
+---
+
+diff --git a/octavia/common/jinja/haproxy/combined_listeners/jinja_cfg.py b/octavia/common/jinja/haproxy/combined_listeners/jinja_cfg.py
+index 4aadb1d..94a5f0ab 100644
+--- a/octavia/common/jinja/haproxy/combined_listeners/jinja_cfg.py
++++ b/octavia/common/jinja/haproxy/combined_listeners/jinja_cfg.py
+@@ -18,13 +18,17 @@
+ 
+ import jinja2
+ from octavia_lib.common import constants as lib_consts
++from oslo_log import log as logging
+ from oslo_utils import versionutils
+ 
+ from octavia.common.config import cfg
+ from octavia.common import constants
+ from octavia.common import utils as octavia_utils
++from octavia.common import validate
+ from octavia.db import models
+ 
++LOG = logging.getLogger(__name__)
++
+ PROTOCOL_MAP = {
+     constants.PROTOCOL_TCP: 'tcp',
+     constants.PROTOCOL_HTTP: 'http',
+@@ -362,7 +366,13 @@
+                                  constants.PROTOCOL_PROMETHEUS):
+             tls_enabled = True
+             if listener.tls_ciphers is not None:
+-                ret_value['tls_ciphers'] = listener.tls_ciphers
++                if not validate.VALID_CIPHER_RE.match(listener.tls_ciphers):
++                    LOG.warning("Listener %s has invalid tls_ciphers in DB, "
++                                "falling back to default", listener.id)
++                    ret_value['tls_ciphers'] = (
++                        cfg.CONF.api_settings.default_listener_ciphers)
++                else:
++                    ret_value['tls_ciphers'] = listener.tls_ciphers
+             if listener.tls_versions is not None:
+                 ret_value['tls_versions'] = listener.tls_versions
+             if listener.alpn_protocols is not None:
+@@ -447,7 +457,13 @@
+             ret_value['client_cert'] = pool_tls_certs.get('client_cert')
+         if pool.tls_enabled is True:
+             if pool.tls_ciphers is not None:
+-                ret_value['tls_ciphers'] = pool.tls_ciphers
++                if not validate.VALID_CIPHER_RE.match(pool.tls_ciphers):
++                    LOG.warning("Pool %s has invalid tls_ciphers in DB, "
++                                "falling back to default", pool.id)
++                    ret_value['tls_ciphers'] = (
++                        cfg.CONF.api_settings.default_pool_ciphers)
++                else:
++                    ret_value['tls_ciphers'] = pool.tls_ciphers
+             if pool.tls_versions is not None:
+                 ret_value['tls_versions'] = pool.tls_versions
+             if (pool.alpn_protocols is not None and
+diff --git a/octavia/common/validate.py b/octavia/common/validate.py
+index 7458b8e..997d0a4 100644
+--- a/octavia/common/validate.py
++++ b/octavia/common/validate.py
+@@ -450,7 +450,20 @@
+                                        option='member address')
+ 
+ 
++VALID_CIPHER_RE = re.compile(r'^[A-Za-z0-9\-+!:@=_.]+\Z')
++
++
++def check_cipher_string(cipherstring):
++    """Validate that a cipher string contains only safe characters."""
++    if not VALID_CIPHER_RE.match(cipherstring):
++        raise exceptions.ValidationException(detail=_(
++            'Invalid characters in cipher string. '
++            'Only alphanumeric, -, +, !, :, @, =, _, and . '
++            'are allowed.'))
++
++
+ def check_cipher_prohibit_list(cipherstring):
++    check_cipher_string(cipherstring)
+     ciphers = cipherstring.split(':')
+     prohibit_list = CONF.api_settings.tls_cipher_prohibit_list.split(':')
+     rejected = []
+diff --git a/octavia/tests/unit/common/jinja/haproxy/combined_listeners/test_jinja_cfg.py b/octavia/tests/unit/common/jinja/haproxy/combined_listeners/test_jinja_cfg.py
+index 3c1dddd..2bb9933 100644
+--- a/octavia/tests/unit/common/jinja/haproxy/combined_listeners/test_jinja_cfg.py
++++ b/octavia/tests/unit/common/jinja/haproxy/combined_listeners/test_jinja_cfg.py
+@@ -2086,3 +2086,40 @@
+             mock_amp, mock_listeners, tls_certs=mock_tls_certs,
+             socket_path=mock_socket_path, amp_details=None,
+             feature_compatibility=expected_fc)
++
++    def test_transform_listener_tls_ciphers_injection_fallback(self):
++        tainted = 'ECDHE-RSA-AES128-GCM-SHA256\ncheck'
++        in_listener = sample_configs_combined.sample_listener_tuple(
++            proto='TERMINATED_HTTPS', tls=True,
++            tls_ciphers=tainted)
++        ret = self.jinja_cfg._transform_listener(
++            in_listener, None, {}, in_listener.load_balancer)
++        # Should fall back to default, not use the tainted value
++        self.assertEqual(
++            cfg.CONF.api_settings.default_listener_ciphers,
++            ret['tls_ciphers'])
++
++    def test_transform_listener_tls_ciphers_valid(self):
++        valid = 'ECDHE-RSA-AES128-GCM-SHA256:AES256-SHA'
++        in_listener = sample_configs_combined.sample_listener_tuple(
++            proto='TERMINATED_HTTPS', tls=True,
++            tls_ciphers=valid)
++        ret = self.jinja_cfg._transform_listener(
++            in_listener, None, {}, in_listener.load_balancer)
++        self.assertEqual(valid, ret['tls_ciphers'])
++
++    def test_transform_pool_tls_ciphers_injection_fallback(self):
++        tainted = 'AES128-SHA\ncheck'
++        in_pool = sample_configs_combined.sample_pool_tuple(
++            tls_enabled=True, tls_ciphers=tainted)
++        ret = self.jinja_cfg._transform_pool(in_pool, {}, False)
++        self.assertEqual(
++            cfg.CONF.api_settings.default_pool_ciphers,
++            ret['tls_ciphers'])
++
++    def test_transform_pool_tls_ciphers_valid(self):
++        valid = 'ECDHE-RSA-AES128-GCM-SHA256:AES256-SHA'
++        in_pool = sample_configs_combined.sample_pool_tuple(
++            tls_enabled=True, tls_ciphers=valid)
++        ret = self.jinja_cfg._transform_pool(in_pool, {}, False)
++        self.assertEqual(valid, ret['tls_ciphers'])
+diff --git a/octavia/tests/unit/common/test_validate.py b/octavia/tests/unit/common/test_validate.py
+index 272e02f..8dc9314 100644
+--- a/octavia/tests/unit/common/test_validate.py
++++ b/octavia/tests/unit/common/test_validate.py
+@@ -464,6 +464,41 @@
+                           validate.ip_not_reserved,
+                           '2001:0DB8::5')
+ 
++    def test_check_cipher_string_valid(self):
++        # Valid cipher strings should not raise
++        validate.check_cipher_string(
++            'ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384')
++        validate.check_cipher_string('!aNULL:!MD5:@STRENGTH')
++        validate.check_cipher_string('TLS_AES_256_GCM_SHA384')
++
++    def test_check_cipher_string_newline_injection(self):
++        self.assertRaises(
++            exceptions.ValidationException,
++            validate.check_cipher_string,
++            'ECDHE-RSA-AES128-GCM-SHA256\ncheck')
++
++    def test_check_cipher_string_space_injection(self):
++        self.assertRaises(
++            exceptions.ValidationException,
++            validate.check_cipher_string,
++            'ECDHE-RSA-AES128-GCM-SHA256 #')
++
++    def test_check_cipher_string_trailing_newline(self):
++        self.assertRaises(
++            exceptions.ValidationException,
++            validate.check_cipher_string,
++            'foo\n')
++
++    def test_check_cipher_string_control_chars(self):
++        self.assertRaises(
++            exceptions.ValidationException,
++            validate.check_cipher_string,
++            'AES128\r\ncheck')
++        self.assertRaises(
++            exceptions.ValidationException,
++            validate.check_cipher_string,
++            'AES128\tcheck')
++
+     def test_check_default_ciphers_prohibit_list_conflict(self):
+         self.conf.config(group='api_settings',
+                          tls_cipher_prohibit_list='PSK-AES128-CBC-SHA')
+diff --git a/releasenotes/notes/fix-tls-ciphers-haproxy-config-injection-a1b2c3d4e5f6a7b8.yaml b/releasenotes/notes/fix-tls-ciphers-haproxy-config-injection-a1b2c3d4e5f6a7b8.yaml
+new file mode 100644
+index 0000000..90ca3e9
+--- /dev/null
++++ b/releasenotes/notes/fix-tls-ciphers-haproxy-config-injection-a1b2c3d4e5f6a7b8.yaml
+@@ -0,0 +1,11 @@
++---
++security:
++  - |
++    Fixed a HAProxy configuration injection vulnerability via the
++    ``tls_ciphers`` field on listeners and pools. The field was not validated
++    for control characters, allowing an attacker to inject arbitrary HAProxy
++    configuration directives by embedding newlines in the cipher string. The
++    API now rejects cipher strings containing characters outside the set
++    allowed by OpenSSL (alphanumeric, ``-``, ``+``, ``!``, ``:``, ``@``, ``=``,
++    ``_``, ``.``). Existing invalid values in the database are detected at
++    config generation time and replaced with the configured defaults.
+-- 
+2.47.3
