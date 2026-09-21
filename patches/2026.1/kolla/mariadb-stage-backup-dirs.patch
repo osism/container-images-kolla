@@ -1,0 +1,144 @@
+Subject: [PATCH] mariadb: stage backup directories and rename on success
+
+A failed backup leaves a `full-<date>/` or `incr-<date>-since-<date>/`
+directory holding a partial archive, named by the same rule as a good one
+and sitting in the same place, and nothing marks or removes it. Within the
+volume the only record that an archive is good is `last_full_file`: it holds
+one entry, the next successful *full* backup overwrites it, and a successful
+incremental writes nothing at all. No earlier run's outcome can be recovered
+from the volume.
+
+Retention that goes by directory name is what this breaks. Such a policy can
+do no better than keep the newest N directories plus whatever the pointer
+names, and a failed run counts toward N exactly as a good one does, so every
+piece of debris still inside the window displaces a good archive. A run of
+failures since the last success -- the shape a persistent fault produces --
+fills the window outright: the one good archive then survives solely through
+the pointer exception, and every older good archive is deleted.
+
+Stage each archive under an `incomplete-` prefixed name and rename it into
+place once its pipeline has succeeded. The rename is the commit point: it is
+atomic within /backup and nothing else creates a `full-*` or `incr-*` name,
+so a directory this script publishes under those globs is one whose pipeline
+ran to completion. That is not a restore guarantee, and it says nothing
+about debris already in the volume from earlier runs.
+
+A cleanup trap would not do the same job: SIGKILL is uncatchable, so a
+backup killed on a timeout -- the case this defect was found in -- runs no
+trap at all. Staging needs no signal handling. Durability is unchanged
+either way: rename is atomic with respect to visibility, but neither script
+fsyncs, so a power loss can still leave a published directory whose contents
+never reached disk.
+
+The staged name takes a prefix rather than a suffix so that it stays outside
+the `full-*` and `incr-*` namespaces altogether: `full-<date>.incomplete`
+would still match a `full-*` glob.
+
+backup_replica.sh carries the same defect in both of its functions and is
+patched with it, although nothing reaches it on 2026.1: kolla-ansible has
+carried f1f2702bb on stable/2026.1 since 2026-08-25, which removed the branch
+that selected the replica script and left mariadb_backup_target inert. Kolla
+still ships the script, though -- Dockerfile.j2 COPYs it in -- so the defect
+is still in the image and would come back the day anything invokes it again.
+Fixing both keeps the two scripts from diverging in the meantime.
+
+--- a/docker/mariadb-server/backup.sh
++++ b/docker/mariadb-server/backup.sh
+@@ -9,14 +9,21 @@
+     LAST_FULL_DATE=$(date +%d-%m-%Y-%s)
+     BACKUP_FILE="mysqlbackup-${LAST_FULL_DATE}.qp.xbc.xbs.gz"
+     BACKUP_PATH="$BACKUP_DIR/full-${LAST_FULL_DATE}"
+-    mkdir -p "$BACKUP_PATH"
++    # Stage under a name no consumer matches and rename on success, so that a
++    # run which dies part way through -- including one killed with SIGKILL,
++    # where no trap can run -- cannot leave a partial archive that looks like
++    # a complete one.
++    STAGE_PATH="$BACKUP_DIR/incomplete-full-${LAST_FULL_DATE}"
++    mkdir -p "$STAGE_PATH"
+ 
+     mariabackup \
+         --defaults-file=/etc/mysql/my.cnf \
+         --backup \
+         --stream=xbstream \
+         --history=$LAST_FULL_DATE | gzip > \
+-        "$BACKUP_PATH/$BACKUP_FILE"
++        "$STAGE_PATH/$BACKUP_FILE"
++
++    mv "$STAGE_PATH" "$BACKUP_PATH"
+ 
+     echo "$BACKUP_PATH/$BACKUP_FILE" > "$BACKUP_DIR/last_full_file"
+ }
+@@ -34,7 +41,11 @@
+     LAST_FULL_DATE=$(basename "$(dirname "$FULL_BACKUP_FILE")" | sed 's/^full-//')
+     NOW=$(date +%H-%M-%S-%d-%m-%Y)
+     INCR_DIR="$BACKUP_DIR/incr-${NOW}-since-${LAST_FULL_DATE}"
+-    mkdir -p "$INCR_DIR"
++    # Staged and renamed on success, as in backup_full above. This also covers
++    # the decompress below, which fails whenever the full backup it chains off
++    # is itself incomplete.
++    STAGE_DIR="$BACKUP_DIR/incomplete-incr-${NOW}-since-${LAST_FULL_DATE}"
++    mkdir -p "$STAGE_DIR"
+ 
+     TMP_BASEDIR=$(mktemp -d)
+     echo "Decompressing full backup to temp dir: $TMP_BASEDIR"
+@@ -46,7 +57,9 @@
+         --stream=xbstream \
+         --incremental-basedir="$TMP_BASEDIR" \
+         --history="incr-${NOW}" | gzip > \
+-        "$INCR_DIR/incremental-${NOW}-mysqlbackup-${LAST_FULL_DATE}.qp.xbc.xbs.gz"
++        "$STAGE_DIR/incremental-${NOW}-mysqlbackup-${LAST_FULL_DATE}.qp.xbc.xbs.gz"
++
++    mv "$STAGE_DIR" "$INCR_DIR"
+ 
+     rm -rf "$TMP_BASEDIR"
+ }
+--- a/docker/mariadb-server/backup_replica.sh
++++ b/docker/mariadb-server/backup_replica.sh
+@@ -26,14 +26,21 @@
+     LAST_FULL_DATE=$(date +%d-%m-%Y-%s)
+     BACKUP_FILE="backup-full-${LAST_FULL_DATE}.mbs.gz"
+     BACKUP_PATH="${BACKUP_DIR}/full-${LAST_FULL_DATE}"
+-    mkdir -p "${BACKUP_PATH}"
++    # Stage under a name no consumer matches and rename on success, so that a
++    # run which dies part way through -- including one killed with SIGKILL,
++    # where no trap can run -- cannot leave a partial archive that looks like
++    # a complete one.
++    STAGE_PATH="${BACKUP_DIR}/incomplete-full-${LAST_FULL_DATE}"
++    mkdir -p "${STAGE_PATH}"
+ 
+     mariabackup \
+         --defaults-file="${REPLICA_MY_CNF}" \
+         --backup \
+         --stream=mbstream \
+         --history="${LAST_FULL_DATE}" \
+-        | gzip > "${BACKUP_PATH}/${BACKUP_FILE}"
++        | gzip > "${STAGE_PATH}/${BACKUP_FILE}"
++
++    mv "${STAGE_PATH}" "${BACKUP_PATH}"
+ 
+     echo "${BACKUP_PATH}/${BACKUP_FILE}" > "${BACKUP_DIR}/last_full_file"
+ }
+@@ -49,7 +56,11 @@
+     LAST_FULL_DATE=$(basename "$(dirname "${FULL_BACKUP_FILE}")" | sed 's/^full-//')
+     NOW=$(date +%H-%M-%S-%d-%m-%Y)
+     INCR_DIR="${BACKUP_DIR}/incr-${NOW}-since-${LAST_FULL_DATE}"
+-    mkdir -p "${INCR_DIR}"
++    # Staged and renamed on success, as in backup_full above. This also covers
++    # the decompress below, which fails whenever the full backup it chains off
++    # is itself incomplete.
++    STAGE_DIR="${BACKUP_DIR}/incomplete-incr-${NOW}-since-${LAST_FULL_DATE}"
++    mkdir -p "${STAGE_DIR}"
+ 
+     # Temp dir for full base restore
+     TMP_BASEDIR=$(mktemp -d)
+@@ -63,7 +74,9 @@
+         --stream=mbstream \
+         --incremental-basedir="${TMP_BASEDIR}" \
+         --history="incr-${NOW}" \
+-        | gzip > "${INCR_DIR}/backup-incremental-${NOW}.mbs.gz"
++        | gzip > "${STAGE_DIR}/backup-incremental-${NOW}.mbs.gz"
++
++    mv "${STAGE_DIR}" "${INCR_DIR}"
+ 
+     rm -rf "${TMP_BASEDIR}"
+ }
