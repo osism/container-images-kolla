@@ -1,0 +1,183 @@
+From d2d0dec72ce25b7fbd2e77230895bd64f7817a7b Mon Sep 17 00:00:00 2001
+From: Gregory Thiemonge <gthiemon@redhat.com>
+Date: Thu, 30 Jul 2026 15:13:40 +0000
+Subject: [PATCH 2/2] Fix HAProxy config injection via L7 policy redirect URLs
+
+The redirect_url and redirect_prefix fields on L7 policies were
+vulnerable to HAProxy configuration injection. The rfc3986 URL
+validator encodes control characters (e.g. newlines to %0A) before
+validating, so they passed structural checks. However, Octavia
+stores the raw unencoded input and writes it directly into the
+HAProxy configuration file, allowing injection of arbitrary
+directives.
+
+Add a check in the URL validator to reject URLs containing control
+characters and spaces before they reach rfc3986. Also add a safety
+check at config generation time to clear invalid redirect URLs that
+may already exist in the database.
+
+Addresses OSSA-2026-039 (HAProxy configuration injection leading to
+remote code execution in Octavia). Taken verbatim from the merged
+stable/2025.1 commit d2d0dec72ce2, which applies unchanged to the
+2024.1 and 2024.2 code base. Upstream stops at 2025.1: openstack/octavia
+has no 2024.2 branch left at all, and the unmaintained/2024.1 backports
+are still open, so OSISM carries the fix here.
+
+Depends on the tls_ciphers patch that sorts before it: the LOG and
+validate imports it uses in jinja_cfg.py are added there.
+
+Closes-Bug: #2162103
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+Change-Id: I23c3ca392233c7e8223a9a00b9ee07c6f4b63615
+Signed-off-by: Gregory Thiemonge <gthiemon@redhat.com>
+(cherry picked from commit bad7074621562d90a38be4639c1ab3e245f5bf39)
+(cherry picked from commit e642536d63cf7dfa7e52cbc9c4f74637a738853d)
+(cherry picked from commit 38bed8e82cd515e5ad4d8a7fe7613a29780c7e46)
+---
+
+diff --git a/octavia/common/jinja/haproxy/combined_listeners/jinja_cfg.py b/octavia/common/jinja/haproxy/combined_listeners/jinja_cfg.py
+index 94a5f0ab..03a8d79 100644
+--- a/octavia/common/jinja/haproxy/combined_listeners/jinja_cfg.py
++++ b/octavia/common/jinja/haproxy/combined_listeners/jinja_cfg.py
+@@ -532,6 +532,14 @@
+             'domain_name': monitor.domain_name,
+         }
+ 
++    @staticmethod
++    def _sanitize_url(value, field_name, obj_id):
++        if value and validate.INVALID_URL_CHARS_RE.search(value):
++            LOG.warning("L7policy %s has invalid %s in DB, clearing",
++                        obj_id, field_name)
++            return None
++        return value
++
+     def _transform_l7policy(self, l7policy, feature_compatibility,
+                             listener_tls_enabled, tls_certs=None):
+         """Transforms an L7 policy into an object that will
+@@ -541,8 +549,10 @@
+         ret_value = {
+             'id': l7policy.id,
+             'action': l7policy.action,
+-            'redirect_url': l7policy.redirect_url,
+-            'redirect_prefix': l7policy.redirect_prefix,
++            'redirect_url': self._sanitize_url(
++                l7policy.redirect_url, 'redirect_url', l7policy.id),
++            'redirect_prefix': self._sanitize_url(
++                l7policy.redirect_prefix, 'redirect_prefix', l7policy.id),
+             'enabled': l7policy.enabled
+         }
+         if (l7policy.redirect_pool and
+diff --git a/octavia/common/validate.py b/octavia/common/validate.py
+index 997d0a4..f4bba8f 100644
+--- a/octavia/common/validate.py
++++ b/octavia/common/validate.py
+@@ -41,8 +41,18 @@
+ _ListenerPUT = 'octavia.api.v2.types.listener.ListenerPUT'
+ 
+ 
++# Reject control characters and spaces in URLs before passing to rfc3986.
++# The rfc3986 library encodes these (e.g. \n -> %0A) before validating, so
++# they pass structural validation, but Octavia stores the raw input which
++# ends up in HAProxy config files — allowing config injection via newlines.
++INVALID_URL_CHARS_RE = re.compile(r'[\x00-\x20\x7f-\x9f]')
++
++
+ def url(url, require_scheme=True):
+     """Raises an error if the url doesn't look like a URL."""
++    if INVALID_URL_CHARS_RE.search(url):
++        raise exceptions.InvalidURL(url=url)
++
+     validator = validators.Validator()
+     if require_scheme:
+         validator.allow_schemes('http', 'https')
+diff --git a/octavia/tests/unit/common/jinja/haproxy/combined_listeners/test_jinja_cfg.py b/octavia/tests/unit/common/jinja/haproxy/combined_listeners/test_jinja_cfg.py
+index 2bb9933..3833ab7 100644
+--- a/octavia/tests/unit/common/jinja/haproxy/combined_listeners/test_jinja_cfg.py
++++ b/octavia/tests/unit/common/jinja/haproxy/combined_listeners/test_jinja_cfg.py
+@@ -1739,6 +1739,30 @@
+         ret = self.jinja_cfg._transform_l7policy(in_l7policy, {}, False)
+         self.assertEqual(sample_configs_combined.RET_L7POLICY_6, ret)
+ 
++    def test_transform_l7policy_redirect_url_injection(self):
++        in_l7policy = sample_configs_combined.sample_l7policy_tuple(
++            'sample_l7policy_id_2', sample_policy=2)
++        # Replace redirect_url with a tainted value
++        in_l7policy = in_l7policy._replace(
++            redirect_url='https://example.com/\ncheck')
++        ret = self.jinja_cfg._transform_l7policy(in_l7policy, {}, False)
++        self.assertIsNone(ret['redirect_url'])
++
++    def test_transform_l7policy_redirect_prefix_injection(self):
++        in_l7policy = sample_configs_combined.sample_l7policy_tuple(
++            'sample_l7policy_id_2', sample_policy=2)
++        in_l7policy = in_l7policy._replace(
++            redirect_prefix='https://example.com/\ncheck',
++            redirect_url=None)
++        ret = self.jinja_cfg._transform_l7policy(in_l7policy, {}, False)
++        self.assertIsNone(ret['redirect_prefix'])
++
++    def test_transform_l7policy_redirect_url_valid(self):
++        in_l7policy = sample_configs_combined.sample_l7policy_tuple(
++            'sample_l7policy_id_2', sample_policy=2)
++        ret = self.jinja_cfg._transform_l7policy(in_l7policy, {}, False)
++        self.assertEqual('http://www.example.com', ret['redirect_url'])
++
+     def test_escape_haproxy_config_string(self):
+         self.assertEqual(self.jinja_cfg._escape_haproxy_config_string(
+             'string_with_none'), 'string_with_none')
+diff --git a/octavia/tests/unit/common/test_validate.py b/octavia/tests/unit/common/test_validate.py
+index 8dc9314..24fdfc1 100644
+--- a/octavia/tests/unit/common/test_validate.py
++++ b/octavia/tests/unit/common/test_validate.py
+@@ -45,6 +45,31 @@
+         self.assertRaises(exceptions.InvalidURL, validate.url,
+                           'ssh://www.example.com/')
+ 
++    def test_validate_url_newline_injection(self):
++        self.assertRaises(
++            exceptions.InvalidURL, validate.url,
++            'https://example.com/path\ncheck')
++
++    def test_validate_url_crlf_injection(self):
++        self.assertRaises(
++            exceptions.InvalidURL, validate.url,
++            'https://example.com/path\r\ncheck')
++
++    def test_validate_url_space(self):
++        self.assertRaises(
++            exceptions.InvalidURL, validate.url,
++            'https://example.com/path if check')
++
++    def test_validate_url_tab(self):
++        self.assertRaises(
++            exceptions.InvalidURL, validate.url,
++            'https://example.com/path\tcheck')
++
++    def test_validate_url_null(self):
++        self.assertRaises(
++            exceptions.InvalidURL, validate.url,
++            'https://example.com/path\x00check')
++
+     def test_validate_url_path(self):
+         self.assertTrue(validate.url_path('/foo'))
+         self.assertTrue(validate.url_path('/foo%0Abar'))
+diff --git a/releasenotes/notes/fix-redirect-url-haproxy-config-injection-b2c3d4e5f6a7b8c9.yaml b/releasenotes/notes/fix-redirect-url-haproxy-config-injection-b2c3d4e5f6a7b8c9.yaml
+new file mode 100644
+index 0000000..855f0f0
+--- /dev/null
++++ b/releasenotes/notes/fix-redirect-url-haproxy-config-injection-b2c3d4e5f6a7b8c9.yaml
+@@ -0,0 +1,12 @@
++---
++security:
++  - |
++    Fixed a HAProxy configuration injection vulnerability via the
++    ``redirect_url`` and ``redirect_prefix`` fields on L7 policies.
++    The ``rfc3986`` URL validator encodes control characters before
++    validation, so newlines and spaces passed structural checks but
++    were stored raw and written directly into the HAProxy configuration.
++    The URL validator now rejects URLs containing control characters
++    (U+0000-U+001F, U+007F-U+009F) and spaces before passing them to
++    ``rfc3986``. Existing invalid values in the database are detected
++    at config generation time and cleared.
+-- 
+2.47.3
