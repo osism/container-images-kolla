@@ -1,0 +1,76 @@
+From 293df5772f987888f6a11a2a83e766cc2e6d14f2 Mon Sep 17 00:00:00 2001
+From: sakumbha <sakumbha@redhat.com>
+Date: Wed, 4 Feb 2026 06:44:00 +0000
+Subject: [PATCH] Pass image size to set_data in image import
+
+When setting image data during import, pass the image size into set_data().
+Use image.size when it is set, otherwise use 0. This lets the store backend
+receive the expected size so it can handle uploads correctly (e.g. progress
+or validation).
+
+Change-Id: Ib6216b94f6ddb8c17685085c2b0a47092f1598a2
+Signed-off-by: sakumbha <sakumbha@redhat.com>
+---
+ glance/common/scripts/image_import/main.py    |  5 ++-
+ .../common/scripts/image_import/test_main.py  | 32 +++++++++++++++++++
+ 2 files changed, 36 insertions(+), 1 deletion(-)
+
+diff --git a/glance/common/scripts/image_import/main.py b/glance/common/scripts/image_import/main.py
+index cde2bf36b..eac5d5ae3 100644
+--- a/glance/common/scripts/image_import/main.py
++++ b/glance/common/scripts/image_import/main.py
+@@ -148,7 +148,10 @@ def set_image_data(image, uri, task_id, backend=None, set_active=True,
+             # the function every 60 seconds.
+             data_iter = script_utils.CallbackIterator(
+                 data_iter, callback, min_interval=60)
+-        image.set_data(data_iter, backend=backend, set_active=set_active)
++
++        image_size = image.size if image.size is not None else 0
++        image.set_data(data_iter, size=image_size, backend=backend,
++                       set_active=set_active)
+     except Exception as e:
+         with excutils.save_and_reraise_exception():
+             LOG.warning(_LW("Task %(task_id)s failed with exception "
+diff --git a/glance/tests/unit/common/scripts/image_import/test_main.py b/glance/tests/unit/common/scripts/image_import/test_main.py
+index 5c9342c8a..9ac71ae0c 100644
+--- a/glance/tests/unit/common/scripts/image_import/test_main.py
++++ b/glance/tests/unit/common/scripts/image_import/test_main.py
+@@ -147,3 +147,35 @@ class TestImageImport(test_utils.BaseTestCase):
+         # for the four reads we did, including the final obligatory one
+         callback.assert_has_calls([mock.call(110, 110),
+                                    mock.call(160, 270)])
++
++    @mock.patch.object(utils, 'get_image_data_iter')
++    def test_set_image_data_passes_image_size_to_set_data(
++            self, mock_image_iter):
++        """Verify set_data called with size=image.size when image.size set."""
++        uri = 'http://www.example.com'
++        image = mock.Mock(size=1024)
++        mock_image_iter.return_value = test_utils.FakeHTTPResponse()
++
++        image_import_script.set_image_data(image, uri, None)
++
++        image.set_data.assert_called_once()
++        call_kwargs = image.set_data.call_args[1]
++        self.assertEqual(1024, call_kwargs['size'])
++        self.assertIn('backend', call_kwargs)
++        self.assertIn('set_active', call_kwargs)
++
++    @mock.patch.object(utils, 'get_image_data_iter')
++    def test_set_image_data_passes_zero_size_when_image_size_is_none(
++            self, mock_image_iter):
++        """Verify set_data is called with size=0 when image.size is None."""
++        uri = 'http://www.example.com'
++        image = mock.Mock(size=None)
++        mock_image_iter.return_value = test_utils.FakeHTTPResponse()
++
++        image_import_script.set_image_data(image, uri, None)
++
++        image.set_data.assert_called_once()
++        call_kwargs = image.set_data.call_args[1]
++        self.assertEqual(0, call_kwargs['size'])
++        self.assertIn('backend', call_kwargs)
++        self.assertIn('set_active', call_kwargs)
+-- 
+2.54.0
+
