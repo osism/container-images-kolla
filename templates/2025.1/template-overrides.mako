@@ -83,13 +83,6 @@ RUN mkdir -p /var/lib/gnocchi/tmp ${"\\"}
     && chown -R gnocchi: /var/lib/gnocchi/tmp
 {% endblock %}
 
-{% block grafana_footer %}
-RUN curl -o /tmp/kolla-operations.tar.gz https://github.com/osism/kolla-operations/tarball/main ${"\\"}
-    && mkdir -p /operations ${"\\"}
-    && tar --strip-components=1 -xvzf /tmp/kolla-operations.tar.gz -C /operations ${"\\"}
-    && rm -f /tmp/kolla-operations.tar.gz
-{% endblock %}
-
 {% block keystone_footer %}
 RUN python3 -m pip --no-cache-dir install -c /requirements/upper-constraints.txt keystone-keycloak-backend
 RUN apt-get update ${"\\"}
