@@ -11,6 +11,14 @@
 
 {% set glance_base_pip_packages_append = ['boto3'] %}
 
+{% set barbican_base_pip_packages_append = ['pykmip'] %}
+{% block barbican_base_header %}
+## PyKMIP 0.10.0, pinned in the upper-constraints of the stable branches, calls ssl.wrap_socket(),
+## which was removed in Python 3.12. Connections of the kmip_plugin to the KMIP server fail with it.
+## https://github.com/osism/container-images-kolla/issues/806
+RUN sed -i 's/^PyKMIP===.*/PyKMIP===0.11.0/' /requirements/upper-constraints.txt
+{% endblock %}
+
 {% set nova_libvirt_packages_packages_append = ['mdevctl'] %}
 
 {% block nova_libvirt_footer %}
