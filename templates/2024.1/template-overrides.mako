@@ -9,6 +9,8 @@
 
 {% set glance_base_pip_packages_append = ['boto3'] %}
 
+{% set barbican_base_pip_packages_append = ['pykmip'] %}
+
 {% block nova_libvirt_footer %}
 RUN chgrp tss /var/lib/swtpm-localca ${"\\"}
     && chmod g+w /var/lib/swtpm-localca
