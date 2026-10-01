@@ -55,6 +55,10 @@ RUN apt-get update ${"\\"}
     && rm -rf /var/lib/apt/lists/*
 {% endblock %}
 
+{% block base_debian_after_sources_list %}
+COPY ceph.sources /etc/apt/sources.list.d/ceph.sources
+{% endblock %}
+
 {% block openstack_base_header %}
 RUN apt-get update ${"\\"}
     && apt-get -y install --no-install-recommends python3-setuptools ${"\\"}
