@@ -18,3 +18,11 @@ Pin-Priority: 1000
 Package: proxysql
 Pin: version 3.0.8*
 Pin-Priority: 1001
+
+# Ceph client packages come from download.ceph.com, not from UCA or the
+# noble archive: neither carries a client that reads the aes256k cephx keys
+# a fresh Tentacle (>= 20.2.4) cluster mints. One supplier at one version,
+# like osism/cephclient.
+Package: /^(ceph|ceph-.*|libcephfs.*|librados.*|libradosstriper.*|librbd.*|librgw.*|libsqlite3-mod-ceph.*|python3-ceph.*|python3-rados|python3-rbd|python3-rgw)$/
+Pin: origin download.ceph.com
+Pin-Priority: 1001
