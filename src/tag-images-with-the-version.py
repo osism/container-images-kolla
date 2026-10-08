@@ -132,6 +132,16 @@ for image in client.images.list(filters=FILTERS):
                 # ovn-exporter 1.0.7, commit: 79cb6010e656fd6b24c9ccba29bde4cddcf832c2
                 r = findall(r"ovn-exporter ([^,\n]+)", result)
 
+            elif best_key == "prometheus-valkey-exporter":
+                # time="..." level=info msg="Redis Metrics Exporter v1.82.0    build date: ..."
+                r = findall(r"Redis Metrics Exporter v?(\S+)", result)
+
+            elif best_key == "prometheus-openstack-network-exporter":
+                # mod github.com/openstack-k8s-operators/openstack-network-exporter v0.2.0
+                r = findall(r"openstack-network-exporter\s+v(\S+)", result)
+                if not r:
+                    r = [image.labels["de.osism.commit.kolla_version"]]
+
             elif best_key == "kolla-toolbox":
                 r = [image.labels["de.osism.commit.kolla_version"]]
 

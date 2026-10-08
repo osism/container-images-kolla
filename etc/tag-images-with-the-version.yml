@@ -24,6 +24,7 @@ haproxy-ssh: dpkg -s openssh-server
 haproxy: dpkg -s haproxy
 heat: pip3 show openstack-heat
 horizon: pip3 show horizon
+httpd: dpkg -s apache2
 influxdb: dpkg -s influxdb
 ironic: pip3 show ironic
 ironic-inspector: pip3 show ironic-inspector
@@ -83,8 +84,13 @@ prometheus-mysqld-exporter: bash -c '/opt/mysqld_exporter/mysqld_exporter --vers
 prometheus-node-exporter: bash -c '/opt/node_exporter/node_exporter --version 2>&1'
 # 4827ad4a95c3af9f56c026e168168050429793c3406c0330b9f9c4049e8bca3f  /opt/openstack-exporter/openstack-exporter
 prometheus-openstack-exporter: bash -c 'sha256sum /opt/openstack-exporter/openstack-exporter 2>&1'
+# The binary has no --version flag, the module version is taken from the embedded Go build info
+# mod github.com/openstack-k8s-operators/openstack-network-exporter v0.2.0
+prometheus-openstack-network-exporter: bash -c 'grep -a -o -m1 -E "openstack-network-exporter[[:space:]]+v[0-9.]+" /opt/openstack-network-exporter/openstack-network-exporter || true'
 # ovn-exporter 1.0.4
 prometheus-ovn-exporter: /opt/ovn-exporter --version
+# time="2026-10-08T00:00:00Z" level=info msg="Redis Metrics Exporter v1.82.0    build date: ..."
+prometheus-valkey-exporter: /opt/valkey-exporter --version
 # prometheus, version 2.26.1 (branch: HEAD, revision: 6eeded0fdf760e81af75d9c44ce539ab77da4505)
 prometheus: /opt/prometheus/prometheus --version
 proxysql: dpkg -s proxysql
@@ -99,6 +105,8 @@ storm: /opt/storm/bin/storm version
 swift: pip3 show swift
 tgtd: dpkg -s tgt
 trove: pip3 show trove
+valkey: dpkg -s valkey-server
+valkey-sentinel: dpkg -s valkey-sentinel
 watcher: pip3 show python-watcher
 # /opt/zookeeper/zookeeper-3.4.13.jar
 zookeeper: find /opt/zookeeper -maxdepth 1 -name 'zookeeper-*.jar'
