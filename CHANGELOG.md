@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 This file was started on December 08, 2025. Changes prior to this date are not included in the CHANGELOG.
 
+## [v0.20261008.0] - 2026-10-08
+
+### Fixed
+- Install the Ceph client from download.ceph.com to fix client/cluster connection failures with aes256k cephx keys (osism/container-images-kolla#808)
+
+### Dependencies
+- mako 1.4.1 → 1.4.2 (osism/container-images-kolla#809)
+
+## [v0.20261001.0] - 2026-10-01
+
+### Added
+- Add builds for 2026.1 (osism/container-images-kolla#774)
+- Add ACME dns-01 challenge support to the letsencrypt-lego image, selectable via a new `--challenge` option alongside the existing http-01 default and the --dns-provider, --dns-additional-opts, and --env-file options (osism/container-images-kolla#780, osism/container-images-kolla#797)
+- Record per-image push attempt logs (duration, exit status, size, layer count) to diagnose failing nightly push jobs (osism/container-images-kolla#798)
+- Backport image size handling fix for glance image import to prevent dynamic backing image volume resizing during copy (2025.1, 2025.2) (osism/container-images-kolla#802)
+- Install pykmip for the Barbican kmip_plugin and pin PyKMIP 0.11.0 for Python 3.12 based images to fix KMIP server connections (2024.1, 2024.2, 2025.1, 2025.2, 2026.1) (osism/container-images-kolla#807)
+
+### Changed
+- Use registry.osism.tech instead of registry.osism.cloud in compare-sbom.py (osism/container-images-kolla#777)
+- Keystone: drop 2024.1 CVE patches for user impersonation, trust operations, federated token rescoping, and RBAC policy bypass now included upstream in the unmaintained/2024.1 tarball (osism/container-images-kolla#779)
+- Templates: fail the build when `pip check` detects broken or conflicting requirements in the venv (osism/container-images-kolla#784)
+- Refresh glance patches that needed a rebase and drop patches already merged upstream (osism/container-images-kolla#792)
+- Drop glance patches for web-download size limiting, SSRF host restriction, and HTTP location SSRF protection, now merged upstream (osism/container-images-kolla#793)
+- Drop keystone patch for system-scoped token rescope guard, now merged upstream (osism/container-images-kolla#793)
+
+### Fixed
+- keystone: add patches for CVEs and backports, drop a 2024.1 patch merged upstream (osism/container-images-kolla#776)
+- Keystone: add 2024.1 patches closing CVE-2026-42998, CVE-2026-43000, CVE-2026-44394, and CVE-2026-42999, plus fixes for delegated-token trust, application-credential, and OAuth1 escalation bugs (osism/container-images-kolla#778)
+- Keystone: constrain keycloak-backend pip install to upper-constraints to prevent unconstrained cryptography/jwcrypto upgrades from breaking keystone startup (osism/container-images-kolla#781)
+- Add keystone patches for 2024.2 fixing CVEs where delegated tokens (application credentials, OAuth1, EC2) could bypass trust, application credential, and token-rescoping restrictions (osism/container-images-kolla#782)
+- Keystone: reject EC2 credential tokens from all Keystone API operations except token validation and reauthentication (osism/container-images-kolla#783)
+- Prepare script now fails the build on git clone or checkout failure instead of silently continuing, which previously surfaced as misleading "no file to patch" errors, and falls back to HTTP/1.1 on intermittent GitHub clone rejections (osism/container-images-kolla#787)
+- Add glance patches fixing SSRF via restricted-address import URIs, DNS rebinding on import downloads, and unbounded web-download fetch size (osism/container-images-kolla#789)
+- Scope the pip check build gate to conflicts owned by the venv, so apt-side package conflicts no longer fail the build (osism/container-images-kolla#786)
+- Limit glance web-download image fetch size to the configured image_size_cap, preventing disk exhaustion when a remote source omits Content-Length (osism/container-images-kolla#790)
+- Block glance web-download import URIs targeting loopback, link-local, or other restricted addresses to prevent SSRF against local services and cloud metadata endpoints (osism/container-images-kolla#790)
+- Pin glance import downloads to the validated destination address and re-validate at fetch time to close a DNS rebinding window between URI validation and image download (osism/container-images-kolla#790)
+- Glance 2024.1: add CVE patches fixing SSRF vulnerabilities in image import (web-download redirect bypass, IP address encoding bypass, glance-download redirect bypass, OVF processing, unbounded web-download fetch size) (osism/container-images-kolla#790)
+- Fix re-push of mismatched images publishing the previously pulled image instead of the newly built one (osism/container-images-kolla#798)
+- Restore push error output to the job log after it stopped appearing due to the push logging changes (osism/container-images-kolla#799)
+- Fix mariadb backup scripts leaving partial archives that looked complete after a failed or killed backup run (osism/container-images-kolla#801)
+- Fix Octavia HAProxy configuration injection via tls_ciphers and L7 policy redirect fields (OSSA-2026-039) (osism/container-images-kolla#803)
+
+### Removed
+- Keystone patches that were merged upstream (osism/container-images-kolla#785)
+- Drop keystone ec2credential token-ban patch now merged upstream (osism/container-images-kolla#789)
+- Drop glance patch pinning image import downloads to validated destination addresses, now merged upstream (osism/container-images-kolla#794)
+- Drop glance patch blocking restricted hosts when adding HTTP image locations, now merged upstream (osism/container-images-kolla#795)
+- Drop kolla-operations unpacking from the grafana image footer (2024.2, 2025.1, 2025.2, 2026.1) (osism/container-images-kolla#800)
+- Drop 2025.2 glance backport patch that no longer applies since it was merged upstream (osism/container-images-kolla#805)
+
+### Dependencies
+- setuptools 83.0.0 → 84.0.0 (osism/container-images-kolla#773)
+- ansible 14.2.0 → 14.3.1 (osism/container-images-kolla#772, osism/container-images-kolla#775)
+- ansible 14.3.1 → 14.4.0 (osism/container-images-kolla#796)
+
 ## [v0.20260814.0] - 2026-08-14
 
 ### Added
