@@ -1,0 +1,108 @@
+From c5b8b4d52774f06d901e909df820e8e0a2487ba6 Mon Sep 17 00:00:00 2001
+From: Roger Luethi <luethi@osism.tech>
+Date: Fri, 9 Oct 2026 20:05:14 +0200
+Subject: [PATCH] scheduler: Do not sleep in graceful_shutdown
+
+SchedulerManager.graceful_shutdown() sleeps for manager_shutdown_timeout
+(160s by default) as a stand-in for task tracking. In the scheduler
+the sleep protects no in-progress work: select_destinations runs inside
+the RPC dispatch, and Service.stop() has already drained in-flight
+dispatches with rpc_server.wait() before it calls graceful_shutdown().
+Periodic tasks such as _discover_hosts_in_cells keep running through
+the sleep and are only stopped afterwards by super().stop().
+
+The sleep does hurt on reload. With the oslo.service threading backend
+a SIGHUP makes cotyledon stop and respawn every worker, and kolla-ansible
+sends that SIGHUP to all schedulers at once to refresh the cell cache.
+Each worker cancels its consumers and then sleeps for 160s before a new
+worker is started, leaving the scheduler topic without a consumer for
+that long; select_destinations calls made in the window can time out.
+
+Master replaced the sleep with task tracking in fec26fb64b "Task
+tracking mechanism for graceful shutdown" (change 996299) and
+f712a55eeb "Shutdown thread pool executors during graceful shutdown"
+(change 1000211); neither is on stable/2026.1. Drop this patch when
+they are, or when moving past 2026.1.
+---
+ nova/scheduler/manager.py                 | 29 +++++++++++------------
+ nova/tests/unit/scheduler/test_manager.py | 20 +---------------
+ 2 files changed, 15 insertions(+), 34 deletions(-)
+
+diff --git a/nova/scheduler/manager.py b/nova/scheduler/manager.py
+index efff0d9e4a..4ee2915c6c 100644
+--- a/nova/scheduler/manager.py
++++ b/nova/scheduler/manager.py
+@@ -22,7 +22,6 @@ Scheduler Service
+ import collections
+ import copy
+ import random
+-import time
+ 
+ from keystoneauth1 import exceptions as ks_exc
+ from oslo_log import log as logging
+@@ -164,20 +163,20 @@ class SchedulerManager(manager.Manager):
+         should transit the in-progress tasks to safe termination point. The
+         safe termination point can be either complete or abort them.
+         """
+-        # TODO(gmaan) Time based wait is temporary solution and it will be
+-        # replaced by the better solution to finish in-progress tasks.
+-        if CONF.manager_shutdown_timeout > CONF.graceful_shutdown_timeout:
+-            LOG.warning('manager_shutdown_timeout (%s) is higher than '
+-                        'graceful_shutdown_timeout (%s); the service may be '
+-                        'killed before the manager finishes waiting.',
+-                        CONF.manager_shutdown_timeout,
+-                        CONF.graceful_shutdown_timeout)
+-            sleep_time = max(0, CONF.graceful_shutdown_timeout - 10)
+-        else:
+-            sleep_time = CONF.manager_shutdown_timeout
+-        LOG.debug('Scheduler service manager is waiting for %s seconds to '
+-                  'finish in-progress tasks', sleep_time)
+-        time.sleep(sleep_time)
++        # NOTE(osism): Do not wait here. The sleep protects no in-progress
++        # work: select_destinations runs inside the RPC dispatch, and
++        # Service.stop() has already waited for in-flight dispatches in
++        # rpc_server.wait() before calling this method. Periodic tasks such
++        # as _discover_hosts_in_cells keep running through the sleep and are
++        # only stopped afterwards by super().stop(). The fixed
++        # manager_shutdown_timeout sleep (160s by default) does keep a
++        # stopping worker from being replaced. With the threading backend a
++        # SIGHUP stops and respawns every worker, so the sleep left the
++        # scheduler topic without any consumer for ~160s on each reload.
++        # Upstream master replaced the sleep with task tracking
++        # (I2de2172b5836f156c2154ca73cbff558ec587ea3).
++        LOG.debug('Scheduler service manager skips the graceful shutdown '
++                  'wait')
+ 
+     @messaging.expected_exceptions(exception.NoValidHost)
+     def select_destinations(
+diff --git a/nova/tests/unit/scheduler/test_manager.py b/nova/tests/unit/scheduler/test_manager.py
+index fb091ca23d..67f45f81d5 100644
+--- a/nova/tests/unit/scheduler/test_manager.py
++++ b/nova/tests/unit/scheduler/test_manager.py
+@@ -1665,25 +1665,7 @@ class SchedulerManagerTestCase(test.NoDBTestCase):
+     def test_graceful_shutdown(self, mock_sleep):
+         self.flags(manager_shutdown_timeout=10)
+         self.manager.graceful_shutdown()
+-        mock_sleep.assert_called_once_with(10)
+-
+-    @mock.patch('nova.scheduler.manager.LOG')
+-    @mock.patch('time.sleep')
+-    def test_graceful_shutdown_manager_timeout_higher(
+-            self, mock_sleep, mock_log):
+-        # manager_shutdown_timeout > graceful_shutdown_timeout:
+-        # warning logged, sleep = graceful_shutdown_timeout - 10 = 20
+-        self.flags(manager_shutdown_timeout=50, graceful_shutdown_timeout=30)
+-        self.manager.graceful_shutdown()
+-        mock_log.warning.assert_called_once()
+-        mock_sleep.assert_called_once_with(20)
+-
+-    @mock.patch('time.sleep')
+-    def test_graceful_shutdown_no_negative_sleep_time(self, mock_sleep):
+-        # If sleep time end up with negative value, fallback to slep(0)
+-        self.flags(manager_shutdown_timeout=50, graceful_shutdown_timeout=5)
+-        self.manager.graceful_shutdown()
+-        mock_sleep.assert_called_once_with(0)
++        mock_sleep.assert_not_called()
+ 
+     @mock.patch('nova.objects.service.ServiceList.get_by_binary')
+     @mock.patch('nova.objects.host_mapping.discover_hosts')
