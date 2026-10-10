@@ -321,6 +321,7 @@ SBOM_IMAGE_TO_VERSION = {
     "opensearch_dashboards": "opensearch-dashboards",
     "openvswitch": "openvswitch-vswitchd",
     "ovn": "ovn-controller",
+    "ovsdpdk": "ovsdpdk-vswitchd",
     "hacluster": "hacluster",
     "hacluster_corosync": "hacluster-corosync",
     "placement": "placement-api",
