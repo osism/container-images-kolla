@@ -322,7 +322,7 @@ SBOM_IMAGE_TO_VERSION = {
     "openvswitch": "openvswitch-vswitchd",
     "ovn": "ovn-controller",
     "ovsdpdk": "ovsdpdk-vswitchd",
-    "hacluster": "hacluster",
+    "hacluster": "hacluster-pacemaker",
     "hacluster_corosync": "hacluster-corosync",
     "placement": "placement-api",
     "prometheus": "prometheus-server",
