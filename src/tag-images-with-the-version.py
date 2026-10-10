@@ -291,6 +291,7 @@ SBOM_IMAGE_TO_VERSION = {
     "haproxy": "haproxy",
     "haproxy_ssh": "haproxy-ssh",
     "horizon": "horizon",
+    "httpd": "httpd",
     "influxdb": "influxdb",
     "ironic": "ironic-api",
     "ironic_inspector": "ironic-inspector",
