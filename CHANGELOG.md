@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 This file was started on December 08, 2025. Changes prior to this date are not included in the CHANGELOG.
 
+## [v0.20261011.0] - 2026-10-11
+
+### Fixed
+- Add missing SBOM version keys for httpd, ovsdpdk and the two 2026.1 exporters (prometheus-valkey-exporter, prometheus-openstack-network-exporter) so their image tags no longer fall back to the series (osism/container-images-kolla#815)
+- Map the hacluster SBOM version key to the hacluster-pacemaker image instead of the nonexistent hacluster image (osism/container-images-kolla#815)
+
 ## [v0.20261008.0] - 2026-10-08
 
 ### Fixed
