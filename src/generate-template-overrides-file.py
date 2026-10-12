@@ -11,6 +11,8 @@ HASH_KOLLA = os.environ.get("HASH_KOLLA", "none")
 HASH_RELEASE = os.environ.get("HASH_RELEASE", "none")
 KOLLA_BASE = os.environ.get("BASE", "ubuntu")
 KOLLA_BASE_TAG = os.environ.get("BASE_VERSION", "22.04")
+BASE_IMAGE_DIGEST = os.environ.get("BASE_IMAGE_DIGEST", "none")
+BASE_IMAGE_NAME = os.environ.get("BASE_IMAGE_NAME", "none")
 KOLLA_VERSION = os.environ.get("KOLLA_VERSION", "none")
 OPENSTACK_VERSION = os.environ.get("OPENSTACK_VERSION", "latest")
 VERSION = os.environ.get("VERSION", "latest")
@@ -24,6 +26,8 @@ template = Template(filename=filename)
 data = {
     "base": KOLLA_BASE,
     "base_tag": KOLLA_BASE_TAG,
+    "base_image_digest": BASE_IMAGE_DIGEST,
+    "base_image_name": BASE_IMAGE_NAME,
     "created": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     "hash_docker_images_kolla": HASH_DOCKER_IMAGES_KOLLA,
     "hash_kolla": HASH_KOLLA,

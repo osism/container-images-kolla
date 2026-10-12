@@ -7,3 +7,5 @@ images.yml
 tarballs
 template-overrides.j2
 *.log
+base-image.env
+base-image.manifest

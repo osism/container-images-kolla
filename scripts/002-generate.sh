@@ -34,7 +34,9 @@ export OPENSTACK_VERSION
 
 DOCKER_TAG=build-$BUILD_ID
 KOLLA_BASE=$BASE
-KOLLA_BASE_TAG=$BASE_VERSION
+# Pins kolla's base image to the digest 001-prepare.sh resolved and labelled.
+. ./base-image.env || exit 1
+KOLLA_BASE_TAG=$BASE_VERSION@$BASE_IMAGE_DIGEST
 KOLLA_CONF_FILE=kolla-build.conf
 KOLLA_INSTALL_TYPE=source
 

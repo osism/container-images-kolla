@@ -140,7 +140,7 @@ if [[ "$OPENSTACK_VERSION" != "latest" ]]; then
         git checkout origin/stable/$OPENSTACK_VERSION || exit 1
     fi
 fi
-export HASH_KOLLA=$(git rev-parse --short HEAD)
+export HASH_KOLLA=$(git rev-parse HEAD)
 popd > /dev/null
 
 # Do not build rabbitmq-4-1 image
@@ -203,8 +203,20 @@ export KOLLA_VERSION=$(kolla-build --version)
 
 # Prepare template-overrides.j2
 
-export HASH_DOCKER_IMAGES_KOLLA=$(git rev-parse --short HEAD)
-export HASH_RELEASE=$(cd $RELEASE_REPOSITORY_PATH; git rev-parse --short HEAD)
+export HASH_DOCKER_IMAGES_KOLLA=$(git rev-parse HEAD)
+export HASH_RELEASE=$(cd $RELEASE_REPOSITORY_PATH; git rev-parse HEAD)
+# Resolve the base image to a digest once: 002-generate.sh pins kolla's base
+# to it and the template overrides label the images with it.
+export BASE=${BASE:-ubuntu}
+export BASE_VERSION
+export BASE_IMAGE_NAME="$BASE:$BASE_VERSION"
+if ! docker buildx imagetools inspect --raw "$BASE_IMAGE_NAME" > base-image.manifest; then
+    echo "ERROR: unable to resolve $BASE_IMAGE_NAME" >&2
+    exit 1
+fi
+export BASE_IMAGE_DIGEST=sha256:$(sha256sum base-image.manifest | cut -d' ' -f1)
+echo "BASE_IMAGE_DIGEST=$BASE_IMAGE_DIGEST" > base-image.env
+
 python3 src/generate-template-overrides-file.py > templates/$OPENSTACK_VERSION/template-overrides.j2
 
 echo DEBUG template-overrides.j2
