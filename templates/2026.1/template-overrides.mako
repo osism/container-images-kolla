@@ -142,6 +142,6 @@ LABEL "build-date"="{{ build_date }}" ${"\\"}
       "org.opencontainers.image.revision"="${hash_docker_images_kolla}" ${"\\"}
       "org.opencontainers.image.source"="https://github.com/osism/container-images-kolla" ${"\\"}
       "org.opencontainers.image.title"="{{ image_name }}" ${"\\"}
-      "org.opencontainers.image.url"="https://quay.io/organization/osism" ${"\\"}
+      "org.opencontainers.image.url"="https://github.com/osism/container-images-kolla" ${"\\"}
       "org.opencontainers.image.vendor"="OSISM GmbH"
 {% endblock %}
