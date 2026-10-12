@@ -115,6 +115,11 @@ if [[ $VERSION != "latest" ]]; then
     OPENSTACK_VERSION=$(grep "openstack_version:" release/latest/openstack.yml | awk -F': ' '{ print $2 }' | tr -d '"')
 fi
 
+# The series defaults (BASE_VERSION) were sourced above while
+# OPENSTACK_VERSION could still be "latest"; source them for the series now,
+# since the labels generated below name the base version.
+. defaults/$OPENSTACK_VERSION.sh
+
 # Clone repository
 
 if [[ ! -e $PROJECT_REPOSITORY_PATH ]]; then
