@@ -83,6 +83,8 @@
     pre-run: playbooks/pre.yml
     run: playbooks/patch.yml
     timeout: 10800
+    irrelevant-files:
+      - ^CHANGELOG\.md$
     vars:
       docker_namespace: kolla
 
@@ -276,14 +278,24 @@
       jobs:
         - container-images-kolla-push-2024.1:
             branches: main
+            irrelevant-files:
+              - ^CHANGELOG\.md$
         - container-images-kolla-push-2024.2:
             branches: main
+            irrelevant-files:
+              - ^CHANGELOG\.md$
         - container-images-kolla-push-2025.1:
             branches: main
+            irrelevant-files:
+              - ^CHANGELOG\.md$
         - container-images-kolla-push-2025.2:
             branches: main
+            irrelevant-files:
+              - ^CHANGELOG\.md$
         - container-images-kolla-push-2026.1:
             branches: main
+            irrelevant-files:
+              - ^CHANGELOG\.md$
     tag:
       jobs:
         - container-images-kolla-release
