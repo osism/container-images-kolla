@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 This file was started on December 08, 2025. Changes prior to this date are not included in the CHANGELOG.
 
+## [v0.20261019.0] - 2026-10-19
+
+### Added
+- Label images with the base image digest and name, and the full source commit as org.opencontainers.image.revision (osism/container-images-kolla#817)
+
+### Changed
+- Use full 40-character commit hashes for de.osism.commit.* labels instead of abbreviated hashes (osism/container-images-kolla#817)
+- Patch kolla 2026.1 to leave the org.opencontainers.image.source, revision and url labels to the template overrides instead of kolla's own defaults (osism/container-images-kolla#817)
+
+### Fixed
+- Release builds no longer label images with the wrong base OS version due to series defaults being sourced before the series was known (osism/container-images-kolla#817)
+
 ## [v0.20261011.0] - 2026-10-11
 
 ### Fixed
