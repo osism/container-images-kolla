@@ -31,4 +31,11 @@ type = local
 # tarball = https://tarballs.opendev.org/openstack/{{ project.repository }}/{{ project.repository }}-{{ project.version }}.tar.gz
 location = tarballs/{{ project.repository }}-{{ project.version }}.tar.gz
 {% endif %}
+{% if project.name == 'horizon' %}
+# NOTE: Routed through tarballs/ so that patches/<release>/magnum-ui applies.
+[horizon-plugin-magnum-ui]
+type = local
+# tarball = https://tarballs.opendev.org/openstack/magnum-ui/magnum-ui-{{ project.version }}.tar.gz
+location = tarballs/magnum-ui-{{ project.version }}.tar.gz
+{% endif %}
 {%- endfor %}

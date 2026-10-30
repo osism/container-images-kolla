@@ -1,0 +1,352 @@
+From 0e1741ba8aef4c2359fb258cde9464f17cf21a7d Mon Sep 17 00:00:00 2001
+From: emogirl00272 <emogirl00272@gmail.com>
+Date: Mon, 20 Jul 2026 16:33:33 +0000
+Subject: [PATCH] Fix cluster kubeconfig download
+
+The cluster config download action is broken. Using the action does not
+download a configuration file.
+
+This change replaces the JavaScript-based download flow with an
+authenticated server-side endpoint. It generates the cluster
+configuration with embedded TLS credentials and returns it as a single
+.kubeconfig attachment.
+
+The downloaded filename is derived from the cluster name. The response
+is marked as non-cacheable because it contains sensitive credentials.
+
+Change-Id: I9bd6fda99a2041b8c42f3d6c29f7e25601d448f3
+Signed-off-by: emogirl00272 <emogirl00272@gmail.com>
+(cherry picked from commit 376f6024abcaade05c684be0ecb4df58727bd6a4)
+---
+ magnum_ui/api/magnum.py                       | 16 ++++-
+ magnum_ui/api/rest/magnum.py                  | 24 ++++++++
+ .../clusters/config/config.service.js         | 27 ++++-----
+ .../clusters/config/config.service.spec.js    | 47 ++++-----------
+ magnum_ui/test/api_tests/test_magnum_api.py   | 60 +++++++++++++++++++
+ magnum_ui/test/api_tests/test_rest_api.py     | 33 ++++++++++
+ 6 files changed, 153 insertions(+), 54 deletions(-)
+ create mode 100644 magnum_ui/test/api_tests/test_magnum_api.py
+
+diff --git a/magnum_ui/api/magnum.py b/magnum_ui/api/magnum.py
+index befaf45..09255b8 100644
+--- a/magnum_ui/api/magnum.py
++++ b/magnum_ui/api/magnum.py
+@@ -198,7 +198,7 @@ def cluster_show(request, id):
+     return magnumclient(request).clusters.get(id)
+ 
+ 
+-def cluster_config(request, id):
++def _cluster_config(request, id):
+     cluster = magnumclient(request).clusters.get(id)
+     if (hasattr(cluster, 'api_address') and cluster.api_address is None):
+         LOG.debug(f"api_address for cluster {id} is not known yet.")
+@@ -217,11 +217,21 @@ def cluster_config(request, id):
+         tls["cert"] = magnumclient(request).certificates.create(**opts).pem
+ 
+     config = client_utils.config_cluster(
+-        cluster, cluster_template, cfg_dir="", direct_output=True
++        cluster, cluster_template, cfg_dir="", certs=tls or None,
++        direct_output=True
+     )
+     result = {"cluster_config": config}
+     result.update(tls)
+-    return result
++    return cluster, result
++
++
++def cluster_config(request, id):
++    return _cluster_config(request, id)[1]
++
++
++def cluster_config_download(request, id):
++    cluster, result = _cluster_config(request, id)
++    return cluster.name, result["cluster_config"]
+ 
+ 
+ def cluster_resize(request, cluster_id, node_count,
+diff --git a/magnum_ui/api/rest/magnum.py b/magnum_ui/api/rest/magnum.py
+index 74ea73b..a1e819d 100644
+--- a/magnum_ui/api/rest/magnum.py
++++ b/magnum_ui/api/rest/magnum.py
+@@ -20,8 +20,12 @@ from collections import defaultdict
+ from django.conf import settings
+ from django.http import HttpResponse
+ from django.http import HttpResponseNotFound
++from django.utils.decorators import method_decorator
++from django.utils.text import slugify
+ from django.views import generic
+ 
++from horizon.decorators import require_auth
++
+ from magnum_ui.api import heat
+ from magnum_ui.api import magnum
+ 
+@@ -224,6 +228,26 @@ class ClusterConfig(generic.View):
+         return magnum.cluster_config(request, cluster_id)
+ 
+ 
++@urls.register
++@method_decorator(require_auth, name='dispatch')
++class ClusterConfigDownload(generic.View):
++    """Download a complete kubeconfig for a single cluster."""
++    url_regex = (
++        r'container_infra/clusters/(?P<cluster_id>[^/]+)/config/download$')
++
++    def get(self, request, cluster_id):
++        cluster_name, config = magnum.cluster_config_download(
++            request, cluster_id)
++        filename = slugify(cluster_name) or cluster_id
++        response = HttpResponse(
++            config, content_type='application/yaml; charset=utf-8')
++        response['Content-Disposition'] = (
++            f'attachment; filename="{filename}.kubeconfig"')
++        response['Content-Length'] = str(len(response.content))
++        response['Cache-Control'] = 'no-store'
++        return response
++
++
+ @urls.register
+ class ClusterResize(generic.View):
+ 
+diff --git a/magnum_ui/static/dashboard/container-infra/clusters/config/config.service.js b/magnum_ui/static/dashboard/container-infra/clusters/config/config.service.js
+index eacd2ac..1948333 100644
+--- a/magnum_ui/static/dashboard/container-infra/clusters/config/config.service.js
++++ b/magnum_ui/static/dashboard/container-infra/clusters/config/config.service.js
+@@ -18,7 +18,7 @@
+   /**
+    * @ngdoc overview
+    * @name horizon.dashboard.container-infra.clusters.config.service
+-   * @description Service for the container-infra cluster get config modal
++   * @description Service for downloading a container-infra cluster config
+    */
+   angular
+     .module('horizon.dashboard.container-infra.clusters')
+@@ -27,15 +27,14 @@
+       getClusterConfigService);
+ 
+   getClusterConfigService.$inject = [
+-    'horizon.app.core.openstack-service-api.magnum',
+     'horizon.dashboard.container-infra.clusters.resourceType',
+     'horizon.framework.util.actions.action-result.service',
+-    'horizon.framework.util.file.text-download',
+-    'horizon.framework.util.q.extensions'
++    'horizon.framework.util.q.extensions',
++    '$window'
+   ];
+ 
+   function getClusterConfigService(
+-    magnum, resourceType, actionResult, textDownload, $qExtensions
++    resourceType, actionResult, $qExtensions, $window
+   ) {
+ 
+     var service = {
+@@ -52,18 +51,12 @@
+     }
+ 
+     function perform(selected) {
+-      // get config
+-      return magnum.getClusterConfig(selected.id).then(function(response) {
+-        if (typeof response.data.key !== "undefined") {
+-          textDownload.downloadTextFile(response.data.key, selected.name + "_key.pem");
+-          textDownload.downloadTextFile(response.data.ca, selected.name + "_ca.pem");
+-          textDownload.downloadTextFile(response.data.cert, selected.name + "_cert.pem");
+-        }
+-        textDownload.downloadTextFile(response.data.cluster_config, selected.name + "_config");
+-        var result = actionResult.getActionResult()
+-                     .created(resourceType, selected.id);
+-        return result.result;
+-      });
++      var url = '/api/container_infra/clusters/' + encodeURIComponent(selected.id) +
++        '/config/download';
++      $window.location.assign(url);
++      return actionResult.getActionResult()
++        .created(resourceType, selected.id)
++        .result;
+     }
+ 
+     function allowed() {
+diff --git a/magnum_ui/static/dashboard/container-infra/clusters/config/config.service.spec.js b/magnum_ui/static/dashboard/container-infra/clusters/config/config.service.spec.js
+index 823b831..d5068a8 100644
+--- a/magnum_ui/static/dashboard/container-infra/clusters/config/config.service.spec.js
++++ b/magnum_ui/static/dashboard/container-infra/clusters/config/config.service.spec.js
+@@ -19,20 +19,20 @@
+ 
+   describe('horizon.dashboard.container-infra.clusters.config.service', function() {
+ 
+-    var $scope, service, selected, magnum, textDownload;
++    var service, selected, testWindow;
+ 
+     beforeEach(module('horizon.app.core'));
+     beforeEach(module('horizon.framework'));
+     beforeEach(module('horizon.dashboard.container-infra.clusters'));
++    beforeEach(module(function($provide) {
++      testWindow = {location: {assign: jasmine.createSpy('assign')}};
++      $provide.value('$window', testWindow);
++    }));
+ 
+     beforeEach(inject(function($injector) {
+       service = $injector.get(
+         'horizon.dashboard.container-infra.clusters.config.service');
+-      magnum = $injector.get('horizon.app.core.openstack-service-api.magnum');
+-      textDownload = $injector.get('horizon.framework.util.file.text-download');
+-      spyOn(textDownload, 'downloadTextFile').and.returnValue(Promise.resolve(true));
+-      $scope = $injector.get('$rootScope');
+-      selected = {id: '1'};
++      selected = {id: 'cluster-id', name: 'test'};
+     }));
+ 
+     it('should check the policy', function() {
+@@ -40,36 +40,15 @@
+       expect(allowed).toBeTruthy();
+     });
+ 
+-    it('should get magnum.getClusterConfig', function() {
+-      var returnValue = {data: {cluster_config: "config1"}};
+-      spyOn(magnum, 'getClusterConfig').and.returnValue(Promise.resolve(returnValue));
+-
++    it('should navigate to the cluster config download', function() {
+       service.initAction();
+-      var promise = service.perform(selected);
+-      promise.then(verifyContents);
+-      $scope.$apply();
+-      expect(magnum.getClusterConfig).toHaveBeenCalled();
+-      function verifyContents (contents) {
+-        expect(contents.created).toBeDefined();
+-        expect(contents.failed).toEqual([]);
+-        expect(textDownload.downloadTextFile.calls.count()).toBe(1);
+-      }
+-    });
++      var result = service.perform(selected);
+ 
+-    it('should download', inject(function() {
+-      var returnValue = {data: {key: "key1", cluster_config: "config1", ca: "ca1", cert: "cert1"}};
+-      spyOn(magnum, 'getClusterConfig').and.returnValue(Promise.resolve(returnValue));
+-      service.initAction();
+-      var promise = service.perform(selected);
+-      promise.then(verifyContents);
+-      $scope.$apply();
+-      expect(magnum.getClusterConfig).toHaveBeenCalled();
+-      function verifyContents (contents) {
+-        expect(contents.created).toBeDefined();
+-        expect(contents.failed).toEqual([]);
+-        expect(textDownload.downloadTextFile.calls.count()).toBe(4);
+-      }
+-    }));
++      expect(testWindow.location.assign).toHaveBeenCalledWith(
++        '/api/container_infra/clusters/cluster-id/config/download');
++      expect(result.created).toBeDefined();
++      expect(result.failed).toEqual([]);
++    });
+ 
+   });
+ })();
+diff --git a/magnum_ui/test/api_tests/test_magnum_api.py b/magnum_ui/test/api_tests/test_magnum_api.py
+new file mode 100644
+index 0000000..ee03c32
+--- /dev/null
++++ b/magnum_ui/test/api_tests/test_magnum_api.py
+@@ -0,0 +1,60 @@
++# Copyright 2026
++#
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++
++from unittest import mock
++
++from magnum_ui.api import magnum
++from openstack_dashboard.test import helpers as test
++
++
++class MagnumApiTestCase(test.TestCase):
++
++    @mock.patch.object(magnum.client_utils, 'config_cluster')
++    @mock.patch.object(magnum.client_utils, 'generate_csr_and_key')
++    @mock.patch.object(magnum, 'magnumclient')
++    def test_cluster_config_embeds_tls(self, mock_client, mock_generate,
++                                       mock_config):
++        cluster = mock.Mock(
++            uuid='cluster-id', name='test',
++            cluster_template_id='template-id', api_address='https://api')
++        template = mock.Mock(tls_disabled=False)
++        client = mock_client.return_value
++        client.clusters.get.return_value = cluster
++        client.cluster_templates.get.return_value = template
++        client.certificates.get.return_value.pem = 'ca-pem'
++        client.certificates.create.return_value.pem = 'cert-pem'
++        mock_generate.return_value = {'csr': 'csr-pem', 'key': 'key-pem'}
++        mock_config.return_value = 'complete-kubeconfig'
++
++        result = magnum.cluster_config(self.request, 'cluster-id')
++
++        self.assertEqual('complete-kubeconfig', result['cluster_config'])
++        self.assertEqual('key-pem', result['key'])
++        self.assertEqual('ca-pem', result['ca'])
++        self.assertEqual('cert-pem', result['cert'])
++        mock_config.assert_called_once_with(
++            cluster, template, cfg_dir='',
++            certs={'key': 'key-pem', 'ca': 'ca-pem', 'cert': 'cert-pem'},
++            direct_output=True)
++
++    @mock.patch.object(magnum, '_cluster_config')
++    def test_cluster_config_download(self, mock_config):
++        cluster = mock.Mock()
++        cluster.name = 'test'
++        mock_config.return_value = (
++            cluster, {'cluster_config': 'complete-kubeconfig'})
++
++        result = magnum.cluster_config_download(self.request, 'cluster-id')
++
++        self.assertEqual(('test', 'complete-kubeconfig'), result)
+diff --git a/magnum_ui/test/api_tests/test_rest_api.py b/magnum_ui/test/api_tests/test_rest_api.py
+index 292f484..74a6c6f 100644
+--- a/magnum_ui/test/api_tests/test_rest_api.py
++++ b/magnum_ui/test/api_tests/test_rest_api.py
+@@ -107,6 +107,39 @@ class MagnumRestTestCase(test.RestAPITestCase):
+             request,
+             'cluster_id')
+ 
++    @mock.patch.object(magnum, 'magnum')
++    def test_cluster_config_get(self, client):
++        request = self.mock_rest_request()
++        client.cluster_config.return_value = {
++            'cluster_config': 'apiVersion: v1\n'}
++
++        response = magnum.ClusterConfig().get(request, 'cluster-id')
++
++        self.assertStatusCode(response, 200)
++        self.assertEqual(
++            {'cluster_config': 'apiVersion: v1\n'}, response.json)
++        client.cluster_config.assert_called_once_with(request, 'cluster-id')
++
++    @mock.patch.object(magnum, 'magnum')
++    def test_cluster_config_download(self, client):
++        request = self.mock_rest_request()
++        client.cluster_config_download.return_value = (
++            'Test Cluster', 'apiVersion: v1\n')
++
++        response = magnum.ClusterConfigDownload().get(
++            request, 'cluster-id')
++
++        self.assertStatusCode(response, 200)
++        self.assertEqual(b'apiVersion: v1\n', response.content)
++        self.assertEqual(
++            'attachment; filename="test-cluster.kubeconfig"',
++            response['Content-Disposition'])
++        self.assertEqual('application/yaml; charset=utf-8',
++                         response['Content-Type'])
++        self.assertEqual('no-store', response['Cache-Control'])
++        client.cluster_config_download.assert_called_once_with(
++            request, 'cluster-id')
++
+     # Certificates
+     @mock.patch.object(magnum, 'magnum')
+     def test_certificate_create(self, client):
