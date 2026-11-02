@@ -5,7 +5,7 @@
  XStatic-JSEncrypt===2.3.1.1
  python-cinderclient===9.6.0
 -keystonemiddleware===10.7.2
-+keystonemiddleware===10.12.1
++keystonemiddleware===10.13.0
  django-formtools===2.5.1
  XStatic-Spin===1.2.5.3
  tap-as-a-service===14.0.0.0rc1
