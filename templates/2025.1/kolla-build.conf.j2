@@ -13,11 +13,16 @@ patches_path = kolla-patches/{{ openstack_release }}
 #########################################################################
 # sources tracked in release repository
 
+{#- kolla names these sources after the image, not <project>-base. A section
+    kolla does not know is ignored silently, and the image then builds from
+    its default stable branch tarball instead of the version pinned here. #}
 {%- for project in projects %}
-{% if project.name not in ['horizon', 'neutron-vpnaas-agent', 'neutron-dynamic-routing'] %}
+{% if project.name not in ['horizon', 'neutron-vpnaas', 'neutron-vpnaas-agent', 'neutron-dynamic-routing', 'skyline-apiserver', 'skyline-console'] %}
 [{{ project.name }}-base]
 {% elif project.name == 'neutron-dynamic-routing' %}
 [neutron-bgp-dragent]
+{% elif project.name == 'neutron-vpnaas' %}
+[neutron-vpnaas-agent]
 {% else %}
 [{{ project.name }}]
 {% endif -%}
@@ -27,6 +32,11 @@ location = tarballs/{{ project.repository }}-{{ project.version }}.tar.gz
 
 {% if project.name == 'neutron-dynamic-routing' %}
 [neutron-server-plugin-neutron-dynamic-routing]
+type = local
+# tarball = https://tarballs.opendev.org/openstack/{{ project.repository }}/{{ project.repository }}-{{ project.version }}.tar.gz
+location = tarballs/{{ project.repository }}-{{ project.version }}.tar.gz
+{% elif project.name in ['neutron-vpnaas', 'neutron-vpnaas-agent'] %}
+[neutron-base-plugin-vpnaas-agent]
 type = local
 # tarball = https://tarballs.opendev.org/openstack/{{ project.repository }}/{{ project.repository }}-{{ project.version }}.tar.gz
 location = tarballs/{{ project.repository }}-{{ project.version }}.tar.gz
