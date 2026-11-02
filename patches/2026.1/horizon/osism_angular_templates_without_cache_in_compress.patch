@@ -1,0 +1,46 @@
+From a1a4c6530c6c67b5b5793a7a1c0fb031e40d46ef Mon Sep 17 00:00:00 2001
+From: Roger Luethi <luethi@osism.tech>
+Date: Mon, 2 Nov 2026 21:35:23 +0100
+Subject: [PATCH] Do not cache angular templates inside compress
+
+With offline compression, django-compressor names each compressed
+block after a hash of the block's rendered content, both when
+"manage.py compress" writes the manifest and when a request looks the
+block up. The angular template preloads block wraps its content in a
+{% cache %} fragment, so that content, and the key, come from whatever
+the Django cache holds, not from the installed templates.
+
+Deployments commonly share one cache backend between all dashboard
+hosts, and the fragment outlives an upgrade (NG_TEMPLATE_CACHE_AGE).
+After an image change, compress on a new host can hash the previous
+release's fragment and write a manifest without the key for the new
+templates. Once the fragment is replaced in the shared cache, requests
+on that host fail with OfflineGenerationError ("key ... is missing
+from offline manifest"). update_angular_template_hash only clears the
+fragment after a block has been compressed, and only for the theme
+being compressed, so it cannot prevent this. During a rolling upgrade
+old hosts keep writing their fragment back, so clearing the cache
+before compress does not prevent it either.
+
+Render the angular templates directly inside the compress block. The
+key then depends only on the installed templates. The cost is
+rendering the templates on every request in offline mode instead of
+reading the cached fragment.
+---
+ openstack_dashboard/templates/horizon/_scripts.html | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/openstack_dashboard/templates/horizon/_scripts.html b/openstack_dashboard/templates/horizon/_scripts.html
+index d857fcd6..0c1600f8 100644
+--- a/openstack_dashboard/templates/horizon/_scripts.html
++++ b/openstack_dashboard/templates/horizon/_scripts.html
+@@ -63,9 +63,7 @@
+ {% endcompress %}
+ 
+ {% compress js file angular_template_cache_preloads %}
+-  {% cache NG_TEMPLATE_CACHE_AGE angular 'template_cache_preloads' THEME %}
+     {% angular_templates %}
+-  {% endcache %}
+ {% endcompress %}
+ 
+ {% if profiler_enabled %}
