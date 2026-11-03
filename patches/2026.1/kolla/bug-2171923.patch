@@ -1,0 +1,60 @@
+From 8f008c916f53fca45679b2657b399584b115a070 Mon Sep 17 00:00:00 2001
+From: Andriy Kurilin <andr.kurilin@gmail.com>
+Date: Fri, 16 Oct 2026 10:48:22 +0200
+Subject: [PATCH] Fix horizon stale Angular template cache
+
+Template cache has not been properly cleaned on redeployed, causing
+one or multiple horizon instances returning
+`"Something went wrong!" (HTTP 500)` after redeploying a fresh container.
+
+Closes-Bug: #2171923
+Change-Id: I9da0d64e2a77660609682a6421d38e9c9059f9ec
+Signed-off-by: Andriy Kurilin <andr.kurilin@gmail.com>
+---
+ docker/horizon/extend_start.sh                  |  8 ++++++++
+ ...angular-template-cache-3fe303d3a6546195.yaml | 17 +++++++++++++++++
+ 2 files changed, 25 insertions(+)
+ create mode 100644 releasenotes/notes/bug-2171923-fix-horizon-stale-angular-template-cache-3fe303d3a6546195.yaml
+
+diff --git a/docker/horizon/extend_start.sh b/docker/horizon/extend_start.sh
+index d1198adb4..f3acede64 100644
+--- a/docker/horizon/extend_start.sh
++++ b/docker/horizon/extend_start.sh
+@@ -225,6 +225,14 @@ config_watcher_dashboard
+ 
+ if settings_changed; then
+     ${MANAGE_PY} collectstatic --noinput --clear
++    # NOTE(andreykurilin): The Angular templates are cached in the shared
++    # Django cache, which outlives a redeploy, and `compress` reads them from
++    # there instead of from disk. Horizon only drops that entry *after*
++    # compressing, so the first container to compress fingerprints the
++    # previous deploy's templates and its offline manifest no longer matches
++    # what it renders at request time. Dropping the entry up front makes every
++    # container compress the templates that are actually on disk.
++    ${MANAGE_PY} cleanup_angular_template_cache
+     ${MANAGE_PY} compress --force
+     settings_bundle | md5sum > $HASH_PATH
+ fi
+diff --git a/releasenotes/notes/bug-2171923-fix-horizon-stale-angular-template-cache-3fe303d3a6546195.yaml b/releasenotes/notes/bug-2171923-fix-horizon-stale-angular-template-cache-3fe303d3a6546195.yaml
+new file mode 100644
+index 000000000..b0cdfe2c6
+--- /dev/null
++++ b/releasenotes/notes/bug-2171923-fix-horizon-stale-angular-template-cache-3fe303d3a6546195.yaml
+@@ -0,0 +1,17 @@
++---
++fixes:
++  - |
++    Fixes Horizon returning "Something went wrong!" (HTTP 500) on every page on
++    one or several of the control plane nodes after a redeploy. Which node
++    broke changed from one redeploy to the next, the container still reported
++    healthy, and restarting it did not help.
++
++    The cause was stale Angular templates left in the shared cache (Memcached
++    or Valkey), which survive a redeploy. The horizon container now clears
++    them before it recompresses its static assets, so every node serves the
++    templates that were actually deployed.
++
++    Operators no longer need to run ``manage.py compress --force`` inside the
++    container by hand after a redeploy.
++
++    See `LP#2171923 <https://launchpad.net/bugs/2171923>`__ for details.
