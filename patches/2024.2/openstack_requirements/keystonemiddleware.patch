@@ -1,3 +1,10 @@
+Pin keystonemiddleware 10.13.0, a 2025.2-line release, for OSSA-2026-001
+and OSSA-2026-050; it needs oslo.cache>=3.11.0. The 2024.2 constraints
+pin 10.7.2, which OSSA-2026-050 affects.
+
+stable/2024.2 is EOL and its requirements sdist is frozen, so this patch
+never drifts and upstream never supersedes it. It retires with 2024.2.
+
 --- a/upper-constraints.txt
 +++ b/upper-constraints.txt
 @@ -368,7 +368,7 @@
