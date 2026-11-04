@@ -132,7 +132,7 @@ pushd $PROJECT_REPOSITORY_PATH > /dev/null || exit 1
 # An unresolvable ref is fatal as well: without this the checkout stays on the
 # default branch and the release gets built from the wrong kolla tree.
 if [[ "$OPENSTACK_VERSION" != "latest" ]]; then
-    if [[ "$OPENSTACK_VERSION" == "2024.1" ]]; then
+    if [[ "$OPENSTACK_VERSION" == "2024.1" || "$OPENSTACK_VERSION" == "2025.1" ]]; then
         git checkout origin/unmaintained/$OPENSTACK_VERSION || exit 1
     elif [[ "$OPENSTACK_VERSION" == "2024.2" ]]; then
         git checkout 2024.2-eol || exit 1
