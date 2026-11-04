@@ -127,17 +127,23 @@ if [[ ! -e $PROJECT_REPOSITORY_PATH ]]; then
 fi
 
 # Use required kolla release for dockerfiles
+#
+# The kolla ref is declared as kolla_build.kolla in the release manifest. A
+# branch (stable/<version>, unmaintained/<version>) is checked out from the
+# remote, anything else (a tag such as 2024.2-eol) as it is.
+
+if [[ "$OPENSTACK_VERSION" != "latest" ]]; then
+    KOLLA_REF=$(python3 src/get-kolla-build-ref.py kolla) || exit 1
+fi
 
 pushd $PROJECT_REPOSITORY_PATH > /dev/null || exit 1
 # An unresolvable ref is fatal as well: without this the checkout stays on the
 # default branch and the release gets built from the wrong kolla tree.
 if [[ "$OPENSTACK_VERSION" != "latest" ]]; then
-    if [[ "$OPENSTACK_VERSION" == "2024.1" || "$OPENSTACK_VERSION" == "2025.1" ]]; then
-        git checkout origin/unmaintained/$OPENSTACK_VERSION || exit 1
-    elif [[ "$OPENSTACK_VERSION" == "2024.2" ]]; then
-        git checkout 2024.2-eol || exit 1
+    if git rev-parse --quiet --verify "refs/remotes/origin/$KOLLA_REF" > /dev/null; then
+        git checkout "origin/$KOLLA_REF" || exit 1
     else
-        git checkout origin/stable/$OPENSTACK_VERSION || exit 1
+        git checkout "$KOLLA_REF" || exit 1
     fi
 fi
 export HASH_KOLLA=$(git rev-parse HEAD)
