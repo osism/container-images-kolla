@@ -59,7 +59,7 @@ setini DEFAULT install_type $KOLLA_INSTALL_TYPE
 # release enters the unmaintained phase. tarballs.opendev.org keeps serving the
 # requirements-stable-<version> artifact but stops refreshing it, so the branch
 # has to be selected explicitly here. Mirrors the checkout in 001-prepare.sh.
-if [[ "$OPENSTACK_VERSION" == "2024.1" ]]; then
+if [[ "$OPENSTACK_VERSION" == "2024.1" || "$OPENSTACK_VERSION" == "2025.1" ]]; then
     REQUIREMENTS_BRANCH="unmaintained-$OPENSTACK_VERSION"
 else
     REQUIREMENTS_BRANCH="stable-$OPENSTACK_VERSION"
