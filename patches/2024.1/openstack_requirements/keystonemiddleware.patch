@@ -1,3 +1,11 @@
+Pin keystonemiddleware 10.9.2, a 2025.1-line release, for OSSA-2026-001
+and OSSA-2026-050. The unmaintained/2024.1 constraints pin 10.6.0, which
+both advisories affect, and unmaintained branches get no releases of
+their own.
+
+Drop when the unmaintained/2024.1 upper-constraints pin a release outside
+the affected ranges of both advisories; otherwise retire it with 2024.1.
+
 --- a/upper-constraints.txt
 +++ b/upper-constraints.txt
 @@ -366,7 +366,7 @@
