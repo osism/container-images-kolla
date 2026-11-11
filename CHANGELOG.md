@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 This file was started on December 08, 2025. Changes prior to this date are not included in the CHANGELOG.
 
+
+### Changed
+
+- chore(deps): update dependency mako to v1.4.3 (osism/container-images-kolla#804)
+- chore(deps): update dependency ansible to v14.5.0 (osism/container-images-kolla#814)
+- zuul: skip image jobs on changelog-only changes (osism/container-images-kolla#819)
+- cinder: add OSSA-2026-045 patches (osism/container-images-kolla#820)
+- cinder: drop 2024.1 patch merged upstream (osism/container-images-kolla#821)
+- cinder: drop patches merged upstream (osism/container-images-kolla#822)
+- chore(deps): update dependency setuptools to v84.1.0 [security] (osism/container-images-kolla#823)
+- chore(deps): update dependency setuptools to v84.2.1 (osism/container-images-kolla#824)
+- keystone: carry expiring membership cache fix (osism/container-images-kolla#826)
+- magnum-ui: backport kubeconfig download fix (osism/container-images-kolla#827)
+- keystonemiddleware: fix OSSA-2026-050 (osism/container-images-kolla#828)
+- Use kolla source keys for vpnaas and skyline (osism/container-images-kolla#829)
+- Drop 2025.2/2026.1 keystonemiddleware pins (osism/container-images-kolla#831)
+- kolla: clean stale horizon template cache (osism/container-images-kolla#833)
+- Build 2025.1 from unmaintained sources (osism/container-images-kolla#834)
+- Read the kolla and requirements refs from release (osism/container-images-kolla#835)
+
 ## [v0.20261019.0] - 2026-10-19
 
 ### Added
