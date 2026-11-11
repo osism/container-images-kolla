@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 This file was started on December 08, 2025. Changes prior to this date are not included in the CHANGELOG.
 
+## [v0.20261111.0] - 2026-11-11
+
+### Changed
+- Skip push and patch-replay CI jobs when a change only touches CHANGELOG.md (osism/container-images-kolla#819)
+- Add cinder to the 2024.1 image build list (osism/container-images-kolla#820)
+- Drop cinder cve-2026-93856 patches for 2024.1, 2025.1, 2025.2 and 2026.1 now merged upstream (osism/container-images-kolla#821, osism/container-images-kolla#822)
+- Drop obsolete 2025.1, 2025.2 and 2026.1 keystonemiddleware pins now that the current stable requirement sdists already include fixed releases (osism/container-images-kolla#831)
+- Build 2025.1 images from kolla's unmaintained/2025.1 branch and the unmaintained-2025.1 requirements tarball, now that 2025.1 has entered the unmaintained phase upstream (osism/container-images-kolla#834)
+- Read the kolla and requirements source refs for each release from osism/release's manifest instead of per-release if-chains in the build scripts (osism/container-images-kolla#835)
+
+### Fixed
+- Fix CVE-2026-93856 in cinder (OSSA-2026-045) by scoping the Block Storage messages API to the caller's project for 2024.1, 2024.2, 2025.1, 2025.2 and 2026.1 (osism/container-images-kolla#820)
+- Fix the Horizon "Get Cluster Config" action for magnum-ui on 2025.1 and 2026.1 producing an unusable kubeconfig, by backporting a server-side endpoint that returns a single kubeconfig with embedded TLS credentials (osism/container-images-kolla#827)
+- Keystone: fix cached role assignments not updating immediately when a federated identity provider's authorization_ttl changes or a login refreshes an expired group membership, causing application credential requests to fail with "Could not find role assignment" for up to the cache lifetime (osism/container-images-kolla#826)
+- keystonemiddleware: fix OSSA-2026-050 (CVE-2026-115642), where a request carrying an X-Service-Token header could bypass application credential access_rules and token bind enforcement, for 2024.1, 2024.2, 2025.1, 2025.2 and 2026.1 (osism/container-images-kolla#828)
+- Build neutron-vpnaas, skyline-apiserver and skyline-console images from the pinned release source instead of kolla's default stable branch tarball, by using the source section names kolla actually reads (osism/container-images-kolla#829)
+- kolla: fix Horizon returning HTTP 500 "OfflineGenerationError" on some control nodes after an image change, by clearing the stale Angular template cache before recompressing static assets (osism/container-images-kolla#833)
+
+### Dependencies
+- mako 1.4.2 → 1.4.3 (osism/container-images-kolla#804)
+- ansible 14.4.0 → 14.5.0 (osism/container-images-kolla#814)
+- setuptools 84.0.0 → 84.2.1 (osism/container-images-kolla#823, osism/container-images-kolla#824)
+
 ## [v0.20261019.0] - 2026-10-19
 
 ### Added
