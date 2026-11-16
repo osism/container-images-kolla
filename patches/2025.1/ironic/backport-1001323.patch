@@ -1,0 +1,886 @@
+From 70d6af5f829cc70ae3777eb57f77801b8a175e4c Mon Sep 17 00:00:00 2001
+From: Timon Schnell <timon.schnell@btc-it-services.com>
+Date: Tue, 18 Aug 2026 09:50:43 +0200
+Subject: [PATCH] Erase frozen SATA SSDs by discarding them
+
+Some platform firmware sends SECURITY FREEZE LOCK and SANITIZE FREEZE
+LOCK to every SATA device during POST, and there is no setup option to
+turn it off. Both ATA erase paths are gone for that boot, so
+erase_devices falls back to shred. On a 7.68 TB SSD that runs for hours,
+and it still does not reach the blocks the FTL has remapped.
+
+Discard is not affected by the freeze, so try it before shred. A secure
+discard is tried first, then a plain one. The result is not trusted, it
+is measured: write a pattern to sampled positions, discard the device,
+drop the buffer cache, and require those positions to read back as
+zeroes. Without the pattern a device that was already zero would pass.
+
+The path is off by default, [DEFAULT] enable_discard_erase, as asked for
+in the ironic meeting on 2026-08-24. It can be set per node with
+agent_enable_discard_erase. Nothing changes if it stays off, and no
+existing test needed a change.
+
+The check is a sample. It shows that discard erases this device, not
+that every block was visited. That is why the default is off.
+
+Tested on the hardware from the bug, see the review comments.
+
+Drafted with the tool named below, then reworked and verified by hand.
+
+Closes-Bug: #2163748
+Generated-By: Claude Opus 5
+
+Change-Id: I4359385b850ea5d737b0d766306b77b91f99fea5
+Signed-off-by: Timon Schnell <timon.schnell@btc-it-services.com>
+---
+ doc/source/admin/troubleshooting.rst          |  35 ++
+ ironic_python_agent/config.py                 |  16 +
+ ironic_python_agent/hardware.py               | 254 ++++++++++
+ .../tests/unit/test_hardware.py               | 447 ++++++++++++++++++
+ .../discard-based-erase-1a9292896a70bb0c.yaml |  24 +
+ 5 files changed, 776 insertions(+)
+ create mode 100644 releasenotes/notes/discard-based-erase-1a9292896a70bb0c.yaml
+
+diff --git a/doc/source/admin/troubleshooting.rst b/doc/source/admin/troubleshooting.rst
+index 575367d9..c41bc9e7 100644
+--- a/doc/source/admin/troubleshooting.rst
++++ b/doc/source/admin/troubleshooting.rst
+@@ -274,6 +274,41 @@ filesystems may be a concern on some machines, but not others.
+ Edit /etc/ironic_python_agent/ironic_python_agent.conf and set the parameter
+ ``[DEFAULT]guard_special_filesystems`` to ``False``.
+ 
++Cleaning takes hours because the firmware froze the disks
++=========================================================
++
++Some platform firmware issues both ``SECURITY FREEZE LOCK`` and
++``SANITIZE FREEZE LOCK`` to attached SATA devices during POST. Both ATA erase
++paths are then unavailable for the lifetime of that boot, no matter what the
++device supports, and ``erase_devices`` is left with ``shred``, which on a
++multi terabyte SSD runs for hours.
++
++Discard is unaffected by either freeze, so the agent can attempt a discard
++before falling back to ``shred``. The path is **off by default**, because the
++agent proves the result by sampling: it writes a recognisable pattern to
++sampled positions, discards the device, and requires those samples to read
++back as zeroes. That establishes that the discard really removes data on this
++device, but it is not a full read of the device and it is not a secure erase.
++Enable it only where that difference is acceptable.
++
++Once enabled, a device is still only reported as erased when the verification
++succeeds. Where discard is unsupported, fails, or cannot be verified, the
++previous behaviour is unchanged.
++
++The option is ``[DEFAULT]enable_discard_erase`` in the agent configuration,
++and it is also accepted as the agent kernel parameter
++``ipa-enable-discard-erase``. For a single node::
++
++  baremetal node set --driver-info kernel_append_params="ipa-enable-discard-erase=True"
++
++Setting it globally is boot interface specific, since the default the node
++level setting overrides comes from the configuration of the boot interface in
++use, for example ``[pxe]kernel_append_params`` or
++``[redfish]kernel_append_params``. The ways to pass an option to the agent,
++including the setting in the embedded configuration file of the ramdisk, are
++described under
++`I'm okay with deleting, how do I tell IPA to clean the disk(s)?`_ above.
++
+ 
+ References
+ ==========
+diff --git a/ironic_python_agent/config.py b/ironic_python_agent/config.py
+index 1ce795bb..8f43b7b0 100644
+--- a/ironic_python_agent/config.py
++++ b/ironic_python_agent/config.py
+@@ -358,6 +358,22 @@ cli_opts = [
+                      'cleaning from inadvertently destroying a running '
+                      'cluster which may be visible over a storage fabric '
+                      'such as FibreChannel.'),
++    cfg.BoolOpt('enable_discard_erase',
++                default=APARAMS.get('ipa-enable-discard-erase', False),
++                help='Whether ``erase_devices`` may erase a block device by '
++                     'discarding it when no secure erase path is available, '
++                     'instead of going straight to ``shred``. This is meant '
++                     'for devices which the platform firmware has frozen out '
++                     'of both ATA erase paths, where discard is the only '
++                     'fast erase left. A device is only reported as erased '
++                     'when a pattern written to sampled positions before the '
++                     'discard reads back as zeroes afterwards, but that '
++                     'verification is a sample and not a full read of the '
++                     'device, so the guarantee is weaker than a secure '
++                     'erase and this is disabled by default. Ironic can '
++                     'override it per node by sending '
++                     '``agent_enable_discard_erase`` in '
++                     '``driver_internal_info``.'),
+     cfg.BoolOpt('md5_enabled',
+                 default=True,
+                 help='If the MD5 algorithm is enabled for file checksums. '
+diff --git a/ironic_python_agent/hardware.py b/ironic_python_agent/hardware.py
+index 01cc43c8..b7f6e347 100644
+--- a/ironic_python_agent/hardware.py
++++ b/ironic_python_agent/hardware.py
+@@ -74,6 +74,17 @@ SUPPORTED_SOFTWARE_RAID_LEVELS = frozenset(['0', '1', '1+0', '5', '6'])
+ NVME_CLI_FORMAT_SUPPORTED_FLAG = 0b10
+ NVME_CLI_CRYPTO_FORMAT_SUPPORTED_FLAG = 0b100
+ 
++# Size of each sample read back when verifying that a discard really zeroed
++# a device, and the positions of those samples as a fraction of the range
++# which can be read in full.
++DISCARD_VERIFY_SAMPLE_SIZE = 1024 * 1024
++DISCARD_VERIFY_OFFSETS = (0.0, 0.01, 0.1, 0.25, 0.4,
++                          0.5, 0.6, 0.75, 0.9, 0.99)
++# Written to those positions before the discard, so that reading zeroes back
++# afterwards proves the discard removed data which was really there.
++DISCARD_VERIFY_MARKER = b'\xa5'
++DISCARD_VERIFY_DEFAULT_ALIGNMENT = 4096
++
+ RAID_APPLY_CONFIGURATION_ARGSINFO = {
+     "raid_config": {
+         "description": "The RAID configuration to apply.",
+@@ -1871,6 +1882,34 @@ class GenericHardwareManager(HardwareManager):
+                 if execute_secure_erase and self._ata_erase(block_device):
+                     return
+         except errors.BlockDeviceEraseError as e:
++            # NOTE(kingspeedy): Some platform firmware issues both
++            # SECURITY FREEZE LOCK and SANITIZE FREEZE LOCK to every attached
++            # SATA device during POST, without offering a setup option to
++            # disable it, so no ATA erase path is available for the lifetime
++            # of that boot. Discard is unaffected by either freeze, and on a
++            # device which returns deterministic zeroes afterwards it is a
++            # far better result than shred. The verification of that
++            # result is a sample rather than a full read of the device, so
++            # the path is opt in and off by default, and it is a decision
++            # separate from the shred fallback: whoever enables it accepts a
++            # verified discard as an erase. When it is disabled, or discard
++            # is unsupported, fails, or cannot be verified, the pre-existing
++            # shred handling below decides what happens, unchanged.
++            execute_discard_erase = info.get('agent_enable_discard_erase',
++                                             CONF.enable_discard_erase)
++            if not execute_discard_erase:
++                LOG.debug('Not attempting a discard based erase of %s, it is '
++                          'not enabled', block_device.name)
++            if execute_discard_erase and self._discard_erase(block_device):
++                # Log why secure erase was unavailable. Without this the
++                # reason is lost whenever the discard succeeds, because the
++                # only other places it is reported are the two shred
++                # branches below, which are then never reached.
++                LOG.info('Erased %(device)s by discarding it because secure '
++                         'erase was not available: %(err)s',
++                         {'device': block_device.name, 'err': e})
++                return
++
+             execute_shred = info.get('agent_continue_if_secure_erase_failed')
+ 
+             # NOTE(janders) While we are deprecating
+@@ -2410,6 +2449,221 @@ class GenericHardwareManager(HardwareManager):
+                     ).format(block_device, e))
+             raise errors.BlockDeviceEraseError(msg)
+ 
++    def _discard_max_bytes(self, block_device):
++        """Read the discard limit of a device from sysfs.
++
++        :param block_device: a BlockDevice object
++        :returns: the value of queue/discard_max_bytes, or 0 when the
++                  attribute is missing or unreadable. Partitions have no
++                  queue directory of their own, so they read as 0.
++        """
++        dev_name = os.path.basename(block_device.name)
++        try:
++            with open('/sys/block/%s/queue/discard_max_bytes'
++                      % dev_name, 'r') as f:
++                return int(f.read().strip())
++        except (IOError, OSError, ValueError) as e:
++            LOG.debug('Could not read the discard limit of %(name)s: '
++                      '%(err)s', {'name': block_device.name, 'err': e})
++            return 0
++
++    def _discard_sample_offsets(self, block_device):
++        """Positions used to prove that a discard zeroed a device.
++
++        The offsets are derived from the range which can be read in full, so
++        that every fraction yields a position of its own. Deriving them from
++        the full size and clamping each one instead collapses several
++        fractions onto the same offset, silently taking fewer samples than
++        intended.
++
++        :param block_device: a BlockDevice object
++        :returns: a sorted list of aligned offsets, empty when the device is
++                  too small to sample.
++        """
++        size = block_device.size or 0
++        if size <= DISCARD_VERIFY_SAMPLE_SIZE:
++            return []
++
++        # Sample on the boundaries the device itself addresses.
++        try:
++            alignment = int(block_device.logical_sectors)
++        except (TypeError, ValueError):
++            alignment = DISCARD_VERIFY_DEFAULT_ALIGNMENT
++        if alignment <= 0:
++            alignment = DISCARD_VERIFY_DEFAULT_ALIGNMENT
++
++        verifiable = size - DISCARD_VERIFY_SAMPLE_SIZE
++        return sorted({offset - offset % alignment
++                       for offset in (int(verifiable * fraction)
++                                      for fraction
++                                      in DISCARD_VERIFY_OFFSETS)})
++
++    def _write_discard_markers(self, block_device, offsets):
++        """Write a recognisable non-zero pattern to the sampled positions.
++
++        Reading zeroes back from a device proves nothing on its own. A device
++        which was already zeroed, or which returns zeroes for blocks that
++        were never written, passes such a check without the discard having
++        done anything at all. Writing a pattern first turns it into a
++        positive control: every sampled position is then known to have held
++        data which the discard had to remove.
++
++        :param block_device: a BlockDevice object
++        :param offsets: the positions to be verified after the discard
++        :returns: True if every marker reached the device.
++        """
++        marker = DISCARD_VERIFY_MARKER * DISCARD_VERIFY_SAMPLE_SIZE
++        try:
++            with open(block_device.name, 'r+b') as f:
++                for offset in offsets:
++                    f.seek(offset)
++                    f.write(marker)
++                f.flush()
++                os.fsync(f.fileno())
++        except (IOError, OSError) as e:
++            LOG.warning('Could not write the verification markers to '
++                        '%(name)s: %(err)s',
++                        {'name': block_device.name, 'err': e})
++            return False
++        return True
++
++    def _run_blkdiscard(self, block_device, max_bytes):
++        """Discard every block of a device, preferring a secure discard.
++
++        A secure discard is the device guaranteeing that the data cannot be
++        recovered, so it is attempted first. Devices which do not implement
++        it fail the call, and a plain discard is used instead.
++
++        :param block_device: a BlockDevice object
++        :param max_bytes: the discard limit of the device, logged to keep the
++                          decision traceable
++        :returns: True if one of the two variants succeeded and the buffer
++                  cache of the device was invalidated afterwards.
++        """
++        for args, kind in ((('--secure',), 'secure discard'),
++                           ((), 'discard')):
++            LOG.info('Attempting to erase %(name)s by %(kind)s, '
++                     'discard_max_bytes is %(max_bytes)s',
++                     {'name': block_device.name, 'kind': kind,
++                      'max_bytes': max_bytes})
++            try:
++                utils.execute('blkdiscard', *args, block_device.name)
++            except (processutils.ProcessExecutionError, OSError) as e:
++                LOG.warning('Could not %(kind)s %(name)s, blkdiscard '
++                            'failed: %(err)s',
++                            {'kind': kind, 'name': block_device.name,
++                             'err': e})
++                continue
++
++            # Invalidate the buffer cache of the device, otherwise the
++            # verification can be served the markers written above rather
++            # than what the device returns now.
++            try:
++                utils.execute('blockdev', '--flushbufs', block_device.name)
++            except (processutils.ProcessExecutionError, OSError) as e:
++                LOG.warning('Could not flush the buffers of %(name)s: '
++                            '%(err)s',
++                            {'name': block_device.name, 'err': e})
++                return False
++            return True
++
++        return False
++
++    def _verify_discarded(self, block_device, offsets):
++        """Check that the sampled positions read back as zeroes.
++
++        The check is deliberately empirical. A device advertising RZAT (Read
++        Zero After TRIM) claims to return zeroes, but that is a firmware
++        claim rather than proof, and the sysfs attributes which look like
++        they would answer the question do not. queue/discard_zeroes_data has
++        reported a constant 0 since kernel 4.12, and
++        queue/write_zeroes_max_bytes describes WRITE ZEROES, which libata
++        does not offer at all.
++
++        :param block_device: a BlockDevice object
++        :param offsets: the positions written by _write_discard_markers
++        :returns: True if every sample read back as zeroes.
++        """
++        try:
++            with open(block_device.name, 'rb') as f:
++                for offset in offsets:
++                    f.seek(offset)
++                    if any(f.read(DISCARD_VERIFY_SAMPLE_SIZE)):
++                        LOG.warning('Device %(name)s still holds non-zero '
++                                    'data at offset %(offset)s after being '
++                                    'discarded',
++                                    {'name': block_device.name,
++                                     'offset': hex(offset)})
++                        return False
++        except (IOError, OSError) as e:
++            LOG.warning('Could not read back %(name)s to verify the '
++                        'discard: %(err)s',
++                        {'name': block_device.name, 'err': e})
++            return False
++
++        LOG.info('Verified %(count)s samples of %(name)s as zeroed after '
++                 'the discard', {'count': len(offsets),
++                                 'name': block_device.name})
++        return True
++
++    def _discard_erase(self, block_device):
++        """Attempt to erase a device by discarding every block.
++
++        Only reports success when a pattern written beforehand was read back
++        as zeroes afterwards, so a device which silently ignores the discard,
++        or which leaves the old contents readable, falls through to the
++        caller's remaining options instead of being reported as erased.
++
++        The caller decides whether this path may run at all, see
++        ``[DEFAULT] enable_discard_erase``.
++
++        :param block_device: a BlockDevice object
++        :returns: True if the device was discarded and the result verified,
++                  False in every other case.
++        """
++        LOG.info('Attempting to erase %s by discarding it',
++                 block_device.name)
++
++        max_bytes = self._discard_max_bytes(block_device)
++        if not max_bytes:
++            LOG.info('Not erasing %s by discarding it, the device does not '
++                     'report support for discard', block_device.name)
++            return False
++
++        offsets = self._discard_sample_offsets(block_device)
++        if not offsets:
++            LOG.warning('Not erasing %(name)s by discarding it, its size '
++                        '%(size)s is too small to verify the result',
++                        {'name': block_device.name,
++                         'size': block_device.size})
++            return False
++
++        # NOTE(kingspeedy): the markers are written before the discard, so
++        # the device is modified from here on even if the discard then fails.
++        # That is acceptable in an erase path: a device which is not erased
++        # leaves the clean step failed, and ironic does not hand a node in
++        # that state to a tenant.
++        if not self._write_discard_markers(block_device, offsets):
++            LOG.warning('Could not erase %s by discarding it, the markers '
++                        'the verification needs could not be written',
++                        block_device.name)
++            return False
++
++        if not self._run_blkdiscard(block_device, max_bytes):
++            LOG.warning('Could not erase %s by discarding it, neither a '
++                        'secure discard nor a plain discard of the device '
++                        'succeeded', block_device.name)
++            return False
++
++        if not self._verify_discarded(block_device, offsets):
++            LOG.warning('Could not erase %s by discarding it, the sampled '
++                        'positions did not read back as zeroes afterwards',
++                        block_device.name)
++            return False
++
++        LOG.info('Device %s was erased by discarding it', block_device.name)
++        return True
++
+     def get_bmc_address(self):
+         """Attempt to detect BMC IP address
+ 
+diff --git a/ironic_python_agent/tests/unit/test_hardware.py b/ironic_python_agent/tests/unit/test_hardware.py
+index 851e1f4b..facf025b 100644
+--- a/ironic_python_agent/tests/unit/test_hardware.py
++++ b/ironic_python_agent/tests/unit/test_hardware.py
+@@ -2616,6 +2616,453 @@ class TestGenericHardwareManager(base.IronicAgentTest):
+         self.hardware.erase_block_device(self.node, block_device)
+         self.assertTrue(mock_shred.called)
+ 
++    @mock.patch.object(hardware.GenericHardwareManager, '_verify_discarded',
++                       autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_write_discard_markers', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager, '_discard_max_bytes',
++                       autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_is_virtual_media_device', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_is_read_only_device', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_is_linux_raid_member', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager, '_shred_block_device',
++                       autospec=True)
++    @mock.patch.object(utils, 'execute', autospec=True)
++    def test_erase_block_device_ata_frozen_discarded(
++            self, mocked_execute, mock_shred, mocked_raid_member,
++            mocked_ro_device, mocked_vm_member, mock_max_bytes, mock_markers,
++            mock_verify):
++        # A device the firmware froze out of both ATA erase paths is erased
++        # by discarding it once the operator has enabled that path, and
++        # shred is never reached even though the fallback to shred is not
++        # enabled on this node.
++        self.config(enable_discard_erase=True)
++        hdparm_output = create_hdparm_info(
++            supported=True, enabled=False, frozen=True, enhanced_erase=False)
++        mocked_execute.side_effect = [
++            (hdparm_output, ''),
++            (hws.SMARTCTL_NORMAL_OUTPUT, ''),
++            ('', ''),
++            ('', ''),
++        ]
++        mocked_raid_member.return_value = False
++        mocked_ro_device.return_value = False
++        mocked_vm_member.return_value = False
++        mock_max_bytes.return_value = 2199023255040
++        mock_markers.return_value = True
++        mock_verify.return_value = True
++
++        block_device = hardware.BlockDevice('/dev/sda', 'big',
++                                            7681501126656, False)
++        self.hardware.erase_block_device(self.node, block_device)
++
++        self.assertFalse(mock_shred.called)
++        mocked_execute.assert_has_calls([
++            mock.call('blkdiscard', '--secure', '/dev/sda'),
++            mock.call('blockdev', '--flushbufs', '/dev/sda'),
++        ])
++
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_discard_erase', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_is_virtual_media_device', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_is_read_only_device', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_is_linux_raid_member', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager, '_shred_block_device',
++                       autospec=True)
++    @mock.patch.object(utils, 'execute', autospec=True)
++    def test_erase_block_device_discard_disabled_by_default(
++            self, mocked_execute, mock_shred, mocked_raid_member,
++            mocked_ro_device, mocked_vm_member, mock_discard):
++        # Without the option the device is never discarded, so a frozen
++        # device fails the clean step exactly as it did before.
++        hdparm_output = create_hdparm_info(
++            supported=True, enabled=False, frozen=True, enhanced_erase=False)
++        mocked_execute.side_effect = [
++            (hdparm_output, ''),
++            (hws.SMARTCTL_NORMAL_OUTPUT, ''),
++        ]
++        mocked_raid_member.return_value = False
++        mocked_ro_device.return_value = False
++        mocked_vm_member.return_value = False
++
++        block_device = hardware.BlockDevice('/dev/sda', 'big',
++                                            7681501126656, False)
++        self.assertRaises(
++            errors.IncompatibleHardwareMethodError,
++            self.hardware.erase_block_device,
++            self.node,
++            block_device)
++        self.assertFalse(mock_discard.called)
++        self.assertFalse(mock_shred.called)
++
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_discard_erase', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_is_virtual_media_device', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_is_read_only_device', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_is_linux_raid_member', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager, '_shred_block_device',
++                       autospec=True)
++    @mock.patch.object(utils, 'execute', autospec=True)
++    def test_erase_block_device_discard_enabled_by_ironic(
++            self, mocked_execute, mock_shred, mocked_raid_member,
++            mocked_ro_device, mocked_vm_member, mock_discard):
++        # Ironic may enable the path per node, which overrides the option.
++        info = self.node['driver_internal_info']
++        info['agent_enable_discard_erase'] = True
++        hdparm_output = create_hdparm_info(
++            supported=True, enabled=False, frozen=True, enhanced_erase=False)
++        mocked_execute.side_effect = [
++            (hdparm_output, ''),
++            (hws.SMARTCTL_NORMAL_OUTPUT, ''),
++        ]
++        mocked_raid_member.return_value = False
++        mocked_ro_device.return_value = False
++        mocked_vm_member.return_value = False
++        mock_discard.return_value = True
++
++        block_device = hardware.BlockDevice('/dev/sda', 'big',
++                                            7681501126656, False)
++        self.hardware.erase_block_device(self.node, block_device)
++
++        self.assertTrue(mock_discard.called)
++        self.assertFalse(mock_shred.called)
++
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_discard_erase', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_is_virtual_media_device', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_is_read_only_device', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_is_linux_raid_member', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager, '_shred_block_device',
++                       autospec=True)
++    @mock.patch.object(utils, 'execute', autospec=True)
++    def test_erase_block_device_discard_disabled_by_ironic(
++            self, mocked_execute, mock_shred, mocked_raid_member,
++            mocked_ro_device, mocked_vm_member, mock_discard):
++        # And it may disable it again on a node whose ramdisk enables it.
++        self.config(enable_discard_erase=True)
++        info = self.node['driver_internal_info']
++        info['agent_enable_discard_erase'] = False
++        info['agent_continue_if_secure_erase_failed'] = True
++        hdparm_output = create_hdparm_info(
++            supported=True, enabled=False, frozen=True, enhanced_erase=False)
++        mocked_execute.side_effect = [
++            (hdparm_output, ''),
++            (hws.SMARTCTL_NORMAL_OUTPUT, ''),
++        ]
++        mocked_raid_member.return_value = False
++        mocked_ro_device.return_value = False
++        mocked_vm_member.return_value = False
++        mock_shred.return_value = True
++
++        block_device = hardware.BlockDevice('/dev/sda', 'big',
++                                            7681501126656, False)
++        self.hardware.erase_block_device(self.node, block_device)
++
++        self.assertFalse(mock_discard.called)
++        self.assertTrue(mock_shred.called)
++
++    @mock.patch.object(hardware.GenericHardwareManager, '_verify_discarded',
++                       autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_write_discard_markers', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager, '_discard_max_bytes',
++                       autospec=True)
++    @mock.patch.object(utils, 'execute', autospec=True)
++    def test_discard_erase(self, mocked_execute, mock_max_bytes, mock_markers,
++                           mock_verify):
++        mock_max_bytes.return_value = 2199023255040
++        mock_markers.return_value = True
++        mock_verify.return_value = True
++        block_device = hardware.BlockDevice('/dev/sda', 'big',
++                                            7681501126656, False)
++
++        self.assertTrue(self.hardware._discard_erase(block_device))
++        # The markers have to be written before anything is discarded,
++        # otherwise the verification proves nothing.
++        self.assertTrue(mock_markers.called)
++        mocked_execute.assert_has_calls([
++            mock.call('blkdiscard', '--secure', '/dev/sda'),
++            mock.call('blockdev', '--flushbufs', '/dev/sda'),
++        ])
++
++    @mock.patch.object(hardware.GenericHardwareManager, '_verify_discarded',
++                       autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_write_discard_markers', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager, '_discard_max_bytes',
++                       autospec=True)
++    @mock.patch.object(utils, 'execute', autospec=True)
++    def test_discard_erase_plain_fallback(self, mocked_execute,
++                                          mock_max_bytes, mock_markers,
++                                          mock_verify):
++        # A device without secure discard support still gets a plain one.
++        mock_max_bytes.return_value = 2199023255040
++        mock_markers.return_value = True
++        mock_verify.return_value = True
++        mocked_execute.side_effect = [
++            processutils.ProcessExecutionError,
++            ('', ''),
++            ('', ''),
++        ]
++        block_device = hardware.BlockDevice('/dev/sda', 'big',
++                                            7681501126656, False)
++
++        self.assertTrue(self.hardware._discard_erase(block_device))
++        mocked_execute.assert_has_calls([
++            mock.call('blkdiscard', '--secure', '/dev/sda'),
++            mock.call('blkdiscard', '/dev/sda'),
++            mock.call('blockdev', '--flushbufs', '/dev/sda'),
++        ])
++
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_write_discard_markers', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager, '_discard_max_bytes',
++                       autospec=True)
++    @mock.patch.object(utils, 'execute', autospec=True)
++    def test_discard_erase_unsupported(self, mocked_execute, mock_max_bytes,
++                                       mock_markers):
++        mock_max_bytes.return_value = 0
++        block_device = hardware.BlockDevice('/dev/sda', 'big',
++                                            7681501126656, False)
++
++        self.assertFalse(self.hardware._discard_erase(block_device))
++        # Nothing is written to a device which is not going to be discarded.
++        self.assertFalse(mock_markers.called)
++        self.assertFalse(mocked_execute.called)
++
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_write_discard_markers', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager, '_discard_max_bytes',
++                       autospec=True)
++    @mock.patch.object(utils, 'execute', autospec=True)
++    def test_discard_erase_device_too_small(self, mocked_execute,
++                                            mock_max_bytes, mock_markers):
++        mock_max_bytes.return_value = 2199023255040
++        block_device = hardware.BlockDevice(
++            '/dev/sda', 'small', hardware.DISCARD_VERIFY_SAMPLE_SIZE, False)
++
++        self.assertFalse(self.hardware._discard_erase(block_device))
++        self.assertFalse(mock_markers.called)
++        self.assertFalse(mocked_execute.called)
++
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_write_discard_markers', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager, '_discard_max_bytes',
++                       autospec=True)
++    @mock.patch.object(utils, 'execute', autospec=True)
++    def test_discard_erase_markers_failed(self, mocked_execute,
++                                          mock_max_bytes, mock_markers):
++        mock_max_bytes.return_value = 2199023255040
++        mock_markers.return_value = False
++        block_device = hardware.BlockDevice('/dev/sda', 'big',
++                                            7681501126656, False)
++
++        self.assertFalse(self.hardware._discard_erase(block_device))
++        self.assertFalse(mocked_execute.called)
++
++    @mock.patch.object(hardware.GenericHardwareManager, '_verify_discarded',
++                       autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_write_discard_markers', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager, '_discard_max_bytes',
++                       autospec=True)
++    @mock.patch.object(utils, 'execute', autospec=True)
++    def test_discard_erase_both_variants_failed(self, mocked_execute,
++                                                mock_max_bytes, mock_markers,
++                                                mock_verify):
++        mock_max_bytes.return_value = 2199023255040
++        mock_markers.return_value = True
++        mocked_execute.side_effect = processutils.ProcessExecutionError
++        block_device = hardware.BlockDevice('/dev/sda', 'big',
++                                            7681501126656, False)
++
++        self.assertFalse(self.hardware._discard_erase(block_device))
++        # A device which could not be discarded is never reported as erased,
++        # so verification is not even attempted.
++        self.assertFalse(mock_verify.called)
++
++    @mock.patch.object(hardware.GenericHardwareManager, '_verify_discarded',
++                       autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_write_discard_markers', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager, '_discard_max_bytes',
++                       autospec=True)
++    @mock.patch.object(utils, 'execute', autospec=True)
++    def test_discard_erase_flush_failed(self, mocked_execute, mock_max_bytes,
++                                        mock_markers, mock_verify):
++        # Without an invalidated buffer cache the read back is meaningless,
++        # so the device is not reported as erased.
++        mock_max_bytes.return_value = 2199023255040
++        mock_markers.return_value = True
++        mocked_execute.side_effect = [
++            ('', ''),
++            processutils.ProcessExecutionError,
++        ]
++        block_device = hardware.BlockDevice('/dev/sda', 'big',
++                                            7681501126656, False)
++
++        self.assertFalse(self.hardware._discard_erase(block_device))
++        self.assertFalse(mock_verify.called)
++
++    @mock.patch.object(hardware.GenericHardwareManager, '_verify_discarded',
++                       autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager,
++                       '_write_discard_markers', autospec=True)
++    @mock.patch.object(hardware.GenericHardwareManager, '_discard_max_bytes',
++                       autospec=True)
++    @mock.patch.object(utils, 'execute', autospec=True)
++    def test_discard_erase_not_verified(self, mocked_execute, mock_max_bytes,
++                                        mock_markers, mock_verify):
++        mock_max_bytes.return_value = 2199023255040
++        mock_markers.return_value = True
++        mock_verify.return_value = False
++        block_device = hardware.BlockDevice('/dev/sda', 'big',
++                                            7681501126656, False)
++
++        self.assertFalse(self.hardware._discard_erase(block_device))
++
++    def test_discard_max_bytes(self):
++        fileobj = mock.mock_open(read_data='2199023255040\n')
++        block_device = hardware.BlockDevice('/dev/sda', 'big', 1, False)
++        with mock.patch(
++                'builtins.open', fileobj, create=True) as mocked_open:
++            self.assertEqual(
++                2199023255040, self.hardware._discard_max_bytes(block_device))
++            mocked_open.assert_called_once_with(
++                '/sys/block/sda/queue/discard_max_bytes', 'r')
++
++    def test_discard_max_bytes_unavailable(self):
++        block_device = hardware.BlockDevice('/dev/sda', 'big', 1, False)
++        opener = mock.MagicMock(side_effect=OSError)
++        with mock.patch('builtins.open', opener, create=True):
++            self.assertEqual(
++                0, self.hardware._discard_max_bytes(block_device))
++
++    def test_discard_sample_offsets(self):
++        size = 7681501126656
++        block_device = hardware.BlockDevice('/dev/sda', 'big', size, False,
++                                            logical_sectors=512)
++
++        offsets = self.hardware._discard_sample_offsets(block_device)
++
++        # Each fraction has to produce an offset of its own. Deriving them
++        # from the full size and clamping instead collapses several
++        # fractions onto the same position, silently taking fewer samples
++        # than the number of fractions suggests.
++        self.assertEqual(len(hardware.DISCARD_VERIFY_OFFSETS), len(offsets))
++        self.assertEqual(sorted(set(offsets)), offsets)
++        for offset in offsets:
++            self.assertEqual(0, offset % 512)
++            self.assertLessEqual(0, offset)
++            self.assertLessEqual(
++                offset, size - hardware.DISCARD_VERIFY_SAMPLE_SIZE)
++
++    def test_discard_sample_offsets_alignment_fallback(self):
++        block_device = hardware.BlockDevice('/dev/sda', 'big',
++                                            7681501126656, False)
++
++        offsets = self.hardware._discard_sample_offsets(block_device)
++
++        self.assertEqual(len(hardware.DISCARD_VERIFY_OFFSETS), len(offsets))
++        for offset in offsets:
++            self.assertEqual(
++                0, offset % hardware.DISCARD_VERIFY_DEFAULT_ALIGNMENT)
++
++    def test_discard_sample_offsets_device_too_small(self):
++        block_device = hardware.BlockDevice(
++            '/dev/sda', 'small', hardware.DISCARD_VERIFY_SAMPLE_SIZE, False)
++
++        self.assertEqual(
++            [], self.hardware._discard_sample_offsets(block_device))
++
++    @staticmethod
++    def _mock_device_file(payload=b''):
++        """Return an open() replacement and the handle it hands out."""
++        handle = mock.MagicMock()
++        handle.read.return_value = payload
++        opener = mock.MagicMock()
++        opener.return_value.__enter__.return_value = handle
++        return opener, handle
++
++    def test_write_discard_markers(self):
++        opener, handle = self._mock_device_file()
++        block_device = hardware.BlockDevice('/dev/sda', 'big',
++                                            7681501126656, False)
++        offsets = [0, 4096]
++
++        with mock.patch('builtins.open', opener, create=True):
++            with mock.patch.object(os, 'fsync', autospec=True) as mock_fsync:
++                self.assertTrue(self.hardware._write_discard_markers(
++                    block_device, offsets))
++
++        # Opened for update, so the device is not truncated.
++        opener.assert_called_once_with('/dev/sda', 'r+b')
++        self.assertEqual(
++            offsets, [call.args[0] for call in handle.seek.call_args_list])
++        self.assertEqual(len(offsets), handle.write.call_count)
++        written = handle.write.call_args_list[0].args[0]
++        self.assertEqual(hardware.DISCARD_VERIFY_SAMPLE_SIZE, len(written))
++        self.assertTrue(any(written))
++        # The markers are useless unless they reached the device.
++        self.assertTrue(mock_fsync.called)
++
++    def test_write_discard_markers_unwritable(self):
++        block_device = hardware.BlockDevice('/dev/sda', 'big',
++                                            7681501126656, False)
++        opener = mock.MagicMock(side_effect=OSError)
++
++        with mock.patch('builtins.open', opener, create=True):
++            self.assertFalse(self.hardware._write_discard_markers(
++                block_device, [0]))
++
++    def test_verify_discarded(self):
++        opener, handle = self._mock_device_file(
++            bytes(hardware.DISCARD_VERIFY_SAMPLE_SIZE))
++        block_device = hardware.BlockDevice('/dev/sda', 'big',
++                                            7681501126656, False)
++        offsets = [0, 4096, 8192]
++
++        with mock.patch('builtins.open', opener, create=True):
++            self.assertTrue(
++                self.hardware._verify_discarded(block_device, offsets))
++
++        self.assertEqual(
++            offsets, [call.args[0] for call in handle.seek.call_args_list])
++
++    def test_verify_discarded_data_left_behind(self):
++        opener, handle = self._mock_device_file(
++            hardware.DISCARD_VERIFY_MARKER * 512)
++        block_device = hardware.BlockDevice('/dev/sda', 'big',
++                                            7681501126656, False)
++
++        with mock.patch('builtins.open', opener, create=True):
++            self.assertFalse(
++                self.hardware._verify_discarded(block_device, [0, 4096]))
++
++        # Reading stops at the first sample which is not zeroed.
++        self.assertEqual(1, handle.read.call_count)
++
++    def test_verify_discarded_unreadable(self):
++        block_device = hardware.BlockDevice('/dev/sda', 'big',
++                                            7681501126656, False)
++        opener = mock.MagicMock(side_effect=OSError)
++
++        with mock.patch('builtins.open', opener, create=True):
++            self.assertFalse(
++                self.hardware._verify_discarded(block_device, [0]))
++
+     @mock.patch.object(hardware.GenericHardwareManager,
+                        '_is_virtual_media_device', autospec=True)
+     @mock.patch.object(hardware.GenericHardwareManager,
+diff --git a/releasenotes/notes/discard-based-erase-1a9292896a70bb0c.yaml b/releasenotes/notes/discard-based-erase-1a9292896a70bb0c.yaml
+new file mode 100644
+index 00000000..fc638570
+--- /dev/null
++++ b/releasenotes/notes/discard-based-erase-1a9292896a70bb0c.yaml
+@@ -0,0 +1,24 @@
++---
++features:
++  - |
++    ``erase_devices`` can now erase a block device by discarding it when no
++    secure erase path is available, before falling back to ``shred``. Some
++    platform firmware issues both ``SECURITY FREEZE LOCK`` and
++    ``SANITIZE FREEZE LOCK`` to attached SATA devices during POST, which
++    leaves no working ATA erase path for the lifetime of that boot. Discard
++    is unaffected by either freeze, and on a large SSD it completes in
++    seconds rather than the hours ``shred`` needs.
++
++    The path is opt in and off by default. Enable it with the new
++    ``[DEFAULT] enable_discard_erase`` option, with the kernel command line
++    parameter ``ipa-enable-discard-erase=true``, or per node by having
++    ironic send ``agent_enable_discard_erase`` in ``driver_internal_info``.
++
++    A device is only reported as erased when the result was verified. A
++    recognisable pattern is written to sampled positions before the discard
++    and has to read back as zeroes afterwards, so a device which silently
++    ignores the discard, or which was already zeroed, is not mistaken for an
++    erased one. A secure discard is attempted before a plain one. That
++    verification is a sample rather than a full read of the device, which is
++    why the option defaults to off: a discarded device is not a substitute
++    for a secure erase where the stronger guarantee is required.
+-- 
+2.54.0
+
