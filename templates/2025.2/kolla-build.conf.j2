@@ -41,4 +41,11 @@ type = local
 # tarball = https://tarballs.opendev.org/openstack/{{ project.repository }}/{{ project.repository }}-{{ project.version }}.tar.gz
 location = tarballs/{{ project.repository }}-{{ project.version }}.tar.gz
 {% endif %}
+{% if project.name == 'neutron' %}
+# NOTE: Routed through tarballs/ so that patches/<release>/networking-baremetal applies.
+[neutron-base-plugin-networking-baremetal]
+type = local
+# tarball = https://tarballs.opendev.org/openstack/networking-baremetal/networking-baremetal-{{ project.version }}.tar.gz
+location = tarballs/networking-baremetal-{{ project.version }}.tar.gz
+{% endif %}
 {%- endfor %}

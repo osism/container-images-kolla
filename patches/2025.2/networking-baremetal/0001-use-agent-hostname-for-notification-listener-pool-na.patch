@@ -1,0 +1,58 @@
+From 1246d84334508b4657c87f3614785ad9780f0b7c Mon Sep 17 00:00:00 2001
+From: Michal Nasiadka <mnasiadka@gmail.com>
+Date: Mon, 13 Jul 2026 13:40:01 +0200
+Subject: [PATCH] use agent hostname for notification listener pool name
+
+Quorum queues do not support auto_delete, so the pool listener queue
+named after the per-process agent UUID was never removed on agent
+restart, leaving behind stale queues that kept accumulating messages.
+Using the agent hostname ensures the same queue is reused across restarts.
+
+Closes-Bug: #2086303
+
+Change-Id: I12533b769650b0f05b9f336a093f553c3d2169ed
+Signed-off-by: Michal Nasiadka <mnasiadka@gmail.com>
+(cherry picked from commit 421b51592be015b99ef13a86404ea46a2da924bc)
+---
+ .../agent/ironic_neutron_agent.py              |  2 +-
+ .../switch_to_agent_host-18bd49692e02ffeb.yaml | 18 ++++++++++++++++++
+ 2 files changed, 19 insertions(+), 1 deletion(-)
+ create mode 100644 releasenotes/notes/switch_to_agent_host-18bd49692e02ffeb.yaml
+
+diff --git a/networking_baremetal/agent/ironic_neutron_agent.py b/networking_baremetal/agent/ironic_neutron_agent.py
+index a562d8a..d969fc8 100644
+--- a/networking_baremetal/agent/ironic_neutron_agent.py
++++ b/networking_baremetal/agent/ironic_neutron_agent.py
+@@ -141,7 +141,7 @@ class BaremetalNeutronAgent(service.ServiceBase):
+         # See bug: https://bugs.launchpad.net/oslo.messaging/+bug/1814544
+         self.listener = _set_up_listener(self.transport, None)
+         self.pool_listener = _set_up_listener(self.transport, '-'.join(
+-            ['ironic-neutron-agent-member-manager-pool', self.agent_id]))
++            ['ironic-neutron-agent-member-manager-pool', self.agent_host]))
+ 
+         self.member_manager = HashRingMemberManagerNotificationEndpoint()
+ 
+diff --git a/releasenotes/notes/switch_to_agent_host-18bd49692e02ffeb.yaml b/releasenotes/notes/switch_to_agent_host-18bd49692e02ffeb.yaml
+new file mode 100644
+index 0000000..b031f10
+--- /dev/null
++++ b/releasenotes/notes/switch_to_agent_host-18bd49692e02ffeb.yaml
+@@ -0,0 +1,18 @@
++---
++fixes:
++  - |
++    The ironic-neutron-agent notification listener pool name now uses the
++    agent hostname instead of a per-process UUID. Previously, each agent
++    restart created a new permanent RabbitMQ queue named after the UUID,
++    leaving behind stale queues with unconsumed messages when
++    running with quorum queues (``rabbit_quorum_queue = True``). With
++    quorum queues, ``auto_delete`` is not supported, so old UUID-named
++    queues were never removed. Using the hostname as the pool name ensures
++    the same queue is reused across restarts on the same host.
++upgrade:
++  - |
++    Deployments that have been running the ironic-neutron-agent with
++    quorum queues (``rabbit_quorum_queue = True``) may have stale
++    RabbitMQ queues named
++    ``ironic-neutron-agent-member-manager.<hostname>.ironic-neutron-agent-member-manager-pool-<uuid>``.
++    These queues can be safely deleted manually after upgrading.
