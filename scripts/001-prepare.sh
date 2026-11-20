@@ -149,9 +149,17 @@ fi
 export HASH_KOLLA=$(git rev-parse HEAD)
 popd > /dev/null
 
+# kolla keeps the image definitions in kolla/docker since 2026.2, in docker
+# before that.
+if [[ -d $PROJECT_REPOSITORY_PATH/kolla/docker ]]; then
+    KOLLA_DOCKER_PATH=$PROJECT_REPOSITORY_PATH/kolla/docker
+else
+    KOLLA_DOCKER_PATH=$PROJECT_REPOSITORY_PATH/docker
+fi
+
 # Do not build rabbitmq-4-1 image
 
-rm -rf $PROJECT_REPOSITORY_PATH/docker/rabbitmq/rabbitmq-4-1
+rm -rf $KOLLA_DOCKER_PATH/rabbitmq/rabbitmq-4-1
 
 # Apply patches
 
@@ -185,7 +193,7 @@ cp src/kolla-pip-check.py overlays/$OPENSTACK_VERSION/base/kolla-pip-check.py
 
 for image in $(find overlays/$OPENSTACK_VERSION -maxdepth 1 -mindepth 1 -type d); do
     image_name=$(basename $image)
-    cp -r overlays/$OPENSTACK_VERSION/$image_name/* $PROJECT_REPOSITORY_PATH/docker/$image_name
+    cp -r overlays/$OPENSTACK_VERSION/$image_name/* $KOLLA_DOCKER_PATH/$image_name
 done
 
 # Apply patches
