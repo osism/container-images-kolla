@@ -55,7 +55,12 @@ fi
 
 if [[ $BUILD_TYPE == "base" ]]; then
     KOLLA_IMAGES_BASE=""
-    for baseimage in $(find kolla/docker -name '*-base' | sort | xargs -n1 basename | awk -F - '{print $1}'); do
+    # kolla keeps the image definitions in kolla/docker since 2026.2.
+    KOLLA_DOCKER_PATH=kolla/docker
+    if [[ -d kolla/kolla/docker ]]; then
+        KOLLA_DOCKER_PATH=kolla/kolla/docker
+    fi
+    for baseimage in $(find $KOLLA_DOCKER_PATH -name '*-base' | sort | xargs -n1 basename | awk -F - '{print $1}'); do
         if [[ $KOLLA_IMAGES == *"$baseimage"* ]]; then
             KOLLA_IMAGES_BASE+=" ${baseimage}-base"
         fi
