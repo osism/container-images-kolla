@@ -1,0 +1,36 @@
+diff --git a/kolla/common/sources.yaml b/kolla/common/sources.yaml
+index db892daa8..8d4149f8d 100644
+--- a/kolla/common/sources.yaml
++++ b/kolla/common/sources.yaml
+@@ -57,9 +57,6 @@ horizon:
+ horizon-plugin-blazar-dashboard:
+   type: "url"
+   location: "$tarballs_base/openstack/blazar-dashboard/blazar-dashboard-${openstack_branch}.tar.gz"
+-horizon-plugin-cloudkitty-dashboard:
+-  type: "url"
+-  location: "$tarballs_base/openstack/cloudkitty-dashboard/cloudkitty-dashboard-${openstack_branch}.tar.gz"
+ horizon-plugin-designate-dashboard:
+   type: "url"
+   location: "$tarballs_base/openstack/designate-dashboard/designate-dashboard-${openstack_branch}.tar.gz"
+@@ -81,21 +78,12 @@ horizon-plugin-manila-ui:
+ horizon-plugin-masakari-dashboard:
+   type: "url"
+   location: "$tarballs_base/openstack/masakari-dashboard/masakari-dashboard-${openstack_branch}.tar.gz"
+-horizon-plugin-mistral-dashboard:
+-  type: "url"
+-  location: "$tarballs_base/openstack/mistral-dashboard/mistral-dashboard-${openstack_branch}.tar.gz"
+ horizon-plugin-neutron-vpnaas-dashboard:
+   type: "url"
+   location: "$tarballs_base/openstack/neutron-vpnaas-dashboard/neutron-vpnaas-dashboard-${openstack_branch}.tar.gz"
+ horizon-plugin-octavia-dashboard:
+   type: "url"
+   location: "$tarballs_base/openstack/octavia-dashboard/octavia-dashboard-${openstack_branch}.tar.gz"
+-horizon-plugin-tacker-dashboard:
+-  type: "url"
+-  location: "$tarballs_base/openstack/tacker-horizon/tacker-horizon-${openstack_branch}.tar.gz"
+-horizon-plugin-trove-dashboard:
+-  type: "url"
+-  location: "$tarballs_base/openstack/trove-dashboard/trove-dashboard-${openstack_branch}.tar.gz"
+ horizon-plugin-watcher-dashboard:
+   type: "url"
+   location: "$tarballs_base/openstack/watcher-dashboard/watcher-dashboard-${openstack_branch}.tar.gz"

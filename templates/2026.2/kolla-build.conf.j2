@@ -1,0 +1,47 @@
+[DEFAULT]
+base = {{ base }}
+base_package_type = deb
+base_tag = {{ base_tag }}
+install_type = {{ install_type }}
+namespace = {{ namespace }}
+openstack_release = {{ openstack_release }}
+push = false
+tag = latest
+threads = 1
+# kolla builds with docker buildx by default since 2026.2, a path the
+# squash patch in patches/2026.2/kolla does not reach. Keep the docker API
+# build that the older releases use.
+buildkit = false
+
+#########################################################################
+# sources tracked in release repository
+
+{#- kolla names these sources after the image, not <project>-base. A section
+    kolla does not know is ignored silently, and the image then builds from
+    its default stable branch tarball instead of the version pinned here. #}
+{%- for project in projects %}
+{% if project.name not in ['horizon', 'neutron-vpnaas', 'neutron-vpnaas-agent', 'neutron-dynamic-routing', 'skyline-apiserver', 'skyline-console'] %}
+[{{ project.name }}-base]
+{% elif project.name == 'neutron-dynamic-routing' %}
+[neutron-bgp-dragent]
+{% elif project.name == 'neutron-vpnaas' %}
+[neutron-vpnaas-agent]
+{% else %}
+[{{ project.name }}]
+{% endif -%}
+type = local
+# tarball = https://tarballs.opendev.org/openstack/{{ project.repository }}/{{ project.repository }}-{{ project.version }}.tar.gz
+location = tarballs/{{ project.repository }}-{{ project.version }}.tar.gz
+
+{% if project.name == 'neutron-dynamic-routing' %}
+[neutron-server-plugin-neutron-dynamic-routing]
+type = local
+# tarball = https://tarballs.opendev.org/openstack/{{ project.repository }}/{{ project.repository }}-{{ project.version }}.tar.gz
+location = tarballs/{{ project.repository }}-{{ project.version }}.tar.gz
+{% elif project.name in ['neutron-vpnaas', 'neutron-vpnaas-agent'] %}
+[neutron-base-plugin-vpnaas-agent]
+type = local
+# tarball = https://tarballs.opendev.org/openstack/{{ project.repository }}/{{ project.repository }}-{{ project.version }}.tar.gz
+location = tarballs/{{ project.repository }}-{{ project.version }}.tar.gz
+{% endif %}
+{%- endfor %}
