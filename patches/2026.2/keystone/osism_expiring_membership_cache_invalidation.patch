@@ -1,0 +1,277 @@
+From 6d9deda0d20ef498a91720ee629e929168c6bdc8 Mon Sep 17 00:00:00 2001
+From: Roger Luethi <luethi@osism.tech>
+Date: Thu, 29 Oct 2026 08:35:50 +0100
+Subject: [PATCH] Invalidate role cache when expiring memberships revive
+
+Federated users' expiring group memberships count towards their
+effective role assignments only while they are valid, which depends on
+the identity provider's authorization_ttl. Two changes make an existing
+membership valid again without adding a new one, and neither
+invalidated the computed role assignments cache:
+
+- setting or changing authorization_ttl on the identity provider;
+- a federated login that refreshes a membership that had expired.
+
+A user who tried to create an application credential before the TTL was
+set kept getting "Could not find role assignment" until the cache
+expired ([cache] expiration_time, 600 seconds by default), although the
+membership was already valid.
+
+Invalidate the computed assignments region when an identity provider's
+authorization_ttl changes, and report a refresh that turns an expired
+membership into a valid one as a membership change, so that
+shadow_federated_user invalidates the user's cached assignments as it
+does for a new membership. A refresh without a TTL leaves the
+membership expired and is still no change.
+
+Related-Bug: #2119031
+Signed-off-by: Roger Luethi <luethi@osism.tech>
+---
+ keystone/federation/core.py                   |  15 ++
+ keystone/identity/shadow_backends/sql.py      |  10 +-
+ .../unit/test_expiring_membership_cache.py    | 181 ++++++++++++++++++
+ 3 files changed, 204 insertions(+), 2 deletions(-)
+ create mode 100644 keystone/tests/unit/test_expiring_membership_cache.py
+
+diff --git a/keystone/federation/core.py b/keystone/federation/core.py
+index e18cb3049..423f608fe 100644
+--- a/keystone/federation/core.py
++++ b/keystone/federation/core.py
+@@ -16,6 +16,7 @@ import uuid
+ 
+ from oslo_log import log
+ 
++from keystone import assignment
+ from keystone.common import cache
+ from keystone.common import driver_hints
+ from keystone.common import manager
+@@ -92,6 +93,20 @@ class Manager(manager.Manager):
+                 self._cleanup_idp_domain(idp['domain_id'])
+             raise
+ 
++    def update_idp(self, idp_id, idp):
++        old_ttl = None
++        if 'authorization_ttl' in idp:
++            old_ttl = self.driver.get_idp(idp_id).get('authorization_ttl')
++        ref = self.driver.update_idp(idp_id, idp)
++        new_ttl = ref.get('authorization_ttl')
++        if 'authorization_ttl' in idp and new_ttl != old_ttl:
++            # Whether an expiring group membership is valid depends on the
++            # identity provider's authorization TTL, so a new TTL can make a
++            # user a group member, or stop being one, without any login.
++            # Role assignments computed from the old memberships are stale.
++            assignment.COMPUTED_ASSIGNMENTS_REGION.invalidate()
++        return ref
++
+     def delete_idp(self, idp_id):
+         self.driver.delete_idp(idp_id)
+         # NOTE(lbragstad): If an identity provider is removed from the system,
+diff --git a/keystone/identity/shadow_backends/sql.py b/keystone/identity/shadow_backends/sql.py
+index 3e2ca0149..59a83e3fb 100644
+--- a/keystone/identity/shadow_backends/sql.py
++++ b/keystone/identity/shadow_backends/sql.py
+@@ -251,9 +251,15 @@ class ShadowUsers(base.ShadowUsersDriverBase):
+             membership = query.first()
+ 
+             if membership:
+-                # Existing membership, just refresh TTL
++                # Existing membership: refresh it. If it had expired and the
++                # refresh makes it valid again, the user was not a member
++                # until now, which is a change for anything computed from the
++                # user's groups (cached role assignments). Without an
++                # authorization TTL the refreshed membership is expired at
++                # once, so that is no change.
++                was_expired = membership.expired
+                 membership.last_verified = timeutils.utcnow()
+-                return False  # No change, just renewal
++                return was_expired and not membership.expired
+             else:
+                 # New membership - this is a change
+                 session.add(
+diff --git a/keystone/tests/unit/test_expiring_membership_cache.py b/keystone/tests/unit/test_expiring_membership_cache.py
+new file mode 100644
+index 000000000..7e9f52bdf
+--- /dev/null
++++ b/keystone/tests/unit/test_expiring_membership_cache.py
+@@ -0,0 +1,181 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++
++"""Cached role assignments must follow expiring group memberships.
++
++An expiring group membership is valid or not depending on its last
++verification and the identity provider's authorization TTL. Two changes make
++an existing membership valid again without adding a new one, and both must
++invalidate the cached effective role assignments:
++
++- the identity provider's authorization TTL changes;
++- a federated login refreshes a membership that had expired.
++"""
++
++import datetime
++from unittest import mock
++import uuid
++
++from oslo_utils import timeutils
++
++from keystone.common import provider_api
++from keystone.common import sql
++from keystone.identity.backends import sql_model as model
++from keystone.tests import unit
++from keystone.tests.unit import default_fixtures
++from keystone.tests.unit.ksfixtures import database
++
++PROVIDERS = provider_api.ProviderAPIs
++
++
++class ExpiringMembershipCacheTest(unit.TestCase):
++    def setUp(self):
++        # Mock LDAP to avoid environment-specific errors, as the upstream
++        # federated group cache tests do.
++        ldap_patcher = mock.patch('ldap.initialize')
++        self.addCleanup(ldap_patcher.stop)
++        ldap_patcher.start()
++        with mock.patch('ldap.get_option', return_value=None):
++            with mock.patch('ldap.set_option'):
++                super().setUp()
++
++        self.useFixture(database.Database())
++        self.load_backends()
++
++        PROVIDERS.resource_api.create_domain(
++            default_fixtures.ROOT_DOMAIN['id'], default_fixtures.ROOT_DOMAIN
++        )
++        self.idp = {
++            'id': uuid.uuid4().hex,
++            'enabled': True,
++            'description': 'Test Identity Provider',
++        }
++        mapping = {'id': uuid.uuid4().hex, 'rules': []}
++        self.protocol = {
++            'id': uuid.uuid4().hex,
++            'idp_id': self.idp['id'],
++            'mapping_id': mapping['id'],
++        }
++        PROVIDERS.federation_api.create_idp(self.idp['id'], self.idp)
++        PROVIDERS.federation_api.create_mapping(mapping['id'], mapping)
++        PROVIDERS.federation_api.create_protocol(
++            self.idp['id'], self.protocol['id'], self.protocol
++        )
++        domain_id = PROVIDERS.federation_api.get_idp(self.idp['id'])[
++            'domain_id'
++        ]
++
++        group = unit.new_group_ref(domain_id=domain_id, name='members')
++        self.group = PROVIDERS.identity_api.create_group(group)
++        project = unit.new_project_ref(domain_id=domain_id)
++        self.project = PROVIDERS.resource_api.create_project(
++            project['id'], project
++        )
++        role = unit.new_role_ref(name='member')
++        self.role = PROVIDERS.role_api.create_role(role['id'], role)
++        PROVIDERS.assignment_api.create_grant(
++            self.role['id'],
++            group_id=self.group['id'],
++            project_id=self.project['id'],
++        )
++        self.user_ref = {
++            'id': uuid.uuid4().hex,
++            'name': 'federated-user',
++            'domain': {'id': domain_id},
++        }
++
++    def _login(self):
++        return PROVIDERS.identity_api.shadow_federated_user(
++            self.idp['id'],
++            self.protocol['id'],
++            self.user_ref,
++            group_ids=[self.group['id']],
++        )
++
++    def _role_ids(self, user_id):
++        assignments = PROVIDERS.assignment_api.list_role_assignments(
++            user_id=user_id, project_id=self.project['id'], effective=True
++        )
++        return [a['role_id'] for a in assignments]
++
++    def _age_memberships(self, minutes):
++        with sql.session_for_write() as session:
++            session.query(model.ExpiringUserGroupMembership).update(
++                {
++                    'last_verified': timeutils.utcnow()
++                    - datetime.timedelta(minutes=minutes)
++                }
++            )
++
++    def test_authorization_ttl_change_invalidates_assignments(self):
++        # No TTL: the membership written at login expires at once, and the
++        # empty result is cached.
++        user = self._login()
++        self._login()
++        self.assertEqual([], self._role_ids(user['id']))
++
++        PROVIDERS.federation_api.update_idp(
++            self.idp['id'], {'authorization_ttl': 1440}
++        )
++        self._login()
++
++        self.assertEqual([self.role['id']], self._role_ids(user['id']))
++
++    def test_unrelated_idp_update_keeps_assignments_cached(self):
++        PROVIDERS.federation_api.update_idp(
++            self.idp['id'], {'authorization_ttl': 1440}
++        )
++        user = self._login()
++        self.assertEqual([self.role['id']], self._role_ids(user['id']))
++
++        with mock.patch(
++            'keystone.assignment.core.COMPUTED_ASSIGNMENTS_REGION.invalidate'
++        ) as invalidate:
++            PROVIDERS.federation_api.update_idp(
++                self.idp['id'], {'description': 'changed'}
++            )
++            PROVIDERS.federation_api.update_idp(
++                self.idp['id'], {'authorization_ttl': 1440}
++            )
++        invalidate.assert_not_called()
++
++    def test_refreshing_an_expired_membership_invalidates_assignments(self):
++        PROVIDERS.federation_api.update_idp(
++            self.idp['id'], {'authorization_ttl': 60}
++        )
++        user = self._login()
++        # The membership lapses; a role lookup now caches the empty result.
++        self._age_memberships(120)
++        self.assertEqual([], self._role_ids(user['id']))
++
++        self._login()
++
++        self.assertEqual([self.role['id']], self._role_ids(user['id']))
++
++    def test_add_user_to_group_expires_reports_refreshed_expired_row(self):
++        PROVIDERS.federation_api.update_idp(
++            self.idp['id'], {'authorization_ttl': 60}
++        )
++        user = self._login()
++        shadow = PROVIDERS.shadow_users_api
++
++        self.assertFalse(
++            shadow.add_user_to_group_expires(user['id'], self.group['id'])
++        )
++        self._age_memberships(120)
++        self.assertTrue(
++            shadow.add_user_to_group_expires(user['id'], self.group['id'])
++        )
++        # Refreshed just now: valid again, so the next refresh is no change.
++        self.assertFalse(
++            shadow.add_user_to_group_expires(user['id'], self.group['id'])
++        )

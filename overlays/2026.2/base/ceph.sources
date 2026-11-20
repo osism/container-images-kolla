@@ -1,0 +1,5 @@
+Types: deb
+URIs: https://download.ceph.com/debian-tentacle
+Suites: noble
+Components: main
+Signed-By: /etc/kolla/apt-keys/ceph.gpg

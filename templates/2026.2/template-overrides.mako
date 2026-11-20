@@ -1,0 +1,147 @@
+{% extends parent_template %}
+
+{% set fluentd_plugins = [
+    'fluent-plugin-grok-parser',
+    'fluent-plugin-prometheus',
+    'fluent-plugin-rewrite-tag-filter',
+    'fluent-plugin-grafana-loki',
+] %}
+
+{% set openstack_base_pip_packages_append = ['pip', 'git+https://github.com/sapcc/openstack-audit-middleware.git'] %}
+
+{% set glance_base_pip_packages_append = ['boto3'] %}
+
+{% set barbican_base_pip_packages_append = ['pykmip'] %}
+{% block barbican_base_header %}
+## PyKMIP 0.10.0, pinned in the upper-constraints of the stable branches, calls ssl.wrap_socket(),
+## which was removed in Python 3.12. Connections of the kmip_plugin to the KMIP server fail with it.
+## https://github.com/osism/container-images-kolla/issues/806
+RUN sed -i 's/^PyKMIP===.*/PyKMIP===0.11.0/' /requirements/upper-constraints.txt
+{% endblock %}
+
+{% block nova_libvirt_footer %}
+RUN chgrp tss /var/lib/swtpm-localca ${"\\"}
+    && chmod g+w /var/lib/swtpm-localca
+## The `efi-virtio.rom` used to be 512kb in 2024.1 and shrunk to 256kb in 2024.2.
+## A change in size causes an error in libvirt/qemu and breaks live migration, therefore we inflate it with zeros to match the expected size.
+## https://github.com/osism/issues/issues/1289
+RUN truncate --size=524288 /usr/lib/ipxe/qemu/efi-virtio.rom
+{% endblock %}
+
+{% block horizon_header %}
+RUN apt-get update ${"\\"}
+    && apt-get -y install --no-install-recommends build-essential libmariadb-dev-compat ${"\\"}
+    && python3 -m pip --no-cache-dir install --upgrade setuptools mysqlclient ${"\\"}
+    && apt-get remove -y build-essential ${"\\"}
+    && apt-get clean ${"\\"}
+    && rm -rf /var/lib/apt/lists/*
+{% endblock %}
+
+{% block horizon_footer %}
+RUN curl -q -L -o /tmp/openstack-themes.tar.gz https://github.com/osism/openstack-themes/archive/main.tar.gz ${"\\"}
+    && tar xzvf /tmp/openstack-themes.tar.gz --directory=/var/lib/kolla/venv/lib/python3/site-packages/openstack_dashboard/themes --strip-components 2 openstack-themes-main/horizon ${"\\"}
+    && rm /tmp/openstack-themes.tar.gz
+{% endblock %}
+
+{% block base_header %}
+COPY apt_preferences.{{ base_distro }} /etc/apt/preferences
+COPY kolla-pip-check.py /usr/local/bin/kolla-pip-check.py
+COPY *.gpg /etc/kolla/apt-keys/
+
+RUN apt-get update ${"\\"}
+    && apt-get -y install --no-install-recommends locales ca-certificates ${"\\"}
+    && locale-gen en_US.UTF-8 ${"\\"}
+    && apt-get clean ${"\\"}
+    && rm -rf /var/lib/apt/lists/*
+{% endblock %}
+
+{% block base_debian_after_sources_list %}
+COPY ceph.sources /etc/apt/sources.list.d/ceph.sources
+{% endblock %}
+
+{% block openstack_base_header %}
+RUN apt-get update ${"\\"}
+    && apt-get -y install --no-install-recommends python3-setuptools ${"\\"}
+    && apt-get clean ${"\\"}
+    && rm -rf /var/lib/apt/lists/*
+{% endblock %}
+
+{% set glance_base_packages_append = ['nvme-cli'] %}
+
+{% set kolla_toolbox_packages_append = ['iputils-ping', 'traceroute'] %}
+
+{% set cinder_volume_packages_append = ['multipath-tools'] %}
+
+{% set cinder_volume_pip_packages = [ 'py-pure-client', 'infinisdk', 'python-linstor' ] %}
+{% block cinder_volume_footer %}
+RUN {{ macros.install_pip(cinder_volume_pip_packages | customizable("pip_packages")) }}
+{% endblock %}
+
+{% set manila_base_additional_pip_packages = [ 'pywinrm' ] %}
+{% block manila_base_footer %}
+RUN {{ macros.install_pip(manila_base_additional_pip_packages | customizable("pip_packages")) }}
+{% endblock %}
+
+{% set magnum_base_additional_pip_packages = [ 'magnum-cluster-api' ] %}
+{% block magnum_base_footer %}
+RUN {{ macros.install_pip(magnum_base_additional_pip_packages | customizable("pip_packages")) }}
+RUN curl -o /tmp/helm.tar.gz https://get.helm.sh/helm-v3.15.2-linux-amd64.tar.gz ${"\\"}
+    && tar --strip-components=1 -xvzf /tmp/helm.tar.gz -C /usr/local/bin linux-amd64/helm
+{% endblock %}
+
+{% set gnocchi_base_packages_append = ['python3-rados'] %}
+{% block gnocchi_base_footer %}
+RUN mkdir -p /var/lib/gnocchi/tmp ${"\\"}
+    && chown -R gnocchi: /var/lib/gnocchi/tmp
+{% endblock %}
+
+{% block keystone_footer %}
+RUN python3 -m pip --no-cache-dir install -c /requirements/upper-constraints.txt keystone-keycloak-backend
+RUN apt-get update ${"\\"}
+    && apt-get -y install --no-install-recommends ${"\\"}
+           libldap-common ${"\\"}
+           libmemcached11 ${"\\"}
+    && apt-get clean ${"\\"}
+    && rm -rf /var/lib/apt/lists/*
+{% endblock %}
+
+{% block apache_footer %}
+RUN apt-get update ${"\\"}
+    && apt-get -y install --no-install-recommends ${"\\"}
+           libmemcached11 ${"\\"}
+    && apt-get clean ${"\\"}
+    && rm -rf /var/lib/apt/lists/* ${"\\"}
+    && a2enmod auth_openidc
+{% endblock %}
+
+{% block footer %}
+RUN rm -rf /usr/share/doc/* ${"\\"}
+    && rm -rf /usr/share/man/* ${"\\"}
+    && apt-get remove -y build-essential ${"\\"}
+    && apt-get autoremove -y ${"\\"}
+    && if [ -e /var/lib/kolla/venv/bin/python3 ]; then /var/lib/kolla/venv/bin/pip3 install --no-cache-dir pyclean==3.0.0; /var/lib/kolla/venv/bin/pyclean /var/lib/kolla/venv; /var/lib/kolla/venv/bin/pyclean /usr; /var/lib/kolla/venv/bin/pip3 uninstall -y pyclean; fi ${"\\"}
+    && if [ -e /var/lib/kolla/venv/bin/pip3 ]; then /var/lib/kolla/venv/bin/python3 /usr/local/bin/kolla-pip-check.py; fi
+{% endblock %}
+
+{% block labels %}
+LABEL "build-date"="{{ build_date }}" ${"\\"}
+      "name"="{{ image_name }}" ${"\\"}
+      "de.osism.commit.docker_images_kolla"="${hash_docker_images_kolla}" ${"\\"}
+      "de.osism.commit.kolla"="${hash_kolla}" ${"\\"}
+      "de.osism.commit.kolla_version"="${kolla_version}" ${"\\"}
+      "de.osism.commit.release"="${hash_release}" ${"\\"}
+      "de.osism.os_id"="${base}" ${"\\"}
+      "de.osism.os_version_id"="${base_tag}" ${"\\"}
+      "de.osism.release.openstack"="${openstack_version}" ${"\\"}
+      "de.osism.version"="${version}" ${"\\"}
+      "org.opencontainers.image.base.digest"="${base_image_digest}" ${"\\"}
+      "org.opencontainers.image.base.name"="${base_image_name}" ${"\\"}
+      "org.opencontainers.image.created"="${created}" ${"\\"}
+      "org.opencontainers.image.documentation"="https://osism.tech/docs/" ${"\\"}
+      "org.opencontainers.image.licenses"="ASL 2.0" ${"\\"}
+      "org.opencontainers.image.revision"="${hash_docker_images_kolla}" ${"\\"}
+      "org.opencontainers.image.source"="https://github.com/osism/container-images-kolla" ${"\\"}
+      "org.opencontainers.image.title"="{{ image_name }}" ${"\\"}
+      "org.opencontainers.image.url"="https://github.com/osism/container-images-kolla" ${"\\"}
+      "org.opencontainers.image.vendor"="OSISM GmbH"
+{% endblock %}

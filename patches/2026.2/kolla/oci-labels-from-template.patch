@@ -1,0 +1,30 @@
+Subject: [PATCH] Leave the OCI source, revision and url labels to the template
+
+kolla sets org.opencontainers.image.source, .revision and .url as build
+labels, which take precedence over the LABEL instructions of the template
+overrides. They name opendev.org/openstack/kolla, not the repository the
+image is built from. Do not set them, so that the template overrides apply.
+
+diff --git a/kolla/image/kolla_worker.py b/kolla/image/kolla_worker.py
+index b60f0558f..966f03770 100644
+--- a/kolla/image/kolla_worker.py
++++ b/kolla/image/kolla_worker.py
+@@ -749,7 +749,8 @@ class KollaWorker(object):
+                 parent_name = ''
+             del match
+ 
+-            oci_labels = self.scm_labels.copy()
++            # NOTE: source, revision and url are left to the template overrides.
++            oci_labels = {}
+             oci_labels.update({
+                 "org.opencontainers.image.title": image_name,
+                 "org.opencontainers.image.description": (
+@@ -757,8 +758,6 @@ class KollaWorker(object):
+                 "org.opencontainers.image.version": self.tag,
+                 "org.opencontainers.image.created": self.build_created,
+                 "org.opencontainers.image.authors": self.maintainer,
+-                "org.opencontainers.image.url": (
+-                    "https://opendev.org/openstack/kolla"),
+                 "org.opencontainers.image.licenses": "Apache-2.0"
+             })
+ 

@@ -1,0 +1,11 @@
+--- a/ironic/conf/deploy.py
++++ b/ironic/conf/deploy.py
+@@ -53,7 +53,7 @@
+                       "requires password credential. Currently utilized by "
+                       "the http_basic authentication strategy.")),
+     cfg.URIOpt('external_http_url',
+-               schemes=['http', 'https'],
++               schemes=['http', 'https', 'nfs'],
+                help=_("URL of the ironic-conductor node's HTTP server for "
+                       "boot methods such as virtual media, "
+                       "where images could be served outside of the "
