@@ -95,6 +95,28 @@ RUN mkdir -p /var/lib/gnocchi/tmp ${"\\"}
     && chown -R gnocchi: /var/lib/gnocchi/tmp
 {% endblock %}
 
+{% block keystone_base_header %}
+## python-ldap (keystone[ldap], keystone-base), gssapi and krb5
+## (requests-kerberos via pyspnego[kerberos], keystone-api) have no wheels on
+## PyPI and need a compiler, which
+## openstack-base no longer ships (patches/2026.2/kolla/
+## openstack-base-toolchain.patch). Build both here and purge the toolchain
+## in the same RUN; the later pip installs find them already installed.
+RUN apt-get --error-on=any update ${"\\"}
+    && apt-get -y install --no-install-recommends ${"\\"}
+           build-essential ${"\\"}
+           libkrb5-dev ${"\\"}
+           libldap2-dev ${"\\"}
+           libsasl2-dev ${"\\"}
+    && python3 -m pip --no-cache-dir install -c /requirements/upper-constraints.txt ${"\\"}
+           gssapi ${"\\"}
+           krb5 ${"\\"}
+           python-ldap ${"\\"}
+    && apt-get -y purge --auto-remove build-essential ${"\\"}
+    && apt-get clean ${"\\"}
+    && rm -rf /var/lib/apt/lists/*
+{% endblock %}
+
 {% block keystone_footer %}
 RUN python3 -m pip --no-cache-dir install -c /requirements/upper-constraints.txt keystone-keycloak-backend
 RUN apt-get update ${"\\"}
