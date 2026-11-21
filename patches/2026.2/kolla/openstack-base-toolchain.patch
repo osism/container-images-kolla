@@ -1,0 +1,37 @@
+diff --git a/kolla/docker/openstack-base/Dockerfile.j2 b/kolla/docker/openstack-base/Dockerfile.j2
+index e062045c9..5beb7d837 100644
+--- a/kolla/docker/openstack-base/Dockerfile.j2
++++ b/kolla/docker/openstack-base/Dockerfile.j2
+@@ -38,8 +38,9 @@ LABEL maintainer="{{ maintainer }}" name="{{ image_name }}"
+     ] %}
+ 
+ {% elif base_package_type == 'deb' %}
++    {# build-essential is installed and removed again in the RUN that
++       builds the venv, see below. #}
+     {% set openstack_base_packages = [
+-        'build-essential',
+         'ca-certificates',
+         'git',
+         'libffi-dev',
+@@ -207,8 +208,22 @@ RUN ln -s openstack-base-source/* /requirements \
+ 
+ ENV PATH /var/lib/kolla/venv/bin:$PATH
+ 
++{% if base_package_type == 'deb' %}
++{# The compiler toolchain is only needed to build the venv. Install and
++   purge it in the same RUN, so that it is not part of the openstack-base
++   layer, which every service image shares. Removing it in a later RUN
++   would only hide the files. #}
++RUN apt-get --error-on=any update \
++    && apt-get -y install --no-install-recommends build-essential \
++    && {{ macros.install_pip(['pip', 'wheel', 'setuptools']) }} \
++    && {{ macros.install_pip(openstack_base_pip_packages | customizable("pip_packages")) }} \
++    && apt-get -y purge --auto-remove build-essential \
++    && apt-get clean \
++    && rm -rf /var/lib/apt/lists/*
++{% else %}
+ RUN {{ macros.install_pip(['pip', 'wheel', 'setuptools']) }} \
+     && {{ macros.install_pip(openstack_base_pip_packages | customizable("pip_packages")) }}
++{% endif %}
+ 
+ {{ macros.kolla_patch_sources() }}
