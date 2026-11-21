@@ -8,10 +8,6 @@ openstack_release = {{ openstack_release }}
 push = false
 tag = latest
 threads = 1
-# kolla builds with docker buildx by default since 2026.2, a path the
-# squash patch in patches/2026.2/kolla does not reach. Keep the docker API
-# build that the older releases use.
-buildkit = false
 
 #########################################################################
 # sources tracked in release repository
