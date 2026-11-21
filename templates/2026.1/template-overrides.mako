@@ -102,7 +102,7 @@ RUN apt-get update ${"\\"}
            libldap-common ${"\\"}
            libmemcached11 ${"\\"}
     && apt-get clean ${"\\"}
-    && rm -rf /var/lib/apt/lists/* ${"\\"}
+    && rm -rf /var/lib/apt/lists/*
 {% endblock %}
 
 {% block apache_footer %}
