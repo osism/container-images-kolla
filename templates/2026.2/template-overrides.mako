@@ -32,7 +32,7 @@ RUN truncate --size=524288 /usr/lib/ipxe/qemu/efi-virtio.rom
 RUN apt-get update ${"\\"}
     && apt-get -y install --no-install-recommends build-essential libmariadb-dev-compat ${"\\"}
     && python3 -m pip --no-cache-dir install --upgrade setuptools mysqlclient ${"\\"}
-    && apt-get remove -y build-essential ${"\\"}
+    && apt-get -y purge --auto-remove build-essential ${"\\"}
     && apt-get clean ${"\\"}
     && rm -rf /var/lib/apt/lists/*
 {% endblock %}
