@@ -4,7 +4,7 @@ Mako==1.4.3
 PyYAML==6.0.4
 ansible==14.6.0
 docker==7.2.0
-loguru==0.7.3
+loguru==0.8.0
 packaging==26.4
 requests==2.34.2
 setuptools==84.2.1
