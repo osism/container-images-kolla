@@ -1,0 +1,329 @@
+From 107973020c809c794b901d2d69f4d4c5f50560ec Mon Sep 17 00:00:00 2001
+From: Ghanshyam Maan <gmaan@ghanshyammann.com>
+Date: Thu, 28 Aug 2025 03:53:10 +0000
+Subject: [PATCH] Register glance user in keystoneauth plugin
+
+The OpenStack services communicate with each other by
+passing the user token and service token wrapped in
+keystoneauth's ServiceTokenAuthWrapper. The purpose
+of passing the service token is for long-running
+operations and in case the user token gets expired.
+
+For RBAC, services need to check if a user token has the
+'service'
+role or not. For that calling service needs to load the
+configured user auth plugin (where the user should have
+the 'service' role) from keystoneauth and pass that to
+the other services and called service (glance in this case)
+will use that user role to verify the policy permission.
+
+Cinder register and load user auth plugin from keystonauth
+for nova communication case
+- https://github.com/openstack/cinder/blob/644b6362a6b0debf6395d4bf15f963faf1a42ced/cinder/compute/nova.py#L100
+
+But it is missing for glance case which is fixed in this change.
+
+Closes-Bug: #2121622
+Needed-By: https://review.opendev.org/c/openstack/glance/+/958715
+
+Change-Id: Ia3fe15517cdbeb8295725b99b526dd70ce290562
+Signed-off-by: Ghanshyam Maan <gmaan@ghanshyammann.com>
+(cherry picked from commit 9dfb500d5bb4fb6523731d7053a0424280d11da2)
+---
+ cinder/image/glance.py                        | 65 ++++++++++++++-----
+ cinder/opts.py                                |  5 ++
+ cinder/tests/unit/image/test_glance.py        | 29 +++++++--
+ ...ance-service-section-3e73daee0e995442.yaml | 22 +++++++
+ tools/config/generate_cinder_opts.py          |  3 +
+ 5 files changed, 101 insertions(+), 23 deletions(-)
+ create mode 100644 releasenotes/notes/add-glance-service-section-3e73daee0e995442.yaml
+
+diff --git a/cinder/image/glance.py b/cinder/image/glance.py
+index baf3d3875..e2b0060f1 100644
+--- a/cinder/image/glance.py
++++ b/cinder/image/glance.py
+@@ -29,6 +29,7 @@ import urllib.parse
+ 
+ import glanceclient
+ import glanceclient.exc
++from keystoneauth1 import loading as ks_loading
+ from keystoneauth1.loading import session as ks_session
+ from oslo_config import cfg
+ from oslo_log import log as logging
+@@ -87,6 +88,14 @@ CONF = cfg.CONF
+ CONF.register_opts(image_opts)
+ CONF.register_opts(glance_core_properties_opts)
+ 
++# Register keystoneauth options to create service user
++# to talk to glance.
++GLANCE_GROUP = 'glance'
++glance_session_opts = ks_loading.get_session_conf_options()
++glance_auth_opts = ks_loading.get_auth_common_conf_options()
++CONF.register_opts(glance_session_opts, group=GLANCE_GROUP)
++CONF.register_opts(glance_auth_opts, group=GLANCE_GROUP)
++
+ _SESSION = None
+ 
+ LOG = logging.getLogger(__name__)
+@@ -107,12 +116,17 @@ def _parse_image_ref(image_href: str) -> tuple[str, str, bool]:
+     return (image_id, netloc, use_ssl)
+ 
+ 
+-def _create_glance_client(context: context.RequestContext,
+-                          netloc: str,
+-                          use_ssl: bool) -> glanceclient.Client:
++def _create_glance_client(
++        context: context.RequestContext,
++        netloc: str,
++        use_ssl: bool,
++        privileged_user: bool = False) -> glanceclient.Client:
+     """Instantiate a new glanceclient.Client object."""
+     params = {'global_request_id': context.global_id}
+-
++    g_auth = None
++    if privileged_user and CONF[GLANCE_GROUP].auth_type:
++        LOG.debug('Creating Keystone auth plugin from conf')
++        g_auth = ks_loading.load_auth_from_conf_options(CONF, GLANCE_GROUP)
+     if use_ssl and CONF.auth_strategy == 'noauth':
+         params = {'insecure': CONF.glance_api_insecure,
+                   'cacert': CONF.glance_ca_certificates_file,
+@@ -131,7 +145,7 @@ def _create_glance_client(context: context.RequestContext,
+                               }
+             _SESSION = ks_session.Session().load_from_options(**config_options)
+ 
+-        auth = service_auth.get_auth_plugin(context)
++        auth = service_auth.get_auth_plugin(context, auth=g_auth)
+         params['auth'] = auth
+         params['session'] = _SESSION
+ 
+@@ -186,44 +200,51 @@ class GlanceClientWrapper(object):
+     def __init__(self,
+                  context: Optional[context.RequestContext] = None,
+                  netloc: Optional[str] = None,
+-                 use_ssl: bool = False):
++                 use_ssl: bool = False,
++                 privileged_user: bool = False):
+         self.client: Optional[glanceclient.Client]
+         if netloc is not None:
+             assert context is not None
+             self.client = self._create_static_client(context,
+                                                      netloc,
+-                                                     use_ssl)
++                                                     use_ssl,
++                                                     privileged_user)
+         else:
+             self.client = None
+         self.api_servers: Optional[Iterable] = None
+ 
+-    def _create_static_client(self,
+-                              context: context.RequestContext,
+-                              netloc: str,
+-                              use_ssl: bool) -> glanceclient.Client:
++    def _create_static_client(
++            self,
++            context: context.RequestContext,
++            netloc: str,
++            use_ssl: bool,
++            privileged_user: bool = False) -> glanceclient.Client:
+         """Create a client that we'll use for every call."""
+         self.netloc = netloc
+         self.use_ssl = use_ssl
+         return _create_glance_client(context,
+                                      self.netloc,
+-                                     self.use_ssl)
++                                     self.use_ssl,
++                                     privileged_user)
+ 
+     def _create_onetime_client(
+             self,
+-            context: context.RequestContext) -> glanceclient.Client:
++            context: context.RequestContext,
++            privileged_user: bool = False) -> glanceclient.Client:
+         """Create a client that will be used for one call."""
+         if self.api_servers is None:
+             self.api_servers = get_api_servers(context)
+         self.netloc, self.use_ssl = next(self.api_servers)  # type: ignore
+         return _create_glance_client(context,
+                                      self.netloc,
+-                                     self.use_ssl)
++                                     self.use_ssl,
++                                     privileged_user)
+ 
+     def call(self,
+              context: context.RequestContext,
+              method: str,
+              *args: Any,
+-             **kwargs: str) -> Any:
++             **kwargs: Any) -> Any:
+         """Call a glance client method.
+ 
+         If we get a connection error,
+@@ -237,9 +258,11 @@ class GlanceClientWrapper(object):
+         glance_controller = kwargs.pop('controller', 'images')
+         store_id = kwargs.pop('store_id', None)
+         base_image_ref = kwargs.pop('base_image_ref', None)
++        privileged_user = kwargs.pop('privileged_user', False)
+ 
+         for attempt in range(1, num_attempts + 1):
+-            client = self.client or self._create_onetime_client(context)
++            client = self.client or self._create_onetime_client(
++                context, privileged_user)
+ 
+             keys = ('x-image-meta-store', 'x-openstack-base-image-ref',)
+             values = (store_id, base_image_ref,)
+@@ -387,8 +410,16 @@ class GlanceImageService(object):
+         try_methods = ('add_image_location', 'add_location')
+         for method in try_methods:
+             try:
++                # NOTE(gmaan): Glance add_image_location API policy rule is
++                # default to 'service' role so cinder needs to load the auth
++                # plugin from the keystoneauth which has the 'service' role.
++                if method == 'add_image_location':
++                    privileged_user = True
++                else:
++                    privileged_user = False
+                 return client.call(context, method,
+-                                   image_id, url, metadata)
++                                   image_id, url, metadata,
++                                   privileged_user=privileged_user)
+             except glanceclient.exc.HTTPNotImplemented:
+                 LOG.debug('Glance method %s not available', method)
+             except Exception:
+diff --git a/cinder/opts.py b/cinder/opts.py
+index bb90c0cf5..d78f64e19 100644
+--- a/cinder/opts.py
++++ b/cinder/opts.py
+@@ -453,6 +453,11 @@ def list_opts():
+                 cinder_volume_manager.volume_backend_opts,
+                 cinder_volume_targets_spdknvmf.spdk_opts,
+             )),
++        ('glance',
++            itertools.chain(
++                cinder_image_glance.glance_session_opts,
++                cinder_image_glance.glance_auth_opts,
++            )),
+         ('nova',
+             itertools.chain(
+                 cinder_compute_nova.nova_opts,
+diff --git a/cinder/tests/unit/image/test_glance.py b/cinder/tests/unit/image/test_glance.py
+index 52ea3ec6a..eac6570b6 100644
+--- a/cinder/tests/unit/image/test_glance.py
++++ b/cinder/tests/unit/image/test_glance.py
+@@ -21,6 +21,7 @@ from unittest import mock
+ 
+ import ddt
+ import glanceclient.exc
++from keystoneauth1 import loading as ksloading
+ from keystoneauth1.loading import session as ks_session
+ from keystoneauth1 import session
+ from oslo_config import cfg
+@@ -112,7 +113,8 @@ class TestGlanceImageService(test.TestCase):
+         self.mock_object(glance.time, 'sleep', return_value=None)
+ 
+     def _create_image_service(self, client):
+-        def _fake_create_glance_client(context, netloc, use_ssl):
++        def _fake_create_glance_client(
++                context, netloc, use_ssl, privileged_user=False):
+             return client
+ 
+         self.mock_object(glance, '_create_glance_client',
+@@ -782,7 +784,8 @@ class TestGlanceImageService(test.TestCase):
+ 
+         service.add_location(self.context, image_id, url, metadata)
+         mock_call.assert_called_once_with(
+-            self.context, 'add_image_location', image_id, url, metadata)
++            self.context, 'add_image_location',
++            image_id, url, metadata, privileged_user=True)
+ 
+     @mock.patch.object(glance.GlanceClientWrapper, 'call')
+     def test_add_location_old(self, mock_call):
+@@ -795,9 +798,11 @@ class TestGlanceImageService(test.TestCase):
+         service.add_location(self.context, image_id, url, metadata)
+         calls = [
+             mock.call.call(
+-                self.context, 'add_image_location', image_id, url, metadata),
++                self.context, 'add_image_location',
++                image_id, url, metadata, privileged_user=True),
+             mock.call.call(
+-                self.context, 'add_location', image_id, url, metadata)]
++                self.context, 'add_location',
++                image_id, url, metadata, privileged_user=False)]
+         mock_call.assert_has_calls(calls)
+ 
+     def test_download_with_retries(self):
+@@ -1278,7 +1283,7 @@ class TestGlanceImageServiceClient(test.TestCase):
+         client = glance._create_glance_client(self.context, 'fake_host:9292',
+                                               False)
+         self.assertIsInstance(client, MyGlanceStubClient)
+-        mock_get_auth_plugin.assert_called_once_with(self.context)
++        mock_get_auth_plugin.assert_called_once_with(self.context, auth=None)
+         mock_load.assert_called_once_with(**config_options)
+ 
+     @mock.patch('cinder.service_auth.get_auth_plugin')
+@@ -1314,7 +1319,7 @@ class TestGlanceImageServiceClient(test.TestCase):
+         client = glance._create_glance_client(self.context, 'fake_host:9292',
+                                               True)
+         self.assertIsInstance(client, MyGlanceStubClient)
+-        mock_get_auth_plugin.assert_called_once_with(self.context)
++        mock_get_auth_plugin.assert_called_once_with(self.context, auth=None)
+         mock_load.assert_called_once_with(**config_options)
+ 
+     def test_create_glance_client_auth_strategy_noauth_with_protocol_https(
+@@ -1358,3 +1363,15 @@ class TestGlanceImageServiceClient(test.TestCase):
+         client = glance._create_glance_client(self.context, 'fake_host:9292',
+                                               False)
+         self.assertIsInstance(client, MyGlanceStubClient)
++
++    @mock.patch('cinder.service_auth.get_auth_plugin')
++    @mock.patch.object(ksloading, 'load_auth_from_conf_options')
++    def test_create_glance_client_with_privileged_user(
++            self, mock_load, mock_get_auth_plugin):
++        self.flags(auth_strategy='keystone')
++        self.flags(auth_type='password', group='glance')
++        mock_load.return_value = 'fake_auth_plugin'
++        glance.GlanceClientWrapper(self.context, 'fake_host:9292', True, True)
++        mock_load.assert_called_once()
++        mock_get_auth_plugin.assert_called_once_with(
++            self.context, auth='fake_auth_plugin')
+diff --git a/releasenotes/notes/add-glance-service-section-3e73daee0e995442.yaml b/releasenotes/notes/add-glance-service-section-3e73daee0e995442.yaml
+new file mode 100644
+index 000000000..b5aa42300
+--- /dev/null
++++ b/releasenotes/notes/add-glance-service-section-3e73daee0e995442.yaml
+@@ -0,0 +1,22 @@
++---
++upgrade:
++  - |
++    With the adoption of New Location APIs, we need a mechanism
++    to perform service-to-service communication to access the
++    ``add_image_location`` and ``get_image_locations`` APIs.
++    To achieve the desired functionality, we will need to perform
++    two additional changes during the deployment:
++
++    1. Assign the ``admin`` and ``service`` role to the ``glance`` user
++    2. Configure a ``[glance]`` section in cinder configuration file
++       with the credentials of ``glance`` user and ``service`` project.
++       Refer to the ``[nova]`` or ``[service_user]`` section for reference.
++features:
++  - |
++    Added support for service-to-service communication between Cinder and
++    Glance.
++    Currently the service-to-service communication is leveraged by the new
++    location APIs for which we will need to configure a dedicated ``[glance]``
++    section in cinder configuration file with the credentials of ``glance``
++    user and ``service`` project.
++    Refer to the ``[nova]`` or ``[service_user]`` section for reference.
+diff --git a/tools/config/generate_cinder_opts.py b/tools/config/generate_cinder_opts.py
+index d307e8312..08a87983d 100644
+--- a/tools/config/generate_cinder_opts.py
++++ b/tools/config/generate_cinder_opts.py
+@@ -228,6 +228,9 @@ if __name__ == "__main__":
+                     if (group_name == 'NOVA_GROUP'):
+                         group_name = nova.NOVA_GROUP
+ 
++                    if (group_name == 'GLANCE_GROUP'):
++                        group_name = 'glance'
++
+                     if group_name in registered_opts_dict:
+                         line = key + "." + formatted_opt
+                         registered_opts_dict[group_name].append(line)
